@@ -10,12 +10,70 @@ import math
 from contextlib import contextmanager
 import threading
 import time
+from typing import NamedTuple
 
 import numpy as np
 import sounddevice as sd
 
 MIC_RATE = 16000
 PLAY_RATE = 24000
+
+
+class _CaptureBlock(NamedTuple):
+    generation: int
+    samples: np.ndarray
+
+
+class CaptureQueue(queue.Queue):
+    """Array-compatible queue with an invalidation boundary for capture.
+
+    A callback snapshots generation before processing input. Invalidation also
+    fences callbacks and reads already in flight; draining waiting data alone
+    cannot do that. Ordinary get()/put() still exchange sample arrays.
+    """
+    def __init__(self, maxsize=0):
+        super().__init__(maxsize)
+        self._generation = 0
+
+    @property
+    def generation(self):
+        with self.mutex:
+            return self._generation
+
+    def _put(self, samples):
+        super()._put(_CaptureBlock(self._generation, samples))
+
+    def get_with_generation(self, block=True, timeout=None):
+        return super().get(block, timeout)
+
+    def get(self, block=True, timeout=None):
+        return self.get_with_generation(block, timeout).samples
+
+    def offer(self, samples, generation):
+        """Nonblocking callback offer: None=invalidated, bool=oldest dropped."""
+        with self.not_full:
+            if generation != self._generation:
+                return None
+            dropped = self.maxsize > 0 and self._qsize() >= self.maxsize
+            if dropped:
+                self._get()
+                self.unfinished_tasks -= 1
+            super()._put(_CaptureBlock(generation, samples))
+            self.unfinished_tasks += 1
+            self.not_empty.notify()
+            return dropped
+
+    def invalidate(self):
+        with self.mutex:
+            self._generation += 1
+            chunks = []
+            while self._qsize():
+                chunks.append(self._get().samples)
+            self.unfinished_tasks -= len(chunks)
+            if self.unfinished_tasks == 0:
+                self.all_tasks_done.notify_all()
+            self.not_full.notify_all()
+        return np.concatenate(chunks) if chunks else np.zeros(0, np.float32)
 
 
 @contextmanager
@@ -174,7 +232,7 @@ class Mic:
             self.native_rate = 44100
             self.native_ch = 1
         self.blocksize = max(160, round(self.native_rate * .02))
-        self.q = queue.Queue(maxsize=max(2, round(max_buffer_s / .02)))
+        self.q = CaptureQueue(maxsize=max(2, round(max_buffer_s / .02)))
         self.stream = None
         self.level = 0.0
         self._ch_energy = None
@@ -194,6 +252,8 @@ class Mic:
         return dict(self._selected_device_identity) if self._selected_device_identity is not None else None
 
     def _cb(self, indata, frames, time_info, status):
+        capture_queue = self.q
+        generation = capture_queue.generation if isinstance(capture_queue, CaptureQueue) else None
         if status:
             self.capture_errors += 1
         data = np.asarray(indata, dtype=np.float32)
@@ -219,6 +279,10 @@ class Mic:
         self.clipped_fraction = float(np.mean(np.abs(mono) >= .999))
         mono = np.clip(amplified, -1.0, 1.0)
         self.level = float(np.sqrt(np.mean(mono ** 2) + 1e-12))
+        if generation is not None:
+            dropped = capture_queue.offer(mono, generation)
+            self.dropped_blocks += int(dropped is True)
+            return
         try:
             self.q.put_nowait(mono)
         except queue.Full:
@@ -265,6 +329,8 @@ class Mic:
                 stream.close()
 
     def drain(self):
+        if isinstance(self.q, CaptureQueue):
+            return self.q.invalidate()
         chunks = []
         while True:
             try:

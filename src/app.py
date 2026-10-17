@@ -207,21 +207,33 @@ class Assistant:
         recording = False
         while not self._stop.is_set():
             self._apply_device_requests()
+            capture_queue = self.mic.q
+            read = getattr(capture_queue, 'get_with_generation', None)
             try:
-                block = self.mic.q.get(timeout=.05)
+                if read is None:
+                    generation, block = None, capture_queue.get(timeout=.05)
+                else:
+                    generation, block = read(timeout=.05)
             except queue.Empty:
                 continue
-            if self._capture_reset.is_set():
-                self._capture_reset.clear()
-                pre.clear()
-                rec = []
-                rec_samples = 0
-                recording = False
-                self.front.reset()
-                if self.status == 'recording':
-                    self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
-            if not self.mic_on:
-                continue
+            with self._lock:
+                # Reset/mute may happen after dequeue, or while a callback is
+                # still preparing this block. Keep the first genuinely fresh
+                # block even when reset happened during a blocking read.
+                if (capture_queue is not self.mic.q
+                        or generation is not None and generation != capture_queue.generation):
+                    continue
+                if self._capture_reset.is_set():
+                    self._capture_reset.clear()
+                    pre.clear()
+                    rec = []
+                    rec_samples = 0
+                    recording = False
+                    self.front.reset()
+                    if self.status == 'recording':
+                        self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
+                if not self.mic_on:
+                    continue
             try:
                 speaking, started, ended, clean = self.front.update(block)
                 self.warning = getattr(self.front, 'aec_error', None)
