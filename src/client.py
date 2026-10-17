@@ -187,6 +187,9 @@ class ServerClient:
                 return
             if turn.request_observer is not None:
                 turn.request_observer(payload)
+            # Request recording can block while interruption cancels this turn.
+            if turn.cancel.is_set():
+                return
             turn.t_req = time.perf_counter()
             turn.queue_s = turn.t_req - queued_at
             resp = self._post(payload)
