@@ -6,6 +6,7 @@ cancellation for instant barge-in stops.
 """
 import queue
 import sys
+import math
 from contextlib import contextmanager
 import threading
 import time
@@ -38,16 +39,64 @@ def audio_thread():
             ctypes.windll.ole32.CoUninitialize()
 
 
-def list_inputs():
-    """[(index, name)] for devices with input channels."""
-    out = []
+def _device_index(value):
+    if isinstance(value, (int, np.integer)) and not isinstance(value, (bool, np.bool_)):
+        return int(value) if value >= 0 else None
+    return None
+
+
+def _positive_rate(value):
     try:
-        for i, d in enumerate(sd.query_devices()):
-            if d["max_input_channels"] > 0:
-                out.append((i, d["name"][:48]))
+        rate = float(value)
+        return rate if not isinstance(value, (bool, np.bool_)) and math.isfinite(rate) and rate > 0 else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _input_descriptor(index, info, host_name):
+    """Normalize query metadata without inventing a device or host identity."""
+    index = _device_index(index)
+    channels = _device_index(info.get('max_input_channels'))
+    name = info.get('name')
+    if index is None or not channels or not isinstance(name, str) or not name.strip():
+        return None
+    return dict(index=index, full_name=name,
+                host_api=host_name if isinstance(host_name, str) and host_name.strip() else None,
+                host_api_index=_device_index(info.get('hostapi')),
+                max_input_channels=channels,
+                default_samplerate=_positive_rate(info.get('default_samplerate')))
+
+
+def list_input_devices():
+    """Full input descriptors from this process's PortAudio inventory.
+
+    Indices are local to this inventory. Duplicate names/hosts remain separate
+    rows so callers can reject ambiguous identity matches instead of guessing.
+    """
+    try:
+        devices = sd.query_devices()
     except Exception:
-        pass
-    return out
+        return []
+    rows, hosts = [], {}
+    for index, info in enumerate(devices):
+        try:
+            host_index = _device_index(info.get('hostapi'))
+            if host_index is not None and host_index not in hosts:
+                try:
+                    hosts[host_index] = sd.query_hostapis(host_index).get('name')
+                except Exception:
+                    hosts[host_index] = None
+            row = _input_descriptor(index, info, hosts.get(host_index))
+            if row is not None:
+                rows.append(row)
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return rows
+
+
+def list_inputs():
+    """Legacy [(index, name[:48])] input labels for the UI."""
+    return [(row['index'], row['full_name'][:48]) for row in list_input_devices()]
 
 
 def preferred_device(kind):
@@ -86,6 +135,7 @@ class Mic:
         self.rate = rate
         self.device = device if device is not None else preferred_device('input')
         self.gain = float(gain) if gain is not None else 1.0
+        self._selected_device_identity = None
         dev = self.device
         try:
             if dev is None:
@@ -93,8 +143,33 @@ class Mic:
             info = sd.query_devices(dev)
             self.native_rate = int(info["default_samplerate"])
             self.native_ch = min(int(info["max_input_channels"]), 4)
-            if gain is None and sd.query_hostapis(info["hostapi"])["name"] != "Windows WASAPI":
+            requested_index = _device_index(dev)
+            selected_index = _device_index(info.get('index', requested_index))
+            if requested_index is not None and selected_index != requested_index:
+                selected_index = None
+            if selected_index is not None:
+                # A default or name query must open the same numeric endpoint
+                # whose format we just inspected, even if defaults later move.
+                self.device = selected_index
+            try:
+                host_name = sd.query_hostapis(info['hostapi'])['name']
+            except Exception:
+                if gain is None:
+                    raise
+                host_name = None
+            if gain is None and host_name != "Windows WASAPI":
                 self.gain = 6.0
+            identity = _input_descriptor(selected_index, info, host_name)
+            output_rate = _positive_rate(self.rate)
+            if (identity is not None and identity['host_api'] is not None
+                    and identity['host_api_index'] is not None
+                    and identity['default_samplerate'] is not None
+                    and self.native_rate > 0 and 0 < self.native_ch <= identity['max_input_channels']
+                    and output_rate is not None):
+                identity.update(capture_samplerate=self.native_rate,
+                                capture_channels=self.native_ch,
+                                capture_dtype='float32', output_samplerate=output_rate)
+                self._selected_device_identity = identity
         except Exception:
             self.native_rate = 44100
             self.native_ch = 1
@@ -109,6 +184,14 @@ class Mic:
         self.clipped_fraction = 0.0
         self.latency_s = None
         self.effective_gain = self.gain
+
+    @property
+    def selected_device_identity(self):
+        """Defensive snapshot of the queried capture configuration, or None.
+
+        This metadata does not re-enumerate hardware or prove stream health.
+        """
+        return dict(self._selected_device_identity) if self._selected_device_identity is not None else None
 
     def _cb(self, indata, frames, time_info, status):
         if status:

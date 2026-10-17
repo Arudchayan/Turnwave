@@ -28,3 +28,11 @@ Browser controls send explicit microphone state, suppress duplicate requests
 per control and show request failures/timeouts beside existing warnings. An
 unrelated pending control does not disable interruption. Stale state polls
 cannot reverse a completed microphone intent.
+
+Microphone indices belong to the app's PortAudio inventory. Automation should
+match the full `mic_devices` descriptors returned by `/api/state` and submit that
+app-local index to `/api/micdev`; an index from another process can identify a
+different endpoint. `mic_identity` reports the opened input's cached name, host
+and capture format only when the metadata is complete and uniquely matches the
+catalog. Unknown or ambiguous identity is `null`. State polling does not query
+audio hardware. The existing short `mics` labels remain available to the UI.

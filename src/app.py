@@ -1,6 +1,7 @@
 """LocalVoice: continuous listening, cancellable turns, and a local web UI."""
 import collections
 import json
+import math
 import os
 import queue
 import socket
@@ -12,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from audio_io import Mic, Player, list_inputs, audio_thread
+from audio_io import Mic, Player, list_input_devices, audio_thread
 from client import ServerClient, Turn, wav16k_bytes
 from duplex import DuplexFrontend
 from diagnostics import Diagnostics, source_fingerprint
@@ -86,6 +87,12 @@ class Assistant:
         self._latencies = collections.deque(maxlen=12)
         self._server_ok = False
         self._mics = []
+        self._mic_devices = []
+        self._mic_identity = None
+        # Injected microphones may have no PortAudio implementation at all.
+        self._owns_mic_catalog = mic is None
+        if self._owns_mic_catalog:
+            self._set_mic_catalog(self._read_mic_catalog())
         self._asr_q = queue.Queue(maxsize=8)
         self._device_requests = queue.Queue()
 
@@ -124,6 +131,8 @@ class Assistant:
                 try:
                     self._apply_device_requests()
                     self.mic.start()
+                    with self._lock:
+                        self._cache_mic_identity()
                     self.error = None
                     self.status = 'listening'
                     self.diagnostics.event('mic_ready', device=self.mic.device, native_rate=getattr(self.mic, 'native_rate', None), gain=getattr(self.mic, 'gain', None), latency_s=getattr(self.mic, 'latency_s', None))
@@ -158,8 +167,6 @@ class Assistant:
         while not self._stop.is_set():
             if self._active is None:
                 self._server_ok = self.client.health()
-            if not self._mics:
-                self._mics = list_inputs()
             self.diagnostics.event('health', server_ok=self._server_ok, state=self.status, mic_drops=getattr(self.mic, 'dropped_blocks', 0), capture_errors=getattr(self.mic, 'capture_errors', 0), clipped_fraction=getattr(self.mic, 'clipped_fraction', 0), residual_rejections=getattr(self.front, 'residual_rejections', 0), level=round(self.front.level, 5))
             self._stop.wait(5)
 
@@ -516,14 +523,65 @@ class Assistant:
             if not self.mic_on and self.status == 'recording':
                 self.status = 'listening'
 
-    def mic_index(self):
-        if self.mic.device is not None:
-            return self.mic.device
+    @staticmethod
+    def _read_mic_catalog():
+        # Only initialization/the capture worker enumerates devices, never a
+        # state poll or the real-time audio callback.
         try:
-            import sounddevice as sd
-            return int(sd.default.device[0])
+            return [dict(device) for device in list_input_devices()]
         except Exception:
-            return -1
+            return []
+
+    def _set_mic_catalog(self, devices):
+        self._mic_devices = [dict(device) for device in devices]
+        self._mics = [(device['index'], device['full_name'][:48])
+                      for device in devices
+                      if isinstance(device.get('index'), int)
+                      and isinstance(device.get('full_name'), str)
+                      and device.get('max_input_channels', 0) > 0]
+
+    def _cache_mic_identity(self):
+        self._mic_identity = None
+        try:
+            identity = dict(self.mic.selected_device_identity)
+            integer_fields = ('index', 'host_api_index', 'max_input_channels', 'capture_channels')
+            if any(type(identity.get(key)) is not int for key in integer_fields):
+                return
+            if identity['index'] < 0 or identity['host_api_index'] < 0:
+                return
+            if not 0 < identity['capture_channels'] <= identity['max_input_channels']:
+                return
+            if any(not isinstance(identity.get(key), str) or not identity[key].strip()
+                   for key in ('full_name', 'host_api')):
+                return
+            for key in ('default_samplerate', 'capture_samplerate', 'output_samplerate'):
+                value = identity.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                    return
+            if identity.get('capture_dtype') != 'float32':
+                return
+            # Indices and host-api indices are process-local. A full descriptor
+            # must also identify a unique endpoint without either index.
+            stable = ('full_name', 'host_api', 'max_input_channels', 'default_samplerate')
+            matches = [device for device in self._mic_devices
+                       if all(device.get(key) == identity[key] for key in stable)]
+            if (len(matches) != 1 or matches[0].get('index') != identity['index']
+                    or matches[0].get('host_api_index') != identity['host_api_index']):
+                return
+            keys = ('index', 'full_name', 'host_api', 'host_api_index', 'max_input_channels',
+                    'default_samplerate', 'capture_samplerate', 'capture_channels',
+                    'capture_dtype', 'output_samplerate')
+            self._mic_identity = {key: identity[key] for key in keys}
+        except (AttributeError, TypeError, ValueError):
+            # Older injected fakes and incomplete device queries cannot attest
+            # an opened endpoint; preserve ordinary operation without guessing.
+            return
+
+    def mic_index(self):
+        if self._mic_identity is not None:
+            return self._mic_identity['index']
+        device = getattr(self.mic, 'device', None)
+        return device if type(device) is int else -1
 
     def mic_name(self):
         return next((name for index, name in self._mics if index == self.mic_index()), 'default microphone')
@@ -545,15 +603,27 @@ class Assistant:
                 if cancelled.is_set():
                     replacement.stop()
                     continue
+                devices = self._read_mic_catalog() if self._owns_mic_catalog else None
                 with self._lock:
-                    old, self.mic = self.mic, replacement
-                    self._capture_reset.set()
-                    self.error = None
+                    publish = not cancelled.is_set()
+                    if publish:
+                        old, self.mic = self.mic, replacement
+                        if devices is not None:
+                            self._set_mic_catalog(devices)
+                        self._cache_mic_identity()
+                        self._capture_reset.set()
+                        self.error = None
+                if not publish:
+                    replacement.stop()
+                    continue
                 old.stop()
                 result.append(True)
                 self.diagnostics.event('mic_changed', device=index, latency_s=self.mic.latency_s)
             except Exception as exc:
                 self.error = 'Could not open microphone: ' + str(exc)
+                with self._lock:
+                    if self.mic is replacement:
+                        self._mic_identity = None
                 replacement.stop()
                 result.append(False)
             finally:
@@ -607,7 +677,9 @@ class Assistant:
                         archive_sealed=self._archive_sealed(),
                         archive_error=self.archive_error,
                         recording_safe=not self.mic_on and self._active is None and not self._pending_jobs and not playing and not self._archive_pending and not self.archive_error,
-                        mic=self.mic_name(), mic_index=self.mic_index(), mics=self._mics,
+                        mic=self.mic_name(), mic_index=self.mic_index(), mics=list(self._mics),
+                        mic_devices=[dict(device) for device in self._mic_devices],
+                        mic_identity=dict(self._mic_identity) if self._mic_identity is not None else None,
                         server_ok=self._server_ok, level=self.front.level,
                         transcript=[m['text'] for m in self._messages if m['text']],
                         transcript_revision=self.transcript_revision,
