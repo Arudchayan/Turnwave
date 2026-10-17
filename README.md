@@ -86,6 +86,35 @@ Optional CPU recognizer evaluations use `requirements-eval.txt` and separately
 obtained local weights. Exploratory tools under `src/synth/` have additional
 prerequisites; they are not the default test suite.
 
+### Offline content benchmark preparation
+
+`src/synth/content_benchmark.py` prepares local, already obtained benchmark WAVs
+and exports grading inputs. It does not download datasets, start a model, run
+judges or play audio. A manifest records `version: 1`, the dataset name, its
+40-character source revision, and a nonempty `cases` list. Each case has a safe
+unique `id`, `subset` (`ifeval` or `openbookqa`), relative `audio` path, input
+`sha256`, and original scorer `metadata`. Inputs must be nonempty 16 kHz mono
+PCM16 WAVs. Check dataset terms and keep audio/manifests under ignored local data.
+
+```powershell
+python src/synth/content_benchmark.py prepare data/benchmark/manifest.json outputs/benchmark-prepared
+python src/synth/content_benchmark.py export outputs/benchmark-run outputs/benchmark-grades --asr outputs/benchmark-asr.json
+```
+
+Every destination must be new. There is no inference CLI: the Python API takes
+an explicit client, with exclusive backend test ownership for actual requests.
+Stop the app before model tests, even while muted. Preserve the exact generated
+float32 audio and model text separately. Independent ASR transcripts must identify
+their recognizer and match the generated-audio hash; missing transcripts never
+fall back to model text. Grade exports retain failed cases for review rather
+than treating them as ordinary completed answers. Run upstream VoiceBench
+scoring separately after inspecting these artifacts.
+
+This adapter is a content-test boundary, not a full benchmark result or an
+end-to-end voice latency measurement. It bypasses microphone turn detection;
+pause, echo, interruption, room audio and human intelligibility require separate
+evaluation.
+
 ## Recording and privacy
 
 Normal launches write private local diagnostics under `outputs/logs/`.

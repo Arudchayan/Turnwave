@@ -11,6 +11,10 @@ This is a research prototype, not a claim of universally reliable conversation.
 - Exact instructions, attribution and conversation memory can fail. Interruptions
   reset context for recovery and therefore do not preserve all prior memory.
 - First-audio timings exclude endpointing unless explicitly measured otherwise.
+- Offline content benchmarks must grade generated speech separately from the
+  model's text. Independent recognition can also be wrong, particularly on short
+  or unclear clips; preserve disagreements for listening review. A completed-WAV
+  content test bypasses microphone endpointing, echo and interruption behavior.
 - Windows/WSL and the external native runner/toolchain are the intended setup.
   Hardware support and dependency installation need validation on each machine.
 - Model weights and native binaries are not distributed here. Research scripts
