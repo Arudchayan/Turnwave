@@ -110,6 +110,12 @@ fall back to model text. Grade exports retain failed cases for review rather
 than treating them as ordinary completed answers. Run upstream VoiceBench
 scoring separately after inspecting these artifacts.
 
+The upstream multiple-choice scorer can randomly guess when it cannot extract
+an answer, including from a blank failed response. Keep any seeded upstream
+score separate from acceptance: require an eligible completed case and a
+parseable correct answer. Scores from a small adapted slice are not leaderboard
+results, and speech-transcript errors still require listening review.
+
 This adapter is a content-test boundary, not a full benchmark result or an
 end-to-end voice latency measurement. It bypasses microphone turn detection;
 pause, echo, interruption, room audio and human intelligibility require separate
