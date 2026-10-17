@@ -216,8 +216,13 @@ class Assistant:
                 speaking, started, ended, clean = self.front.update(block)
                 self.warning = getattr(self.front, 'aec_error', None)
             except Exception as exc:
-                self.error = 'Speech detection failed: ' + str(exc)
-                self.status = 'error'
+                with self._lock:
+                    # Reset/mute can invalidate this block while detection is
+                    # running, just as they can invalidate a detected onset.
+                    if not self.mic_on or self._capture_reset.is_set():
+                        continue
+                    self.error = 'Speech detection failed: ' + str(exc)
+                    self.status = 'error'
                 self._stop.wait(.1)
                 continue
             if not len(clean):

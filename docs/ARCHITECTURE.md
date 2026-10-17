@@ -23,3 +23,8 @@ runner cannot truncate context to the portion of a reply actually heard.
 
 The browser UI is embedded in `ui.py`. It talks to a loopback HTTP service in
 `app.py`. No cloud API is part of the normal inference path.
+
+Browser controls send explicit microphone state, suppress duplicate requests
+per control and show request failures/timeouts beside existing warnings. An
+unrelated pending control does not disable interruption. Stale state polls
+cannot reverse a completed microphone intent.

@@ -82,8 +82,9 @@ def sse_events(response, cancel=None):
             if data == b'[DONE]':
                 return
             event = json.loads(data)
-            if event.get('error'):
-                raise RuntimeError(str(event['error']))
+            error = event.get('error')
+            if error is not None:
+                raise RuntimeError(str(error) if error else 'The server reported an error.')
             yield event
 
 
@@ -227,7 +228,9 @@ class ServerClient:
             try:
                 if resp is not None:
                     resp.close()
-            except OSError:
+            except Exception:
+                # Cleanup must not replace completed audio, a primary stream
+                # error, or intentional cancellation with a secondary failure.
                 pass
             finally:
                 if acquired:

@@ -27,6 +27,7 @@ canvas{width:100%;height:64px;display:block}
 button{font-size:.95em;padding:.5em 1em;border-radius:8px;border:1px solid var(--line);
 background:var(--card);color:var(--txt);cursor:pointer}
 button:hover{border-color:var(--blue)}
+button:disabled,select:disabled{opacity:.55;cursor:wait}
 button.big{background:var(--blue);border-color:var(--blue);color:#04121f;font-weight:700}
 select{font-size:.9em;padding:.5em;border-radius:8px;background:var(--card);
 color:var(--txt);border:1px solid var(--line);max-width:220px}
@@ -62,7 +63,7 @@ footer{margin-top:10px;font-size:.75em;color:var(--dim)}
 <div id=wavewrap><canvas id=wave width=700 height=64></canvas>
 <div id=lvl>mic level —</div></div>
 <div id=controls>
-<button id=micbtn>mute mic</button>
+<button id=micbtn disabled>checking mic…</button>
 <button id=intbtn class=big>interrupt</button>
 <button id=newbtn>new conversation</button>
 <button id=tstbtn>test speaker</button>
@@ -85,26 +86,57 @@ function setStage(id,ts,activePh,ph){let e=$(id);
 e.className=ts!=null?'done':(ph===activePh?'active':'');
 e.textContent=(ts!=null?'✓ ':'')+STLBL[id];}
 const $=id=>document.getElementById(id);
-$('micbtn').onclick=async()=>{await fetch('/api/mic',{method:'POST'});};
-$('intbtn').onclick=async()=>{await fetch('/api/interrupt',{method:'POST'});};
-$('newbtn').onclick=async()=>{await fetch('/api/reset',{method:'POST'});};
-$('tstbtn').onclick=async()=>{await fetch('/api/test',{method:'POST'});};
-$('micsel').onchange=async e=>{await fetch('/api/micdev',{method:'POST',
-body:JSON.stringify({index:+e.target.value})});};
+let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
+const pendingActions=new Set();
+function renderAlerts(){
+let s=lastState;
+let alerts=[s&&!s.server_ok?'The local voice server is offline. Start it to continue.':null,
+s?.error,s?.warning,actionError].filter(Boolean);
+$('banner').style.display=alerts.length?'block':'none';
+$('banner').textContent=alerts.join('\\n');}
+async function action(id,path,body){
+if(pendingActions.has(id))return false;
+pendingActions.add(id);$(id).disabled=true;actionError=null;renderAlerts();
+const controller=new AbortController();
+const timer=setTimeout(()=>controller.abort(),7000);
+try{
+let response=await fetch(path,{method:'POST',signal:controller.signal,
+headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+if(!response.ok){
+let message='Request failed (HTTP '+response.status+').';
+try{let result=await response.json();if(result.error)message=String(result.error);}catch{}
+throw new Error(message);}
+return true;
+}catch(e){actionError=e.name==='AbortError'?'Request timed out. Check the current state before retrying.':
+'Action failed: '+(e.message||String(e));return false;
+}finally{clearTimeout(timer);pendingActions.delete(id);
+$(id).disabled=id==='micbtn'&&lastMicOn===null;renderAlerts();}}
+$('micbtn').onclick=async()=>{
+if(lastMicOn===null||pendingActions.has('micbtn'))return;
+let desired=!lastMicOn;micVersion++;
+if(await action('micbtn','/api/mic',{enabled:desired}))lastMicOn=desired;
+$('micbtn').textContent=lastMicOn?'mute mic':'unmute mic';};
+$('intbtn').onclick=()=>action('intbtn','/api/interrupt');
+$('newbtn').onclick=()=>action('newbtn','/api/reset');
+$('tstbtn').onclick=()=>action('tstbtn','/api/test');
+$('micsel').onchange=e=>action('micsel','/api/micdev',{index:+e.target.value});
 function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
 else{d.className='msg s';d.textContent=t;}return d;}
 async function tick(){
 try{
+let observedMicVersion=micVersion;
+let observedMicPending=pendingActions.has('micbtn');
 let s=await(await fetch('/api/state')).json();
+lastState=s;
 let st=$('st');st.textContent=s.status+(s.mic_on?'':' (muted)')+' · '+s.mic;st.className=s.status;
-$('micbtn').textContent=s.mic_on?'mute mic':'unmute mic';
+if(!observedMicPending&&observedMicVersion===micVersion&&!pendingActions.has('micbtn'))lastMicOn=s.mic_on;
+$('micbtn').textContent=lastMicOn?'mute mic':'unmute mic';
+$('micbtn').disabled=lastMicOn===null||pendingActions.has('micbtn');
 let ok=s.server_ok;$('srv').className='dot'+(ok?' ok':'');
 $('srvlbl').textContent=ok?'server connected (local :8080)':'SERVER OFFLINE — start it in WSL2';
-let alerts=[!ok?'The local voice server is offline. Start it to continue.':null,s.error,s.warning].filter(Boolean);
-$('banner').style.display=alerts.length?'block':'none';
-$('banner').textContent=alerts.join('\\n');
+renderAlerts();
 $('m_ttft').textContent=s.last_ttft??'—';$('m_aud').textContent=s.last_audio_s??'—';
 $('m_turn').textContent=s.last_turn_s??'—';$('m_n').textContent=s.turns;
 if(s.mics){let sel=$('micsel');
