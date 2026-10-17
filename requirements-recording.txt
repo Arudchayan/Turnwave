@@ -1,0 +1,2 @@
+# Optional raw microphone + Windows WASAPI output recorder.
+PyAudioWPatch==0.2.12.9; sys_platform == 'win32'

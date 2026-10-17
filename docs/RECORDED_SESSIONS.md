@@ -1,0 +1,74 @@
+# Explicit recorded sessions
+
+On Windows, install the optional raw recorder dependency with
+`python -m pip install -r requirements-recording.txt`.
+
+Per-turn archiving is opt-in. Normal app launches do not create audio archives.
+For an authorized recorded experiment, set `LOCALVOICE_RECORD_SESSION` to a
+new `turns` directory inside that experiment before launching the app. The
+directory must not already exist; a reused path fails before opening devices.
+Use `LOCALVOICE_START_MUTED=1` for the controlled startup.
+
+The independent physical recorder still records microphone and output loopback
+into the experiment's `audio` directory. Per-turn archives complement it:
+
+| File | Meaning |
+| --- | --- |
+| input.wav | Exact 16 kHz request WAV submitted by the app, including its capture processing |
+| request.json | Exact request field values, including reset flag and modalities; JSON serialization is not the original HTTP byte stream |
+| generated.f32 | Authoritative decoded mono float32 samples, little endian, 24 kHz |
+| generated.wav | PCM16 preview; native PCM16 samples round-trip correctly |
+| generation.json | Reported text, error/cancellation, finish reason and timings |
+| playback.json | Source samples whose blocking output write succeeded, separate from generated samples; buffered audio may still be interrupted before audibility |
+| status.json / manifest.json | Lifecycle state and file hashes; finalized only after generation and playback finish |
+
+A speaker check has no captured user input, so its explicitly marked test
+archive contains an empty input file. A turn cancelled before its request may
+have no request payload or generated audio. Both cases are distinguished from
+missing evidence in a normal requested turn.
+
+Audio headers and float samples flush incrementally; closed generation files
+are synced before final metadata. Tests cover readable partial files after
+abrupt process exit. This is not a guarantee against every power, filesystem
+or disk failure. Storage errors remain visible and prevent verified session
+finalization; voice playback can continue.
+
+Source hashes and backend endpoint are saved in session provenance. The
+experiment protocol must separately retain actual native build/model hashes;
+an endpoint URL does not establish model identity. Background startup warmup
+is not a conversational turn archive.
+
+## Finish without cutting off the recording
+
+Keep the app and recorder running and invoke from the repository root:
+
+```powershell
+C:/Python312/python.exe -m src.synth.finish_recorded_test outputs/experiments/<new-test> --timeout-s 90
+```
+
+The helper mutes capture without cancelling the reply, waits for generation,
+playback and archive completion, then signals the selected recorder to stop.
+It verifies closed physical WAVs and finalized per-turn files before copying
+the whole experiment. App state and source hashes are checked again after
+copying. The success receipt is `finalization-receipt.json` beside the backup's
+checkpoint manifest, outside its immutable experiment snapshot.
+
+Timeouts, incomplete archives, external archive paths and changed files produce
+an explicit failed attempt rather than a verified session claim. Playback-wait
+timeouts leave the recorder running. Failures after the recorder has stopped
+preserve the closed files without claiming a complete checkpoint.
+
+Use the standard observer protocol (`experiment.json` with `watch_minutes`,
+STOP and finished.json). An ad-hoc observer directory needs explicit completion
+before finalization; ambiguous processes are never killed automatically.
+
+The helper does not extend an independent recorder's deadline or repair audio
+already missed. A finalized snapshot is not proof of intelligibility, complete
+physical coverage, correct answers or an off-device backup. Explicit later
+app activity can create new turns requiring another finalization. Respect
+user-requested deletion; never restore removed material from old copies.
+
+Successful-write accounting applies from batch 4 onward. Older recordings used
+pre-write callbacks for this count, so a failed write could overstate submissions
+by one attempted block. Historical files remain unchanged; no exact correction is
+inferred for old device failures. The echo reference still precedes each write.

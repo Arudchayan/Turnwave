@@ -1,0 +1,117 @@
+--- a/tools/liquid-audio/runner.cpp
++++ b/tools/liquid-audio/runner.cpp
+@@ -104,6 +104,7 @@
+                  const text_callback_t &                   text_callback,
+                  const audio_callback_t &                  audio_callback,
+                  const std::vector<mtmd_output_modality> & modalities) {
++        generation_limit_reached = false;
+         const bool audio_output_supported = mtmd_support_audio_output(ctx.mtmd_ctx_audio.get());
+         if (audio_output_supported) {
+             mtmd_set_output_modalities(ctx.mtmd_ctx_audio.get(), modalities.data(), modalities.size());
+@@ -214,6 +215,7 @@
+     }
+ 
+     const char * get_last_error() const { return last_error_.c_str(); }
++    const char * get_finish_reason() const { return generation_limit_reached ? "length" : "stop"; }
+ 
+     void stop() { stop_requested = true; }
+ 
+@@ -243,6 +245,7 @@
+ 
+     std::atomic<bool> stop_requested = false;
+     std::string       last_error_;
++    bool generation_limit_reached = false;
+ 
+     // The turn-ending (EOG) token is sampled but the loop breaks before decoding it,
+     // so it never reaches the KV cache. Remember it and re-supply it at the next
+@@ -267,6 +270,7 @@
+         std::vector<float> embd(llama_model_n_embd(ctx.model));
+         // batch.token is read by the following iteration; keep storage alive.
+         llama_token next_text_token = LLAMA_TOKEN_NULL;
++        bool last_batch_pending = false;
+         for (int i = 0; i < n_predict; i++) {
+             if (i > n_predict || stop_requested) {
+                 LOG("\n");
+@@ -279,6 +283,7 @@
+                     return error("failed to run backbone");
+                 }
+                 ctx.n_past += batch.n_tokens;
++                last_batch_pending = false;
+             }
+ 
+             auto * mctx = ctx.mtmd_ctx_audio.get();
+@@ -306,6 +311,7 @@
+ 
+                 batch.token = &next_text_token;
+                 batch.embd  = nullptr;
++                last_batch_pending = true;
+             } else if (mtmd_get_output_modality(mctx) == MTMD_OUTPUT_MODALITY_AUDIO) {
+                 int res = mtmd_audio_output_decode(mctx, llama_get_embeddings(ctx.lctx), llama_model_n_embd(ctx.model),
+                                                    embd.data());
+@@ -317,6 +323,7 @@
+ 
+                 batch.embd  = embd.data();
+                 batch.token = nullptr;
++                last_batch_pending = true;
+             }
+ 
+             llama_set_embeddings(ctx.lctx, mtmd_get_output_modality(mctx) == MTMD_OUTPUT_MODALITY_AUDIO);
+@@ -325,6 +332,26 @@
+                 LOG("\n");
+                 break;
+             }
++        }
++        // At the budget boundary, the last emitted token/embedding has not
++        // reached KV yet. Commit it and close this assistant turn just as a
++        // naturally sampled EOG does; the next prefill supplies pending_eot.
++        if (!stop_requested && pending_eot == LLAMA_TOKEN_NULL) {
++            if (last_batch_pending) {
++                if (llama_decode(ctx.lctx, batch)) {
++                    return error("failed to commit the final generation step");
++                }
++                ctx.n_past += batch.n_tokens;
++            }
++            const llama_token eos = llama_vocab_eos(ctx.vocab);
++            if (eos == LLAMA_TOKEN_NULL || !llama_vocab_is_eog(ctx.vocab, eos)) {
++                return error("model has no valid assistant-end token");
++            }
++            common_sampler_accept(ctx.smpl, eos, true);
++            pending_eot = eos;
++            generation_limit_reached = true;
++            LOG_INF("Generation limit: closing assistant turn after %s step\n",
++                    !last_batch_pending ? "no" : batch.token ? "text" : "audio");
+         }
+         LOG("\n");
+ 
+@@ -412,6 +439,10 @@
+     return impl_->get_output_sample_rate();
+ }
+ 
++const char * Runner::get_finish_reason() const {
++    return impl_->get_finish_reason();
++}
++
+ const char * Runner::get_last_error() const {
+     return impl_->get_last_error();
+ }
+--- a/tools/liquid-audio/runner.h
++++ b/tools/liquid-audio/runner.h
+@@ -46,6 +46,7 @@
+ 
+     int          get_output_sample_rate() const;
+     const char * get_last_error() const;
++    const char * get_finish_reason() const;
+   private:
+     class RunnerImpl;
+     std::unique_ptr<RunnerImpl> impl_;
+--- a/tools/liquid-audio/server.cpp
++++ b/tools/liquid-audio/server.cpp
+@@ -250,7 +250,7 @@
+                         { "created", std::time(0)                                                               },
+                         { "choices",
+                          json::array(
+-                              { { { "index", 0 }, { "delta", json::object() }, { "finish_reason", "stop" } } }) }
++                              { { { "index", 0 }, { "delta", json::object() }, { "finish_reason", runner.get_finish_reason() } } }) }
+                     };
+                     output->push("data: " + final_chunk.dump(-1, ' ', false, json::error_handler_t::replace) + "\n\n");
+                     output->push("data: [DONE]\n\n");

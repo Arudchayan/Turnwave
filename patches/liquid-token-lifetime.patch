@@ -1,0 +1,20 @@
+--- a/tools/liquid-audio/runner.cpp
++++ b/tools/liquid-audio/runner.cpp
+@@ -265,6 +265,8 @@
+ 
+         n_predict = n_predict < 0 ? std::numeric_limits<int>::max() : n_predict;
+         std::vector<float> embd(llama_model_n_embd(ctx.model));
++        // batch.token is read by the following iteration; keep storage alive.
++        llama_token next_text_token = LLAMA_TOKEN_NULL;
+         for (int i = 0; i < n_predict; i++) {
+             if (i > n_predict || stop_requested) {
+                 LOG("\n");
+@@ -282,7 +284,7 @@
+             auto * mctx = ctx.mtmd_ctx_audio.get();
+ 
+             if (mtmd_get_output_modality(mctx) == MTMD_OUTPUT_MODALITY_TEXT) {
+-                llama_token next_text_token = common_sampler_sample(ctx.smpl, ctx.lctx, -1);
++                next_text_token = common_sampler_sample(ctx.smpl, ctx.lctx, -1);
+                 common_sampler_accept(ctx.smpl, next_text_token, true);
+ 
+                 if (llama_vocab_is_eog(ctx.vocab, next_text_token)) {

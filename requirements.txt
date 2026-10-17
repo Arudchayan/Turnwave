@@ -1,0 +1,5 @@
+sounddevice>=0.4.6
+numpy>=1.26
+pywebrtc-audio>=0.2.0
+silero-vad>=6.2.0
+onnxruntime>=1.20

@@ -1,0 +1,38 @@
+--- a/tools/liquid-audio/server.cpp
++++ b/tools/liquid-audio/server.cpp
+@@ -390,13 +390,15 @@
+             // Create output buffer and enqueue work
+             auto output = std::make_shared<OutputBuffer>();
+ 
+-            auto check_abort = [&req, output, &runner, &is_server_running]() {
++            auto connection_closed = req.is_connection_closed;
++            auto check_abort = [connection_closed, output, &runner, &is_server_running]() {
+                 if (output->aborted.load()) {
++                    runner.stop();
+                     return;
+                 }
+                 bool should_abort = !is_server_running.load();
+-                if (!should_abort && req.is_connection_closed) {
+-                    should_abort = req.is_connection_closed();
++                if (!should_abort && connection_closed) {
++                    should_abort = connection_closed();
+                 }
+                 if (should_abort && !output->aborted.exchange(true)) {
+                     LOG_INF("Aborting generation\n");
+@@ -443,6 +445,16 @@
+                     }
+ 
+                     return true;
++                }, [output](bool) {
++                    // Response teardown can follow a disconnect without another
++                    // provider call. Notify only this work item; its worker will
++                    // stop the runner, avoiding a late stop of a newer request.
++                    if (!output->done.load()) {
++                        if (!output->aborted.exchange(true)) {
++                            LOG_INF("Aborting unfinished response\n");
++                        }
++                        output->cv.notify_all();
++                    }
+                 });
+ 
+             res.status = 200;

@@ -1,0 +1,25 @@
+--- a/tools/mtmd/mtmd.cpp
++++ b/tools/mtmd/mtmd.cpp
+@@ -1234,6 +1234,10 @@
+ 
+ void mtmd_audio_output_start_new_turn(mtmd_context * ctx) {
+     GGML_ASSERT(mtmd_support_audio_output(ctx));
++    // A cancelled/token-limited turn can leave the previous modality on AUDIO.
++    // Prefill always supplies text; do not decode its embedding as audio.
++    ctx->output_modality = MTMD_OUTPUT_MODALITY_TEXT;
++    ctx->audio_output_outstanding_pcm16.clear();
+     ctx->audio_decoder->start_new_turn();
+ }
+ 
+--- a/tools/liquid-audio/runner.cpp
++++ b/tools/liquid-audio/runner.cpp
+@@ -145,6 +145,9 @@
+             msgs.push_back(msg);
+         }
+ 
++        // An interrupted audio step left embedding mode enabled. Prefill
++        // and the first backbone sample of a new turn require text logits.
++        llama_set_embeddings(ctx.lctx, false);
+         if (eval_messages(msgs, ctx.n_past == 0)) {
+             return error("failed to run prefill");
+         }

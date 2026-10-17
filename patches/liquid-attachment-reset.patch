@@ -1,0 +1,19 @@
+--- a/tools/liquid-audio/runner.cpp
++++ b/tools/liquid-audio/runner.cpp
+@@ -122,6 +122,8 @@
+             }
+         }
+ 
++        // Attachments belong to this request, including after an aborted prefill.
++        ctx.bitmaps.entries.clear();
+         std::vector<common_chat_msg> msgs;
+         for (const auto & message : messages) {
+             if (message.role == "user") {
+@@ -226,6 +228,7 @@
+         llama_memory_clear(llama_get_memory(ctx.lctx), false);
+         ctx.n_past = 0;
+         pending_eot = LLAMA_TOKEN_NULL;  // fresh context: nothing to carry over
++        ctx.bitmaps.entries.clear();
+     }
+ 
+     int get_output_sample_rate() const {
