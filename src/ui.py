@@ -87,6 +87,7 @@ e.className=ts!=null?'done':(ph===activePh?'active':'');
 e.textContent=(ts!=null?'✓ ':'')+STLBL[id];}
 const $=id=>document.getElementById(id);
 let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
+let lastDeviceIndex=null,deviceVersion=0;
 const pendingActions=new Set();
 function renderAlerts(){
 let s=lastState;
@@ -119,7 +120,13 @@ $('micbtn').textContent=lastMicOn?'mute mic':'unmute mic';};
 $('intbtn').onclick=()=>action('intbtn','/api/interrupt');
 $('newbtn').onclick=()=>action('newbtn','/api/reset');
 $('tstbtn').onclick=()=>action('tstbtn','/api/test');
-$('micsel').onchange=e=>action('micsel','/api/micdev',{index:+e.target.value});
+$('micsel').onchange=async e=>{
+let sel=$('micsel'),value=String(e.target.value);
+if(pendingActions.has('micsel')||value===''||!Number.isSafeInteger(+value)||+value<0||
+!Array.from(sel.options).some(o=>o.value===value))return;
+deviceVersion++;
+if(await action('micsel','/api/micdev',{index:+value}))lastDeviceIndex=value;
+sel.value=lastDeviceIndex??'';};
 function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
@@ -128,6 +135,7 @@ async function tick(){
 try{
 let observedMicVersion=micVersion;
 let observedMicPending=pendingActions.has('micbtn');
+let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
 let s=await(await fetch('/api/state')).json();
 lastState=s;
 let st=$('st');st.textContent=s.status+(s.mic_on?'':' (muted)')+' · '+s.mic;st.className=s.status;
@@ -139,10 +147,11 @@ $('srvlbl').textContent=ok?'server connected (local :8080)':'SERVER OFFLINE — 
 renderAlerts();
 $('m_ttft').textContent=s.last_ttft??'—';$('m_aud').textContent=s.last_audio_s??'—';
 $('m_turn').textContent=s.last_turn_s??'—';$('m_n').textContent=s.turns;
-if(s.mics){let sel=$('micsel');
-if(sel.options.length!==s.mics.length){sel.innerHTML='';
-s.mics.forEach(([i,n])=>{let o=document.createElement('option');o.value=i;o.textContent=n;sel.appendChild(o);});}
-sel.value=s.mic_index;}
+if(Array.isArray(s.mics)&&!observedDevicePending&&observedDeviceVersion===deviceVersion&&!pendingActions.has('micsel')){
+let sel=$('micsel'),roster=s.mics.map(([i,n])=>[String(i),String(n)]);
+if(sel.options.length!==roster.length||roster.some(([i,n],j)=>sel.options[j].value!==i||sel.options[j].textContent!==n)){
+sel.innerHTML='';roster.forEach(([i,n])=>{let o=document.createElement('option');o.value=i;o.textContent=n;sel.appendChild(o);});}
+lastDeviceIndex=String(s.mic_index);sel.value=lastDeviceIndex;}
 let log=$('log');
 if(s.transcript_revision!==lastRevision){log.innerHTML='';
 s.transcript.forEach(t=>log.appendChild(bubble(t)));lastRevision=s.transcript_revision;}

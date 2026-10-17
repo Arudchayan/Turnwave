@@ -29,6 +29,11 @@ per control and show request failures/timeouts beside existing warnings. An
 unrelated pending control does not disable interruption. Stale state polls
 cannot reverse a completed microphone intent.
 
+The device menu compares the complete ordered index/label catalog rather than
+only its size. Pending device choices and completed choices are protected from
+state polls begun before or during that action. Failed changes restore the last
+confirmed choice; a fresh poll can reconcile the actual server state.
+
 Microphone indices belong to the app's PortAudio inventory. Automation should
 match the full `mic_devices` descriptors returned by `/api/state` and submit that
 app-local index to `/api/micdev`; an index from another process can identify a
