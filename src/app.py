@@ -466,6 +466,7 @@ class Assistant:
             self._messages.clear()
             self.transcript_revision += 1
             self._capture_reset.set()
+            self.mic.drain()
             self.heard_at = self.gen_start = self.first_audio_at = None
             self.error = None
             self.status = 'listening'
