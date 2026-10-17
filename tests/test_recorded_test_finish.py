@@ -6,9 +6,29 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.synth.finish_recorded_test import finish, _mute
+from src.synth.finish_recorded_test import finish as _finish, _mute
 from src.synth.checkpoint_experiment import checkpoint, verify_checkpoint
 from src.session_archive import SessionArchive
+
+
+def finish(*args, **kwargs):
+    """Legacy finalizer fixtures explicitly simulate the new app handshake.
+
+    No injected-state test may fall through to the real running app's HTTP API.
+    Dedicated fence tests exercise refused/unsupported/real fake-app seals.
+    """
+    if 'read_state' in kwargs and 'seal_archive' not in kwargs:
+        read_state = kwargs['read_state']
+        sealed = False
+        def seal(expected):
+            nonlocal sealed
+            sealed = True
+            return {'ok': True, 'archive_session': expected, 'archive_sealed': True}
+        def state():
+            value = read_state()
+            return dict(value, archive_sealed=True) if sealed else value
+        kwargs.update(read_state=state, seal_archive=seal)
+    return _finish(*args, **kwargs)
 
 
 class Clock:
@@ -276,7 +296,7 @@ def test_app_state_is_revalidated_after_recorder_finishes(tmp_path, change):
     def state():
         calls.append(True)
         result = idle()
-        if len(calls) >= 3:
+        if len(calls) >= 4:  # Extra read verifies the app's seal before STOP_AUDIO.
             result.update(change)
         return result
     with pytest.raises(RuntimeError):

@@ -47,7 +47,11 @@ C:/Python312/python.exe -m src.synth.finish_recorded_test outputs/experiments/<n
 ```
 
 The helper mutes capture without cancelling the reply, waits for generation,
-playback and archive completion, then signals the selected recorder to stop.
+playback and archive completion, then asks the app to seal the exact session.
+The app must acknowledge that it is muted, fully drained and sealed before the
+helper signals the selected recorder to stop. A sealed app rejects microphone
+enable, new audio submissions and speaker checks. Its per-turn archive retains
+a durable seal so later activity cannot append to the finalized source.
 It verifies closed physical WAVs and finalized per-turn files before copying
 the whole experiment. App state and source hashes are checked again after
 copying. The success receipt is `finalization-receipt.json` beside the backup's
@@ -55,8 +59,11 @@ checkpoint manifest, outside its immutable experiment snapshot.
 
 Timeouts, incomplete archives, external archive paths and changed files produce
 an explicit failed attempt rather than a verified session claim. Playback-wait
-timeouts leave the recorder running. Failures after the recorder has stopped
-preserve the closed files without claiming a complete checkpoint.
+timeouts leave the recorder running. Missing or mismatched seal acknowledgements
+also fail before recorder stop. Failures after sealing do not reopen the session;
+failures after recorder stop preserve closed files without claiming a complete
+checkpoint. An older running app without seal support must be updated before
+using this finalizer; changing files on disk does not update the loaded app.
 
 Use the standard observer protocol (`experiment.json` with `watch_minutes`,
 STOP and finished.json). An ad-hoc observer directory needs explicit completion
@@ -64,9 +71,11 @@ before finalization; ambiguous processes are never killed automatically.
 
 The helper does not extend an independent recorder's deadline or repair audio
 already missed. A finalized snapshot is not proof of intelligibility, complete
-physical coverage, correct answers or an off-device backup. Explicit later
-app activity can create new turns requiring another finalization. Respect
-user-requested deletion; never restore removed material from old copies.
+physical coverage, correct answers or an off-device backup. Recording again
+requires a new app session with a fresh archive directory; an already sealed
+experiment is not reopened for another test. Historical finalizers did not
+enforce this fence, so their existing snapshots remain historical evidence.
+Respect user-requested deletion; never restore removed material from old copies.
 
 Successful-write accounting applies from batch 4 onward. Older recordings used
 pre-write callbacks for this count, so a failed write could overstate submissions

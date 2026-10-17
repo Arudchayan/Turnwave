@@ -27,9 +27,16 @@ def _exclusive_json(path, value):
         os.fsync(stream.fileno())
 
 
+class ArchiveSealedError(RuntimeError):
+    """A finalized recording session cannot accept more activity."""
+
+
 class SessionArchive:
     def __init__(self, folder):
-        self.folder = Path(folder)
+        self.folder = Path(folder).resolve()
+        self._lock = threading.RLock()
+        self._turns = []
+        self._sealed = False
         self.folder.mkdir(parents=True, exist_ok=False)
         _exclusive_json(self.folder / 'session.json', {
             'version': 1, 'opt_in_recording': True,
@@ -41,7 +48,35 @@ class SessionArchive:
         name = str(turn_id)
         if not name or name in {'.', '..'} or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in name):
             raise ValueError('Turn id must contain only letters, numbers, underscore or hyphen')
-        return TurnArchive(self.folder / ('turn-' + name), name, wav_bytes, first, test)
+        with self._lock:
+            if self.sealed:
+                raise ArchiveSealedError('This recording is finalized. Start a new session to continue.')
+            turn = TurnArchive(self.folder / ('turn-' + name), name, wav_bytes, first, test)
+            self._turns.append(turn)
+            return turn
+
+    @property
+    def sealed(self):
+        with self._lock:
+            # Even an incomplete marker from a failed write fences new writers.
+            return self._sealed or (self.folder / 'sealed.json').exists()
+
+    def seal(self):
+        """Close a drained session permanently, serialized against begin_turn."""
+        with self._lock:
+            if any(not turn.status()['checkpoint_safe'] for turn in self._turns):
+                raise RuntimeError('Recording still has unfinished turns')
+            marker = self.folder / 'sealed.json'
+            expected = {'version': 1, 'archive_session': str(self.folder), 'sealed': True}
+            if marker.exists():
+                if json.loads(marker.read_text(encoding='utf-8')) != expected:
+                    raise RuntimeError('Recording seal marker is invalid')
+                with marker.open('r+b') as stream:
+                    os.fsync(stream.fileno())
+            else:
+                _exclusive_json(marker, expected)
+            self._sealed = True
+            return expected
 
 
 class TurnArchive:

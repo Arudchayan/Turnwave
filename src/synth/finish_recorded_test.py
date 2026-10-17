@@ -36,6 +36,14 @@ def _mute(base):
         return json.load(response)
 
 
+def _seal(base, expected_session):
+    request = Request(base + '/api/archive/seal',
+                      data=json.dumps({'expected_session': expected_session}).encode('utf-8'),
+                      method='POST', headers={'Content-Type': 'application/json'})
+    with urlopen(request, timeout=2) as response:
+        return json.load(response)
+
+
 def _session(folder):
     folder = Path(folder).resolve(strict=True)
     if not folder.is_dir():
@@ -156,7 +164,7 @@ def _quiescent(state):
 
 def finish(folder, app_base='http://127.0.0.1:8000', timeout_s=30, *,
            read_state=None, mute_mic=None, clock=None, sleep=None,
-           make_checkpoint=None, check_checkpoint=None):
+           make_checkpoint=None, check_checkpoint=None, seal_archive=None):
     """Return a verified checkpoint receipt, or raise with an archived error.
 
     Injectable helpers allow hardware-free tests. Timeout is shared by playback,
@@ -171,6 +179,7 @@ def finish(folder, app_base='http://127.0.0.1:8000', timeout_s=30, *,
     app_base = app_base.rstrip('/')
     read_state = read_state or (lambda: _state(app_base))
     mute_mic = mute_mic or (lambda: _mute(app_base))
+    seal_archive = seal_archive or (lambda expected: _seal(app_base, expected))
     clock, sleep = clock or time.monotonic, sleep or time.sleep
     make_checkpoint = make_checkpoint or checkpoint
     check_checkpoint = check_checkpoint or verify_checkpoint
@@ -204,6 +213,18 @@ def finish(folder, app_base='http://127.0.0.1:8000', timeout_s=30, *,
                 break
             wait_tick('Playback did not drain; recorder was not stopped')
         _verify_turn_archive(folder, state)
+        expected_session = state.get('archive_session')
+        ack = seal_archive(expected_session)
+        if (not isinstance(ack, dict) or ack.get('ok') is not True
+                or ack.get('archive_sealed') is not True
+                or 'archive_session' not in ack or ack['archive_session'] != expected_session):
+            raise RuntimeError('App did not acknowledge the exact recording session seal')
+        sealed_state = read_state()
+        if (not _quiescent(sealed_state) or sealed_state.get('archive_error')
+                or sealed_state.get('archive_sealed') is not True
+                or sealed_state.get('archive_session') != expected_session):
+            raise RuntimeError('App recording seal is unverified; recorder was not stopped')
+        state = sealed_state
         record('recording-stop', app_state=state)
         (audio / 'STOP_AUDIO').touch(exist_ok=True)
         while not (audio / 'audio-finished.json').is_file():
@@ -224,7 +245,7 @@ def finish(folder, app_base='http://127.0.0.1:8000', timeout_s=30, *,
             while not (folder / 'observer' / 'finished.json').is_file():
                 wait_tick('Observer completion is unverified; finish the owned observer explicitly before checkpointing')
         final_state = read_state()
-        if not _quiescent(final_state):
+        if not _quiescent(final_state) or final_state.get('archive_sealed') is not True:
             raise RuntimeError('App became active during finalization; no checkpoint created')
         if final_state.get('archive_session') != state.get('archive_session'):
             raise RuntimeError('App archive session changed during finalization; no checkpoint created')
@@ -235,6 +256,7 @@ def finish(folder, app_base='http://127.0.0.1:8000', timeout_s=30, *,
         checked = check_checkpoint(destination)
         after_copy = read_state()
         if (not _quiescent(after_copy) or after_copy.get('archive_error')
+                or after_copy.get('archive_sealed') is not True
                 or after_copy.get('archive_session') != final_state.get('archive_session')):
             raise RuntimeError('App changed during checkpoint; saved copy is historical, finalization is incomplete')
         copied = json.loads((destination / 'checkpoint.json').read_text(encoding='utf-8'))

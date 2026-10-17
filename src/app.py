@@ -8,6 +8,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import numpy as np
 
@@ -16,6 +17,7 @@ from client import ServerClient, Turn, wav16k_bytes
 from duplex import DuplexFrontend
 from diagnostics import Diagnostics, source_fingerprint
 from ui import PAGE
+from session_archive import ArchiveSealedError
 
 UI_PORT = 8000
 
@@ -65,6 +67,7 @@ class Assistant:
         self._archive_pending = set()
         self._archive_faults = set()
         self.session_archive = session_archive
+        self._recording_sealed = False
         self.archive_error = None
         self._epoch = 0
         self._next_id = 0
@@ -266,6 +269,7 @@ class Assistant:
     def submit_audio(self, audio):
         wav = wav16k_bytes(audio)
         with self._lock:
+            self._require_recording_open()
             self.interrupt('new turn', announce=False)
             self.error = None
             self._job_id += 1
@@ -463,10 +467,47 @@ class Assistant:
         with self._lock:
             self.set_mic_enabled(not self.mic_on)
 
+    def _archive_sealed(self):
+        return self._recording_sealed or bool(getattr(self.session_archive, 'sealed', False))
+
+    def _require_recording_open(self):
+        if self._archive_sealed():
+            raise ArchiveSealedError('This recording is finalized. Start a new session to continue.')
+
+    def seal_archive(self, expected_session):
+        """Atomically fence new activity after verifying the exact drained session."""
+        if expected_session is not None:
+            if (not isinstance(expected_session, str) or not expected_session
+                    or len(expected_session) > 4096 or '\x00' in expected_session
+                    or not Path(expected_session).is_absolute()):
+                raise ValueError('Expected session must be an absolute local path or null')
+            expected = Path(expected_session).resolve()
+        else:
+            expected = None
+        with self._lock:
+            actual = self.session_archive.folder.resolve() if self.session_archive is not None else None
+            if actual != expected:
+                raise ValueError('Recording session identity differs')
+            if (self.mic_on or self._active is not None or self._pending_jobs
+                    or bool(getattr(self.player, 'playing', False)) or self._archive_pending
+                    or self.archive_error or self.status not in {'listening', 'error'}):
+                raise RuntimeError('Turn off the microphone and wait for the reply to finish.')
+            if self.session_archive is not None:
+                try:
+                    self.session_archive.seal()
+                except Exception as exc:
+                    self.archive_error = 'Recording could not be sealed: ' + str(exc)
+                    raise
+            self._recording_sealed = True
+            return {'ok': True, 'archive_session': str(actual) if actual is not None else None,
+                    'archive_sealed': True}
+
     def set_mic_enabled(self, enabled):
         if not isinstance(enabled, bool):
             raise ValueError('Microphone enabled must be boolean')
         with self._lock:
+            if enabled:
+                self._require_recording_open()
             if self.mic_on == enabled:
                 return
             self.mic_on = enabled
@@ -530,6 +571,7 @@ class Assistant:
 
     def test_speaker(self):
         with self._lock:
+            self._require_recording_open()
             self.interrupt('speaker test', announce=False)
             self._job_id += 1
             job = Job(epoch=self._epoch, test=True, id=self._job_id)
@@ -562,6 +604,7 @@ class Assistant:
                         playback_active=playing,
                         archive_pending=len(self._archive_pending),
                         archive_session=str(self.session_archive.folder) if self.session_archive is not None else None,
+                        archive_sealed=self._archive_sealed(),
                         archive_error=self.archive_error,
                         recording_safe=not self.mic_on and self._active is None and not self._pending_jobs and not playing and not self._archive_pending and not self.archive_error,
                         mic=self.mic_name(), mic_index=self.mic_index(), mics=self._mics,
@@ -638,7 +681,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reject_body('{"error":"Request too large"}', 413, length)
             raw = self.rfile.read(length)
             assistant = self.server.assistant
-            if self.path == '/api/mic':
+            if self.path == '/api/archive/seal':
+                desired = json.loads(raw)
+                if not isinstance(desired, dict) or set(desired) != {'expected_session'}:
+                    raise ValueError('Expected recording session identity')
+                try:
+                    result = assistant.seal_archive(desired['expected_session'])
+                except (RuntimeError, OSError) as exc:
+                    self._send(json.dumps({'error': str(exc)}), 409)
+                    return
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/mic':
                 if raw.strip():
                     desired = json.loads(raw)
                     if not isinstance(desired, dict):
@@ -663,6 +717,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self._send('{"error":"Not found"}', 404)
             self._send('{"ok":true}')
+        except ArchiveSealedError as exc:
+            self._send(json.dumps({'error': str(exc)}), 409)
         except (ValueError, KeyError):
             self._send('{"error":"Invalid request"}', 400)
 
