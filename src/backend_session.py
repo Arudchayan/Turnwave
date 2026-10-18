@@ -45,7 +45,7 @@ def backend_session(base='http://127.0.0.1:8080', *, test=False, directory=None)
                 fcntl.flock(handle.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
             locked=True
         except OSError as exc:
-            raise RuntimeError('Another LocalVoice app or test owns this backend context. Let it finish before starting another.') from exc
+            raise RuntimeError('Another Turnwave app or test owns this backend context. Let it finish before starting another.') from exc
         yield
     finally:
         if locked:

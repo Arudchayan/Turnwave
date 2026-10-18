@@ -1,18 +1,43 @@
-# LocalVoice
+# Turnwave
 
-An experimental local voice assistant for Windows and WSL2, built around
-LiquidAI LFM2.5-Audio-1.5B and the Liquid audio server.
+An experimental local speech-to-speech assistant for Windows and WSL2, built
+around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner.
 
-The app keeps listening while a turn-based speech model generates a reply.
-Speaking over a reply can cancel playback and start a replacement turn. This
-is application-level interruption handling, not a native full-duplex model.
+The app listens while the model replies and can cancel playback when you speak.
+This is application-level interruption around a turn-based audio model. Natural
+pauses, echo and response quality remain open problems; smooth conversation is
+not yet a demonstrated result.
 
-## Status
+[Architecture](docs/ARCHITECTURE.md) · [Results and lessons](docs/RESULTS.md) ·
+[Listen to actual synthetic replies](research/examples/README.md) ·
+[Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
-Capture, playback, cancellation, error recovery and optional recording have
-regression tests. Natural pauses, speaker echo, exact instruction following
-and model memory still have known failures. See
-[known limitations](docs/KNOWN_LIMITATIONS.md) before relying on it.
+```mermaid
+flowchart LR
+    Mic[Microphone] --> Capture[Echo processing / VAD / capture]
+    Capture --> Model[Local audio model in WSL]
+    Model --> Player[Streaming playback]
+    Player --> Speaker[Speaker]
+    Player -->|render reference| Capture
+```
+
+Previously named LocalVoice. Existing `LOCALVOICE_*` settings, cache locations
+and archive formats remain compatible; the public project and interface are now
+**Turnwave**.
+
+## What the evidence supports
+
+| Work | Finding | Status |
+| --- | --- | --- |
+| Final-block playback race | Forced regression: 0/2,003 → 2,003/2,003 samples played | Fixed and regression-tested |
+| Semantic completion screen | Faster completion gains also released four unfinished prefixes | Rejected |
+| Selective opening capture | Six paired cases produced identical captured bytes | Not adopted |
+| Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
+| Public audio examples | One text-rubric pass and one ownership failure, with separate ASR | Genuine saved synthetic replies |
+
+Read [results](docs/RESULTS.md) for denominators, source pins and limits. The charts
+come from included numerical observations, not illustrative invented data. Unit
+passes, synthetic evidence, generated content and physical listening are distinct.
 
 ## Prerequisites
 
@@ -21,11 +46,22 @@ and model memory still have known failures. See
 - A compatible Liquid audio native runner and separately obtained model files.
 - Suitable hardware for the selected runner; performance depends on hardware.
 
-The local runner integration targets upstream source revision `ec9d1fdd9` from
-llama.cpp PR #18641. Native toolchains and models are external prerequisites,
-not bundled installers. Review their licenses and compatibility independently.
-The scripts in `src/` include historical rootless CUDA build helpers; inspect
-those before running them. They can download dependencies and modify a build.
+The native integration pins llama.cpp PR #18641 commit
+`ec9d1fdd9cc18643c5e161b65b8053f6f6f34a4b`. Obtain the source checkout,
+model assets and toolchains separately; review [their terms](docs/THIRD_PARTY.md).
+For an optional CUDA build, activate CMake, compatible CUDA 13 `nvcc` and a host
+C++ compiler in WSL, then run from the repository root:
+
+```bash
+bash src/build_cuda_server.sh
+```
+
+The helper expects an existing checkout at `~/liquid-build`, verifies the exact
+revision and accepts clean source or the complete reviewed patch set. It does
+not clone, fetch, reset or install prerequisites. WSL environment overrides are
+`LOCALVOICE_RUNNER_SOURCE`, `LOCALVOICE_RUNNER_BUILD_DIR`,
+`LOCALVOICE_BUILD_JOBS` and `CUDACXX`. The build contract has fake-command tests;
+a clean-machine native build has not been validated for this release.
 
 ## Setup and run
 
@@ -46,7 +82,8 @@ The launcher prefers a local runner under `~/liquid-build/build/bin` inside
 WSL. `LOCALVOICE_GPU_RUNNER` can select another runner directory; a prebuilt
 runner may instead be placed under `models/runner/llama-liquid-audio-ubuntu-x64`.
 Keep the required shared libraries with the runner. Stop the server before
-applying the reviewed patches using `src/apply_runner_fixes.sh`.
+applying the complete five-patch set using `src/apply_runner_fixes.sh`; that
+helper patches the same existing checkout and rebuilds the server.
 
 From the repository root, start the backend:
 
@@ -86,66 +123,39 @@ Optional CPU recognizer evaluations use `requirements-eval.txt` and separately
 obtained local weights. Exploratory tools under `src/synth/` have additional
 prerequisites; they are not the default test suite.
 
-### Offline content benchmark preparation
 
-`src/synth/content_benchmark.py` prepares local, already obtained benchmark WAVs
-and exports grading inputs. It does not download datasets, start a model, run
-judges or play audio. A manifest records `version: 1`, the dataset name, its
-40-character source revision, and a nonempty `cases` list. Each case has a safe
-unique `id`, `subset` (`ifeval` or `openbookqa`), relative `audio` path, input
-`sha256`, and original scorer `metadata`. Inputs must be nonempty 16 kHz mono
-PCM16 WAVs. Check dataset terms and keep audio/manifests under ignored local data.
+## Research and reproducibility
 
-```powershell
-python src/synth/content_benchmark.py prepare data/benchmark/manifest.json outputs/benchmark-prepared
-python src/synth/content_benchmark.py export outputs/benchmark-run outputs/benchmark-grades --asr outputs/benchmark-asr.json
-```
+[The research index](research/README.md) connects measured observations, charts,
+decisions and examples. [Evaluation](docs/EVALUATION.md) explains how to run the
+offline tests, regenerate charts and prepare content-benchmark inputs. Published
+data reproduce reported counts and figures; exact historical neural reruns also
+require assets and source inputs that are not all distributed here. The 24-case
+content slice is not a full VoiceBench score or a leaderboard claim.
 
-Every destination must be new. There is no inference CLI: the Python API takes
-an explicit client, with exclusive backend test ownership for actual requests.
-Stop the app before model tests, even while muted. Preserve the exact generated
-float32 audio and model text separately. Independent ASR transcripts must identify
-their recognizer and match the generated-audio hash; missing transcripts never
-fall back to model text. Grade exports retain failed cases for review rather
-than treating them as ordinary completed answers. Run upstream VoiceBench
-scoring separately after inspecting these artifacts.
+## Recording and publication
 
-The upstream multiple-choice scorer can randomly guess when it cannot extract
-an answer, including from a blank failed response. Keep any seeded upstream
-score separate from acceptance: require an eligible completed case and a
-parseable correct answer. Scores from a small adapted slice are not leaderboard
-results, and speech-transcript errors still require listening review.
+Normal launches write private diagnostics under `outputs/logs/`. Audio archiving
+is opt-in; see [data handling](docs/PRIVACY.md) and [recorded sessions](docs/RECORDED_SESSIONS.md).
+Muted startup opens the input device but does not submit microphone turns.
+Keep these loopback services local; they have no multi-user authentication.
 
-This adapter is a content-test boundary, not a full benchmark result or an
-end-to-end voice latency measurement. It bypasses microphone turn detection;
-pause, echo, interruption, room audio and human intelligibility require separate
-evaluation.
+Raw experiments, human recordings, requests, weights, secrets and internal agent
+notes stay out of Git. The only audio publication exception is the two reviewed,
+hash-pinned **generated** reply WAVs under `research/examples/`; source inputs
+and raw sessions remain private. [Publication checks](docs/PUBLICATION.md) enforce
+an exact asset allowlist and hashes, with manual review still required.
 
-## Recording and privacy
-
-Normal launches write private local diagnostics under `outputs/logs/`.
-Audio archiving is opt-in. See [data handling](docs/PRIVACY.md) and
-[recorded sessions](docs/RECORDED_SESSIONS.md) before recording participants.
-A successful output write is distinct from proof that every sample was heard.
-
-Models, audio, outputs, credentials, local agent notes and historical research
-reports are excluded from publication. Do not expose the UI/backend publicly;
-they are local services without multi-user authentication.
-
-## Repository guide
+## Repository map and terms
 
 - `src/`: application, audio pipeline and native runner helpers.
-- `src/synth/`: optional synthetic/recorded evaluation and research tools.
-- `tests/`: automated regression tests with generated fixtures.
-- `patches/`: local changes against the pinned external native runner.
-- `docs/`: architecture, known limitations, privacy and operational guidance.
+- `src/synth/`: optional evaluation and research tools with additional prerequisites.
+- `tests/`: generated-fixture and simulated-device regressions.
+- `patches/`: reviewed changes against the pinned external runner.
+- `docs/`, `research/`: architecture, evidence, limitations and curated examples.
 
-Read [architecture](docs/ARCHITECTURE.md), [contributing](CONTRIBUTING.md),
-[security](SECURITY.md), and [publication guidance](docs/PUBLICATION.md).
-Third-party model and runner terms are independent of this application.
-
-## Licensing
-
-The original application code is currently unlicensed by the maintainer's
-choice; no open-source license has been granted. External dependencies,
-model weights, native runner sources and derived patches retain their own terms.
+The original application code is **unlicensed by maintainer choice**; no
+open-source application license has been granted. Models, dependencies, native
+runner and derived patches retain separate [third-party terms](docs/THIRD_PARTY.md).
+See [contributing](CONTRIBUTING.md), [security](SECURITY.md) and
+[publication guidance](docs/PUBLICATION.md).

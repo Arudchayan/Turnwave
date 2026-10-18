@@ -1,4 +1,4 @@
-"""LocalVoice: continuous listening, cancellable turns, and a local web UI."""
+"""Turnwave: continuous listening, cancellable turns, and a local web UI."""
 import collections
 import json
 import math
@@ -828,7 +828,7 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
     assistant.start()
-    print(f'LocalVoice on http://localhost:{UI_PORT}', flush=True)
+    print(f'Turnwave on http://localhost:{UI_PORT}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

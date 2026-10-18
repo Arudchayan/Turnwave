@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "study": "fixed-endpoint-audio-or",
+  "rule": "current ready Namo label == 1 OR final probability from the last complete Turn-1 step > 0.5",
+  "threshold_origin": "Publisher example comparator, distinct from the separate 0.06 benchmark comparator; not calibrated or fitted here.",
+  "decision": "rejected",
+  "cases": [
+    {
+      "id": "pair01-complete",
+      "authored_role": "complete",
+      "current_helper_text": "Why?",
+      "namo_label": 0,
+      "audio_score": 0.8594349026679993,
+      "combined_positive": true,
+      "prefix_samples": 15040,
+      "unqueried_residual_samples": 2240,
+      "input_prefix_sha256": "2b1c49740b622bf7938a74c92be553ecd0a75879140923af02d2b5eda9344334"
+    },
+    {
+      "id": "pair01-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "Because the train",
+      "namo_label": 0,
+      "audio_score": 0.07123181223869324,
+      "combined_positive": false,
+      "prefix_samples": 24640,
+      "unqueried_residual_samples": 1600,
+      "input_prefix_sha256": "6078417939421c1aa8901db18a231dd5fc3621499ad2b91fde4e7acba5d5a2d1"
+    },
+    {
+      "id": "pair02-complete",
+      "authored_role": "complete",
+      "current_helper_text": "Really?",
+      "namo_label": 0,
+      "audio_score": 0.2833358645439148,
+      "combined_positive": false,
+      "prefix_samples": 16640,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "b52e22146473a03096cbf91f52762cd448a01da3fc113a74e9aebc281d625201"
+    },
+    {
+      "id": "pair02-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "If the train is",
+      "namo_label": 0,
+      "audio_score": 0.20769935846328735,
+      "combined_positive": false,
+      "prefix_samples": 21760,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "1eae31a82d006d470f0cafe2eddb91e2180f3d8d62244b092e6f881318ed9dcf"
+    },
+    {
+      "id": "pair03-complete",
+      "authored_role": "complete",
+      "current_helper_text": "Again, please.",
+      "namo_label": 1,
+      "audio_score": 0.7249965071678162,
+      "combined_positive": true,
+      "prefix_samples": 32000,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "8c498d2875b0ccdba55481ab90095092f42d26624d14e186e5241981e0a525c3"
+    },
+    {
+      "id": "pair03-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "Before you.",
+      "namo_label": 0,
+      "audio_score": 0.6518938541412354,
+      "combined_positive": true,
+      "prefix_samples": 19520,
+      "unqueried_residual_samples": 1600,
+      "input_prefix_sha256": "42620c6662a3e34860b779f688e5609b29189a9e696064aa981d00837c7b906b"
+    },
+    {
+      "id": "pair04-complete",
+      "authored_role": "complete",
+      "current_helper_text": "Which one?",
+      "namo_label": 1,
+      "audio_score": 0.8409297466278076,
+      "combined_positive": true,
+      "prefix_samples": 19200,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "09174643f1162187fd707a3b0fe5f4849fd52b40c9276c8017b3333e9bd4d9c0"
+    },
+    {
+      "id": "pair04-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "Please put the",
+      "namo_label": 0,
+      "audio_score": 0.5572367906570435,
+      "combined_positive": true,
+      "prefix_samples": 23040,
+      "unqueried_residual_samples": 0,
+      "input_prefix_sha256": "4613c3f74734adc049439240fd6c17c114e7282e1cf57e026ecb101af8b28270"
+    },
+    {
+      "id": "pair05-complete",
+      "authored_role": "complete",
+      "current_helper_text": "Yes.",
+      "namo_label": 1,
+      "audio_score": 0.27428925037384033,
+      "combined_positive": true,
+      "prefix_samples": 16960,
+      "unqueried_residual_samples": 1600,
+      "input_prefix_sha256": "41e2fb22b1000f13ebb7aee28dc6b7bb6815d38c440137578d8ee3f6ab166cbf"
+    },
+    {
+      "id": "pair05-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "The answer is",
+      "namo_label": 0,
+      "audio_score": 0.2193613052368164,
+      "combined_positive": false,
+      "prefix_samples": 24320,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "8062b223e85ef4942147748a0e924988efb90375cd09c644931623d4142a0ed7"
+    },
+    {
+      "id": "pair06-complete",
+      "authored_role": "complete",
+      "current_helper_text": "No.",
+      "namo_label": 1,
+      "audio_score": 0.05919855833053589,
+      "combined_positive": true,
+      "prefix_samples": 14400,
+      "unqueried_residual_samples": 1600,
+      "input_prefix_sha256": "d9437f570794ee566005b2b5f4093d24ac5a90db7807d0a59e132c92f7afefb1"
+    },
+    {
+      "id": "pair06-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "I was going to.",
+      "namo_label": 0,
+      "audio_score": 0.3829623758792877,
+      "combined_positive": false,
+      "prefix_samples": 24640,
+      "unqueried_residual_samples": 1600,
+      "input_prefix_sha256": "c73568427f5faa3c4a570be844d8a4b8b26cca880b3ae966b53c6151703a22df"
+    },
+    {
+      "id": "pair07-complete",
+      "authored_role": "complete",
+      "current_helper_text": "Mug.",
+      "namo_label": 1,
+      "audio_score": 0.7731279134750366,
+      "combined_positive": true,
+      "prefix_samples": 16960,
+      "unqueried_residual_samples": 1600,
+      "input_prefix_sha256": "03055e5d88a9cb7403ea9b2776383d81e46b9c81535947c1dd9eef29e175a435"
+    },
+    {
+      "id": "pair07-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "Which one should?",
+      "namo_label": 0,
+      "audio_score": 0.9080439209938049,
+      "combined_positive": true,
+      "prefix_samples": 23680,
+      "unqueried_residual_samples": 640,
+      "input_prefix_sha256": "41bbd3d85baac5a835b7be59182d6b5f0699b4bc9e44c5ab269ba26037a7dfb3"
+    },
+    {
+      "id": "pair08-complete",
+      "authored_role": "complete",
+      "current_helper_text": "And you?",
+      "namo_label": 0,
+      "audio_score": 0.6877183318138123,
+      "combined_positive": true,
+      "prefix_samples": 16640,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "bbb3d843fe73c4ce33eedad4997e8b4fd6910b51e17ecd4a6a64cef18016b051"
+    },
+    {
+      "id": "pair08-incomplete_prefix",
+      "authored_role": "incomplete_prefix",
+      "current_helper_text": "And you should.",
+      "namo_label": 0,
+      "audio_score": 0.7184113264083862,
+      "combined_positive": true,
+      "prefix_samples": 21760,
+      "unqueried_residual_samples": 1280,
+      "input_prefix_sha256": "e5d4631d9ed1ce610751acb4869224d7b1caff81d668cdcd2978449c6a4f6dc6"
+    }
+  ],
+  "limits": "Same frozen first-endpoint snapshots. No concurrent ASR/release latency measurement, no later-score or general impossibility claim. Residual audio is unqueried.",
+  "provenance": {
+    "source_artifact_sha256": "a2223a34356fe2861da0cdc7c72732b287e01a2830fdc52ee12475aab80fe8a7",
+    "raw_artifact_availability": "Retained locally; not included in the public repository."
+  }
+}

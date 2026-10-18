@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "purpose": "Two curated historical illustrative cases selected for safe publication, not a performance estimate or controlled voice/wording ablation.",
+  "source_study": "historical authored synthetic recall matrix",
+  "evidence_class": "genuine saved generated replies",
+  "generation": {
+    "model": "LiquidAI/LFM2.5-Audio-1.5B",
+    "language_quantization": "Q8_0",
+    "components_quantization": "Q4_0",
+    "device": "CPU",
+    "threads": 2,
+    "context_tokens": 2048,
+    "max_output_tokens": 512,
+    "streaming": true,
+    "model_assets_sha256": {
+      "language_q8_sha256": "fce1362831bad25de69a9a83d5016adf64e9a83bb5f9f97c092256ba8236f7d0",
+      "mmproj_q4_sha256": "6b483682c263b100f8cc8022d61507e446b1d320b9febc328e7960f72d03f7ea",
+      "vocoder_q4_sha256": "423cfcb054f41b69a5706226c243abc96d2531c3aff1121f7a2ed17149b79c95",
+      "tokenizer_q4_sha256": "01ec6afe4578bb1e02a4d43d87e7e5827d6b3d94d2d36912ee931b9c3050f1c1"
+    },
+    "server_binary_sha256": "b25c5b29174bf35bf90e58287ba4e5250fcdde92a3db6232b485850e95c7c974",
+    "runner_sha256": "2d9f0dc9e1b73679f8259eae698fd32875930c27c5345655c939e72fed5035",
+    "historical_source_id": "fa6d2ef01e5ad595584c07843f304b88b9b0d8cf",
+    "source_note": "Historical source snapshot also contained uncommitted tooling changes; commit identity alone is not a complete reproduction capsule."
+  },
+  "output_asr": {
+    "model": "Systran/faster-whisper-base.en",
+    "revision": "3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+    "device": "CPU int8, one thread",
+    "beam_size": 5,
+    "temperature": 0,
+    "condition_on_previous_text": false,
+    "vad_filter": false
+  },
+  "examples": [
+    {
+      "id": "pass-reply",
+      "source_case_id": "EPI-2-FB-alto-r0",
+      "input_context_text": [
+        "For this test, I bought a blue lamp yesterday. Please remember what I bought and acknowledge briefly.",
+        "What did the user buy yesterday?"
+      ],
+      "input_mode": "offline synthetic TTS; original input audio and embedded requests are not redistributed",
+      "input_voice_condition": "synthetic Alto (David +35% pitch)",
+      "model_text": "The user bought a blue lamp yesterday.",
+      "machine_transcription": "The user bought a blue lamp yesterday",
+      "machine_transcription_review": "local CPU base.en; not human-adjudicated ground truth",
+      "rubric_target": "model-emitted text",
+      "rubric_outcome": "rubric_pass",
+      "rubric_reason": "facts_pass, ownership_pass, instructions_pass",
+      "audio": "examples/pass-reply.wav",
+      "audio_sha256": "c6cd30b2fc02685af7453183c72c89b948c38ed4565eda03ad262e0b75d8c1f7",
+      "sample_rate_hz": 24000,
+      "channels": 1,
+      "pcm_bits": 16,
+      "frames": 55200,
+      "duration_s": 2.3,
+      "whole_reply": true,
+      "transforms_for_publication": "none; copied original saved WAV byte-for-byte",
+      "result_row_sha256": "1c04aa58d6f2ef6db2904592d2340059ba04a1a8014fb8909306a8c088add728",
+      "contains_human_recording": false
+    },
+    {
+      "id": "failure-reply",
+      "source_case_id": "EPI-2-FA-david-r0",
+      "input_context_text": [
+        "For this test, I bought a blue lamp yesterday. Please remember what I bought and acknowledge briefly.",
+        "What did I buy yesterday?"
+      ],
+      "input_mode": "offline synthetic TTS; original input audio and embedded requests are not redistributed",
+      "input_voice_condition": "David",
+      "model_text": "I bought a blue lamp yesterday.",
+      "machine_transcription": "I got a blue lamp yesterday.",
+      "machine_transcription_review": "local CPU base.en; not human-adjudicated ground truth",
+      "rubric_target": "model-emitted text",
+      "rubric_outcome": "rubric_fail",
+      "rubric_reason": "facts_pass, instructions_pass, ownership_fail: first-person assistant claim",
+      "audio": "examples/failure-reply.wav",
+      "audio_sha256": "7afd18c9fa81247e7c4a0e1d4f842b279a11d5ba0dc02fd6ed5ba3b6ec5c5786",
+      "sample_rate_hz": 24000,
+      "channels": 1,
+      "pcm_bits": 16,
+      "frames": 57120,
+      "duration_s": 2.38,
+      "whole_reply": true,
+      "transforms_for_publication": "none; copied original saved WAV byte-for-byte",
+      "result_row_sha256": "27bf1e60265fefe63c4b6971583b3523baec5b27fba81634aabaf260be687c2b",
+      "contains_human_recording": false
+    }
+  ],
+  "rights_and_review": "Authored fictional text and generated output only; no SAPI input audio, human recording, third-party dataset clip, full request, secret, or private history. Model terms linked in THIRD_PARTY.md; no application open-source license is granted.",
+  "limits": "Text-rubric labels do not certify spoken intelligibility. No human listening was performed. Different question wording and input voice conditions preclude causal comparisons."
+}

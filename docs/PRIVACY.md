@@ -17,7 +17,10 @@ raw microphone and actual system output, potentially including unrelated sounds.
 Use it only with participants' knowledge.
 
 Data, outputs, models, credentials, local agent notes and recordings are ignored
-by default and must not be committed. Saved experiments may also have backup
+by default and must not be committed. The sole audio exception is two explicitly
+reviewed, hash-pinned generated reply WAVs in `research/examples/`, containing
+fictional synthetic scenarios and no human recording. Sanitized metrics and chart
+data are separately allowlisted; raw requests and participant audio remain private. Saved experiments may also have backup
 copies outside the repository. Deleting or ignoring one file does not remove
 those copies or past Git objects. No automatic retention/deletion policy exists.
 

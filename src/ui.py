@@ -1,7 +1,7 @@
 """Local browser interface, served by app.py."""
 PAGE = """<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>LocalVoice</title>
+<title>Turnwave</title>
 <style>
 :root{--bg:#0d1117;--card:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;
 --green:#3fb950;--red:#f85149;--amber:#d29922;--blue:#58a6ff}
@@ -54,7 +54,7 @@ height:22px;margin:10px 0;position:relative;overflow:hidden}
 details#metrics{margin:10px 0}details#metrics summary{cursor:pointer;color:var(--dim);font-size:.85em}
 footer{margin-top:10px;font-size:.75em;color:var(--dim)}
 </style></head><body>
-<header><div class=dot id=srv></div><div><h1>LocalVoice</h1>
+<header><div class=dot id=srv></div><div><h1>Turnwave</h1>
 <div id=srvlbl>checking server…</div></div></header>
 <div><span id=st>starting…</span></div>
 <ol id=stages><li id=st_heard>heard</li><li id=st_under>understanding</li><li id=st_voice>voicing</li></ol>

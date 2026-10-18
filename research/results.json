@@ -1,0 +1,584 @@
+{
+  "schema_version": 1,
+  "title": "Turnwave curated research evidence",
+  "scope": "Historical engineering regressions and small diagnostic studies; not a current-release leaderboard or whole-app acceptance score.",
+  "snapshot": {
+    "development_commit": "54557b98d5e7b9cd14500c1ba412a945120eb962",
+    "public_base_commit": "baa388610c40e0ccc2c0176e12376d6cb6cbbe15",
+    "note": "Public and development Git blobs matched at the start of this documentation release. Historical studies used their own frozen sources."
+  },
+  "playback_completion_race": {
+    "evidence_class": "forced scheduling regression with fake devices",
+    "baseline_generated_samples": 2003,
+    "baseline_played_samples": 0,
+    "fixed_generated_samples": 2003,
+    "fixed_played_samples": 2003,
+    "additional_control_samples": 3443,
+    "decision": "implemented",
+    "limits": "Historical occurrence and fresh acoustic benefit were not established by this test.",
+    "provenance": {
+      "source_artifact_sha256": "eb33ad082a09d1876471da7287a3668ace47ae4cbe9897969140bd75d6bbeb89",
+      "raw_artifact_availability": "Retained locally; not included in the public repository."
+    }
+  },
+  "selective_opening_known_controls": {
+    "evidence_class": "known-source synthetic paired replay",
+    "deterministic_controls": 16,
+    "source_pairs": 6,
+    "acoustic_pairs": 18,
+    "eligible_acoustic_cases": 14,
+    "invalid_source_cases": 4,
+    "baseline_acoustic_passes": 5,
+    "candidate_acoustic_passes": 5,
+    "known_recovered_voice_prefix_ms": [
+      160,
+      180
+    ],
+    "second_case_added_quiet_ms": 80,
+    "decision": "private candidate; acoustic gate failed",
+    "limits": "Retains the baseline passes but does not pass the overall quality gate. Energy windows cannot distinguish sustained speech from noise/echo.",
+    "provenance": {
+      "source_artifact_sha256": "6db9f5dbf63bc59f780ca07131271d2ac96f69b68393897a82b65bb36204e4ef",
+      "raw_artifact_availability": "Retained locally; not included in the public repository."
+    }
+  },
+  "semantic_combined_known_suite": {
+    "evidence_class": "old synthetic development integration",
+    "cases_completed": 7,
+    "cases_passed": 7,
+    "actual_submissions": 7,
+    "paired_semantic_submission_deltas_ms": [
+      0.81,
+      0.16,
+      0.276,
+      1.425,
+      -2.919,
+      0.779
+    ],
+    "quiet_fallback_s": 4.563624,
+    "decision": "narrow development pass, not adoption",
+    "limits": "The separate fresh FDB attempt failed; the joined case compares to the baseline final submission. No LFM response or room acceptance.",
+    "provenance": {
+      "source_artifact_sha256": "2edcad04047dc682b72b0aa1761837505f6618ac24a423fd319d5ee541fdcbf9",
+      "raw_artifact_availability": "Retained locally; not included in the public repository."
+    }
+  },
+  "short_turn_streaming": {
+    "complete_intents": 8,
+    "complete_within_160ms": 5,
+    "unfinished_intents": 8,
+    "unfinished_held_2000ms": 8,
+    "decision": "failed development timing intent",
+    "data": "short-turn-cases.json"
+  },
+  "fixed_endpoint_audio_or": {
+    "complete_intents": 8,
+    "namo_complete_positive": 5,
+    "combined_complete_positive": 7,
+    "unfinished_intents": 8,
+    "namo_unfinished_held": 8,
+    "combined_unfinished_held": 4,
+    "decision": "rejected; four unfinished prefixes falsely positive",
+    "data": "candidate-screen-cases.json",
+    "models": {
+      "namo": {
+        "repository": "videosdk-live/Namo-Turn-Detector-v1-English",
+        "revision": "4dcc9713be5071ef43e510f72b1eefcb2f99cb04"
+      },
+      "turn1": {
+        "repository": "p99lab/turn-1-mini",
+        "revision": "076c86d1744a231d3a4cce31f3bbbd1211b4c281",
+        "graph_sha256": "e747b182d685c7db489a3ea2e12bdcd65bac506fcddec00ed3cd0bf9f209fd11"
+      }
+    }
+  },
+  "native_content_slice": {
+    "evidence_class": "fixed adapted VoiceBench diagnostic slice",
+    "date": "2026-10-17",
+    "historical_source_id": "438f7ce",
+    "input_repository_revision": "b02edcef1330480be3a11bd6f7434ac32f05ad08",
+    "model": "LFM2.5-Audio-1.5B Q8 language model with Q4 projector/vocoder/tokenizer",
+    "native_binary_sha256": "b25c5b29174bf35bf90e58287ba4e5250fcdde92a3db6232b485850e95c7c974",
+    "configuration": {
+      "reset_context_each_request": true,
+      "max_tokens": 512,
+      "gpu_layers_requested": 99,
+      "hardware": "RTX 3050 Laptop, 4 GiB; native GGUF runner, not reference PyTorch"
+    },
+    "requests": 24,
+    "saved_audio": 24,
+    "normal_completion": 18,
+    "length_limited": 6,
+    "openbookqa_cases": 12,
+    "openbookqa_model_text_strict_matches": 4,
+    "openbookqa_spoken_asr_strict_matches": 2,
+    "ifeval_cases": 12,
+    "ifeval_strict_prompt_passes_text": 2,
+    "ifeval_strict_prompt_passes_asr": 2,
+    "ifeval_instructions": 14,
+    "ifeval_strict_instruction_passes_text": 3,
+    "ifeval_strict_instruction_passes_asr": 3,
+    "median_request_to_first_decoded_audio_s": 0.34453085000859573,
+    "generated_audio_duration_s": 361.28,
+    "limits": "Small selected slice, not official full benchmark. Length-limited replies stay in denominator and are ineligible for accepted grading. No random MCQ fallback credit. ASR is unadjudicated recognition evidence, not human-heard accuracy. First decoded audio excludes capture/endpoint/playback.",
+    "provenance": [
+      {
+        "source_artifact_sha256": "a37b13f6ef2b9f1f7664eeb39cc3f0f7433f1fb3c1435437e8ccc4da47082d02",
+        "raw_artifact_availability": "Retained locally; not included in the public repository."
+      },
+      {
+        "source_artifact_sha256": "ae4aa5f280a10dd5d74595cd9bd1d31c5d90a4626743ebfa24e65c54e4d919ad",
+        "raw_artifact_availability": "Retained locally; not included in the public repository."
+      }
+    ]
+  },
+  "public_capture_comparison": {
+    "study": "opening-heldout-protocol-v3",
+    "result_status": "complete",
+    "attempted_cases": 6,
+    "completed_cases": 6,
+    "unrun_cases": 0,
+    "paired_arms": 12,
+    "process_wall_seconds": 29.436,
+    "runtime": {
+      "execution_provider": "CPUExecutionProvider",
+      "intra_op_threads": 1,
+      "inter_op_threads": 1,
+      "sample_rate_hz": 16000,
+      "callback_samples": 320,
+      "callback_ms": 20
+    },
+    "artifact_sha256": {
+      "runner": "f507812f440dad931cce71e3318d5f72e14b8ee18c2a00e3e04c43c2b5190ee3",
+      "protocol": "f9a3edb1e36938bcac6fa7e3dd8341908c303bf531b87d7576391c5eaa77969b",
+      "case_plan": "3cd2c201f7d410d0ebf72f9b5b7f64d4716c160f34a6f5451671c7f6a8363079",
+      "input_manifest": "9828fa9f9b1b311e0aad62e61c962055231835f675a0b6cb9b7d48aee0f33cc9"
+    },
+    "pin_validation": {
+      "frozen_artifact_pins_matched": 5,
+      "source_and_runtime_pins_matched": 27,
+      "all_pins_matched": true
+    },
+    "paired_result": {
+      "all_six_cases_have_identical_baseline_candidate_detector_events": true,
+      "all_six_cases_have_identical_capture_intervals_and_float_hashes": true,
+      "candidate_added_capture_samples": 0,
+      "candidate_removed_capture_samples": 0,
+      "candidate_head_selection_events": 6,
+      "selected_samples_per_event": 3840,
+      "selected_samples_are_240ms": true,
+      "runtime_errors": 0,
+      "dropped_blocks": 0,
+      "all_capture_slices_are_exact_valid_clean_stream_bytes": true
+    },
+    "cases": [
+      {
+        "id": "voice-clean-a",
+        "source": "LibriSpeech 1272-135031-0014",
+        "detector_start_sample": 26880,
+        "detector_end_sample": 44800,
+        "shared_capture_intervals": [
+          [
+            23040,
+            44800
+          ]
+        ],
+        "source_nonzero_extent": [
+          16000,
+          43840
+        ],
+        "source_prefix_outside_capture_samples": 7040,
+        "source_prefix_outside_capture_ms": 440,
+        "prefix_after_fixed_gain": {
+          "rms": 0.00164,
+          "peak": 0.006409,
+          "sum_squared_amplitude": 0.018935,
+          "20ms_window_rms_min": 0.001151,
+          "20ms_window_rms_max": 0.002232
+        },
+        "callback_count_by_arm": {
+          "baseline": 237,
+          "candidate": 237
+        },
+        "processed_frames_by_arm": {
+          "baseline": 237,
+          "candidate": 237
+        },
+        "capture_errors_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "dropped_blocks_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      },
+      {
+        "id": "voice-natural-onset-b",
+        "source": "LibriSpeech 1272-135031-0009",
+        "fixed_gain": 0.15,
+        "detector_start_sample": 27200,
+        "detector_end_sample": 50880,
+        "shared_capture_intervals": [
+          [
+            23360,
+            50880
+          ]
+        ],
+        "source_nonzero_extent": [
+          16000,
+          46560
+        ],
+        "source_prefix_outside_capture_samples": 7360,
+        "source_prefix_outside_capture_ms": 460,
+        "prefix_after_fixed_gain": {
+          "rms": 0.000328,
+          "peak": 0.001295,
+          "sum_squared_amplitude": 0.00079,
+          "20ms_window_rms_min": 0.00018,
+          "20ms_window_rms_max": 0.000518
+        },
+        "callback_count_by_arm": {
+          "baseline": 246,
+          "candidate": 246
+        },
+        "processed_frames_by_arm": {
+          "baseline": 246,
+          "candidate": 246
+        },
+        "capture_errors_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "dropped_blocks_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      },
+      {
+        "id": "near-noise-boundary",
+        "source": "seeded Gaussian near noise",
+        "fixed_noise_samples": [
+          0,
+          32000
+        ],
+        "stddev": 0.01,
+        "seed": 20261018,
+        "detector_events_baseline": 0,
+        "detector_events_candidate": 0,
+        "capture_count_baseline": 0,
+        "capture_count_candidate": 0,
+        "callback_count_by_arm": {
+          "baseline": 200,
+          "candidate": 200
+        },
+        "processed_frames_by_arm": {
+          "baseline": 200,
+          "candidate": 200
+        },
+        "capture_errors_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "dropped_blocks_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      },
+      {
+        "id": "far-echo-only",
+        "source": "far LibriSpeech 1272-135031-0014 with synthetic echo taps",
+        "echo_delay_ms_gain": [
+          [
+            80,
+            1.0
+          ],
+          [
+            105,
+            0.3
+          ],
+          [
+            150,
+            0.15
+          ]
+        ],
+        "detector_events_baseline": 0,
+        "detector_events_candidate": 0,
+        "capture_count_baseline": 0,
+        "capture_count_candidate": 0,
+        "callback_count_by_arm": {
+          "baseline": 212,
+          "candidate": 212
+        },
+        "processed_frames_by_arm": {
+          "baseline": 212,
+          "candidate": 212
+        },
+        "capture_errors_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "dropped_blocks_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      },
+      {
+        "id": "double-talk",
+        "near_source": "LibriSpeech 1272-135031-0009",
+        "near_fixed_gain": 0.15,
+        "far_source": "LibriSpeech 1272-135031-0014",
+        "detector_start_sample": 32320,
+        "detector_end_sample": 50240,
+        "shared_capture_intervals": [
+          [
+            28480,
+            50240
+          ]
+        ],
+        "near_source_nonzero_extent": [
+          16000,
+          46560
+        ],
+        "near_source_prefix_outside_capture_samples": 12480,
+        "near_source_prefix_outside_capture_ms": 780,
+        "captured_near_source_samples": 18080,
+        "captured_direct_far_source_samples": 7360,
+        "captured_union_far_echo_window_samples": 9760,
+        "same_speaker_synthetic_overlap": true,
+        "callback_count_by_arm": {
+          "baseline": 246,
+          "candidate": 246
+        },
+        "processed_frames_by_arm": {
+          "baseline": 246,
+          "candidate": 246
+        },
+        "capture_errors_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "dropped_blocks_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      },
+      {
+        "id": "reset-mute-fresh",
+        "source": "LibriSpeech 1272-135031-0014 and 1272-135031-0009",
+        "detector_start_end_samples": [
+          [
+            18560,
+            36480
+          ],
+          [
+            59200,
+            83200
+          ],
+          [
+            139200,
+            162880
+          ]
+        ],
+        "shared_capture_intervals": [
+          [
+            14720,
+            36480
+          ],
+          [
+            55360,
+            83200
+          ],
+          [
+            135360,
+            162880
+          ]
+        ],
+        "invalid_global_clock_interval": [
+          88000,
+          124800
+        ],
+        "processed_valid_samples": 153920,
+        "global_clock_samples": 190720,
+        "muted_source_capture_count": 0,
+        "fresh_post_unmute_capture_count": 1,
+        "all_arm_events_and_captures_equal": true,
+        "fresh_source_prefixes_after_fixed_gain": [
+          {
+            "event": "post-reset A",
+            "samples": 6720,
+            "duration_ms": 420,
+            "gain": 1.0,
+            "rms": 0.001649,
+            "peak": 0.006409,
+            "sum_squared_amplitude": 0.018273,
+            "20ms_window_rms_min": 0.001151,
+            "20ms_window_rms_max": 0.002232
+          },
+          {
+            "event": "post-reset fresh B",
+            "samples": 7360,
+            "duration_ms": 460,
+            "gain": 1.0,
+            "rms": 0.002184,
+            "peak": 0.008636,
+            "sum_squared_amplitude": 0.035096,
+            "20ms_window_rms_min": 0.001197,
+            "20ms_window_rms_max": 0.003455
+          }
+        ],
+        "callback_count_by_arm": {
+          "baseline": 596,
+          "candidate": 596
+        },
+        "processed_frames_by_arm": {
+          "baseline": 596,
+          "candidate": 596
+        },
+        "capture_errors_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "dropped_blocks_by_arm": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      }
+    ],
+    "interpretation": {
+      "bounded_non_regression_observation": "No candidate-only event or capture change was measured in these six frozen cases.",
+      "efficacy": "unproven; no candidate-added capture samples were observed, so the strict earlier-capture/source-overlap condition was not met",
+      "word_boundary_or_missed_word_claim": false,
+      "room_or_intelligibility_acceptance": false,
+      "generalization": "two public audiobook utterances from one speaker"
+    },
+    "source_artifact_sha256": [
+      {
+        "artifact": "product/src/app.py",
+        "sha256": "83e9aabcd383cf654374b77f5067645ce726e7d899b6c86ac62f149c623c9057"
+      },
+      {
+        "artifact": "product/src/audio_io.py",
+        "sha256": "9d2348f6329e2cb257e663ee19cf01a3a91b0d5ba7ef35cbc66c20f4c25fcdc0"
+      },
+      {
+        "artifact": "product/src/duplex.py",
+        "sha256": "7d3d1014d29c1a75a3d1f3b1c44ff6cb41c2ee2a87f86bcc7c0ea9d835a354ab"
+      },
+      {
+        "artifact": "candidate/candidate_app.py",
+        "sha256": "b899094269dfc4309afcc2e841013c40d17898e659e227dbe974d72e2abb3145"
+      },
+      {
+        "artifact": "candidate/opening_buffer.py",
+        "sha256": "6512f898d9e11f86ce14f2299116bea2255e1de7a23868e6a82cd7eb0e98950c"
+      },
+      {
+        "artifact": "candidate/candidate-app.diff",
+        "sha256": "09dadf4e831aca884537b5c9cff6ab1199a1825196a0ff18b9a977d726e02def"
+      },
+      {
+        "artifact": "product/src/synth/closed_loop_capture.py",
+        "sha256": "cca24b2785c6e1c85d35c39e864e3e67df7efd27cfb5b6d704e05b1344496b26"
+      },
+      {
+        "artifact": "candidate/acoustics/source/synth/closed_loop_capture.py",
+        "sha256": "cca24b2785c6e1c85d35c39e864e3e67df7efd27cfb5b6d704e05b1344496b26"
+      },
+      {
+        "artifact": "protocol/PROTOCOL.md",
+        "sha256": "f9a3edb1e36938bcac6fa7e3dd8341908c303bf531b87d7576391c5eaa77969b"
+      },
+      {
+        "artifact": "protocol/runtime-dependency-manifest.json",
+        "sha256": "954c224fb064224478c2b159c4729587123bbeb14c6e734e018f52656838a6fb"
+      },
+      {
+        "artifact": "protocol/source-reference-provenance.json",
+        "sha256": "e4e10a062c0929cc1339feb1c539e87b1ee307cb070901e533b7be01117dcdd3"
+      },
+      {
+        "artifact": "protocol/case-plan.json",
+        "sha256": "3cd2c201f7d410d0ebf72f9b5b7f64d4716c160f34a6f5451671c7f6a8363079"
+      },
+      {
+        "artifact": "runtime/pywebrtc/pywebrtc_audio.libs/msvcp140-a4c2229bdc2a2a630acdc095b4d86008.dll",
+        "sha256": "a4c2229bdc2a2a630acdc095b4d86008e5c3e3bc7773174354f3da4f5beb9cde"
+      },
+      {
+        "artifact": "runtime/pywebrtc/pywebrtc_audio/__init__.py",
+        "sha256": "de56ff517824202083f09a8f020eae9e6dc535181c0384769a935909441d6675"
+      },
+      {
+        "artifact": "runtime/pywebrtc/pywebrtc_audio/_webrtc_audio.cp312-win_amd64.pyd",
+        "sha256": "54dbb13c2c8efe781af3a3c0e01ec7e47d61c2a4e0f1e4a23458a3b9d10d4439"
+      },
+      {
+        "artifact": "runtime/silero_vad/__init__.py",
+        "sha256": "45fcf7e268eb0ba83ccee737b1a86cc94d7cf7487e2a1c0a31b9b72b899201f1"
+      },
+      {
+        "artifact": "runtime/silero_vad/model.py",
+        "sha256": "40762a80d1278605480f75f90c6510c1a4ab71bd230f45c334e4f9c5e402181d"
+      },
+      {
+        "artifact": "runtime/silero_vad/utils_vad.py",
+        "sha256": "15d0f6b3ef9590e22ca2f146e1436f6901da356cb552d3183df4100862b333cb"
+      },
+      {
+        "artifact": "runtime/silero_vad/data/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "artifact": "runtime/silero_vad/data/silero_vad.onnx",
+        "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"
+      },
+      {
+        "artifact": "runtime/silero_vad_dist_info/6.2.3.dist-info/METADATA",
+        "sha256": "ff91344bc524cfe9970eabf27b7ec68e721aa32968079b0012b797803725b529"
+      },
+      {
+        "artifact": "runtime/silero_vad_dist_info/6.2.3.dist-info/RECORD",
+        "sha256": "25f7fa15a76592aed5a1904499742b7e21e1938a0c4b4e7d26db20ef18b19c26"
+      },
+      {
+        "artifact": "runtime/onnxruntime/__init__.py",
+        "sha256": "e162714264e3e42a40adba752e9611c17cf0a129b0b348d596201788aa533667"
+      },
+      {
+        "artifact": "runtime/onnxruntime_dist_info/1.24.3.dist-info/METADATA",
+        "sha256": "0dd6ea7814933ca7e5023130723f313ade4abeb4cf802d32a9919c9e201167c6"
+      },
+      {
+        "artifact": "runtime/onnxruntime_dist_info/1.24.3.dist-info/RECORD",
+        "sha256": "15fb18f3d1eaa09af7522ca5d7eb3d0ac13b47c5b75cb5fdf31a098566d7c04f"
+      },
+      {
+        "artifact": "runtime/onnxruntime/capi/onnxruntime_inference_collection.py",
+        "sha256": "657d8bc01fc290ecb4a5ebab814931423afbdbb59de63b5023c609d23aef8f00"
+      },
+      {
+        "artifact": "runtime/onnxruntime/capi/onnxruntime_pybind11_state.pyd",
+        "sha256": "f97007240b0500ee5a42d00e2a04980fdd29409d4369e44c7376197babb089c5"
+      }
+    ],
+    "decision": "not adopted; no measured capture benefit in the six frozen pairs"
+  },
+  "availability": {
+    "included": [
+      "sanitized numerical observations",
+      "two reviewed complete generated synthetic response WAVs",
+      "model text and separate machine transcriptions",
+      "figure source and tests"
+    ],
+    "excluded": [
+      "human recordings",
+      "SAPI-rendered input WAVs",
+      "third-party benchmark audio/prompts",
+      "full requests or raw private logs",
+      "model weights and native binaries",
+      "private Git history"
+    ],
+    "reproduction_boundary": "Included data reproduce counts and figures. Exact historical neural reruns additionally require the frozen source inputs, model/runtime assets and configurations not all distributed here."
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "study": "short-turn-streaming",
+  "evidence_class": "single synthetic development run",
+  "voice": "Microsoft David Desktop",
+  "timing_definition": "Additional wall time from the first inner raw VAD endpoint to capture-gate release; excludes the detector silence wait, LFM generation, playback and device latency.",
+  "complete_budget_ms": 160,
+  "unfinished_minimum_hold_ms": 2000,
+  "labels": "Authored task intent, not human conversational or acoustic ground truth.",
+  "cases": [
+    {
+      "id": "pair01-complete",
+      "authored_text": "Why?",
+      "authored_role": "complete",
+      "extra_wall_ms": 2535.625100019388,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "Why?",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair01-incomplete_prefix",
+      "authored_text": "Because the train...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2539.3417000304908,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "Because the train",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair02-complete",
+      "authored_text": "Really?",
+      "authored_role": "complete",
+      "extra_wall_ms": 2522.845999978017,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "Really",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair02-incomplete_prefix",
+      "authored_text": "If the train...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2498.5673999763094,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "If the train",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair03-complete",
+      "authored_text": "Again, please.",
+      "authored_role": "complete",
+      "extra_wall_ms": 0.09220000356435776,
+      "release_reason": "semantic_complete",
+      "helper_text_before_release": "Again, please.",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair03-incomplete_prefix",
+      "authored_text": "Before you...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2539.906100020744,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "Before you.",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair04-complete",
+      "authored_text": "Which one?",
+      "authored_role": "complete",
+      "extra_wall_ms": 0.07730000652372837,
+      "release_reason": "semantic_complete",
+      "helper_text_before_release": "Which one?",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair04-incomplete_prefix",
+      "authored_text": "Please put the...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2540.361399995163,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "Please put the",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair05-complete",
+      "authored_text": "Yes.",
+      "authored_role": "complete",
+      "extra_wall_ms": 0.05929998587816954,
+      "release_reason": "semantic_complete",
+      "helper_text_before_release": "Yes.",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair05-incomplete_prefix",
+      "authored_text": "The answer is...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2520.5003999872133,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "The answer is",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair06-complete",
+      "authored_text": "No.",
+      "authored_role": "complete",
+      "extra_wall_ms": 0.09220000356435776,
+      "release_reason": "semantic_complete",
+      "helper_text_before_release": "No.",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair06-incomplete_prefix",
+      "authored_text": "I was going to...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2539.8527999641374,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "I was going to",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair07-complete",
+      "authored_text": "Mine.",
+      "authored_role": "complete",
+      "extra_wall_ms": 0.07130001904442906,
+      "release_reason": "semantic_complete",
+      "helper_text_before_release": "Mug.",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair07-incomplete_prefix",
+      "authored_text": "Which one should...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2520.1292999554425,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "Which one should?",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair08-complete",
+      "authored_text": "And you?",
+      "authored_role": "complete",
+      "extra_wall_ms": 2520.4495000070892,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "And you",
+      "capture_drops": 0,
+      "submissions": 1
+    },
+    {
+      "id": "pair08-incomplete_prefix",
+      "authored_text": "And you should...",
+      "authored_role": "incomplete_prefix",
+      "extra_wall_ms": 2520.213900017552,
+      "release_reason": "quiet_fallback",
+      "helper_text_before_release": "And you should",
+      "capture_drops": 0,
+      "submissions": 1
+    }
+  ],
+  "provenance": {
+    "source_artifact_sha256": "088845153bc6b41a8423ebc916a999d88251515919684900bb87c2b13722b316",
+    "raw_artifact_availability": "Retained locally; not included in the public repository."
+  }
+}

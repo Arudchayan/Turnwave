@@ -1,5 +1,5 @@
 #!/bin/bash
-# Apply the reviewed LocalVoice fixes to the pinned backend, then rebuild.
+# Apply the reviewed Turnwave fixes to the pinned backend, then rebuild.
 # Stop the server first. Does not fetch a moving branch or reset local edits.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

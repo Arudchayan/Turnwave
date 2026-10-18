@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/outputs/logs"
 LOG_FILE="$ROOT/outputs/logs/server-$(date -u +%Y%m%dT%H%M%S)-$$.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
-echo "LocalVoice launch: $(date -u +%FT%TZ) pid=$$"
+echo "Turnwave launch: $(date -u +%FT%TZ) pid=$$"
 CKPT="$ROOT/models/LFM2.5-Audio-1.5B-GGUF"
 if [ -z "${LM:-}" ]; then
   if [ -f "${LOCALVOICE_MODEL_DIR:-$CKPT}/LFM2.5-Audio-1.5B-Q8_0.gguf" ]; then
@@ -50,7 +50,7 @@ fi
 for artifact in "$LM" mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf; do
   [ -f "$CKPT/$artifact" ] || { echo "Missing model file: $CKPT/$artifact" >&2; exit 1; }
 done
-echo "LocalVoice server session: $(date -u +%FT%TZ) pid=$$ model=$LM"
+echo "Turnwave server session: $(date -u +%FT%TZ) pid=$$ model=$LM"
 echo "Model directory: $CKPT; runner: $RUN; log: $LOG_FILE"
 export LD_LIBRARY_PATH="$RUN:${RUN_LIB:+$RUN_LIB:}${LD_LIBRARY_PATH}"
 MMFLAG=""

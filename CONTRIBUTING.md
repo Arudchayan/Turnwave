@@ -20,6 +20,11 @@ not automatic startup tasks. Some need externally supplied audio, prior local
 experiments, WSL toolchains or a stopped application. Review their prerequisites
 before use. Never run a test against a model context owned by a live app.
 
-Do not commit recordings, transcripts, credentials, model weights, machine
+Do not commit raw recordings, private transcripts, credentials, model weights, machine
 configuration or private research notes. `.gitignore` does not remove existing
 tracked files or history. See [publication guidance](docs/PUBLICATION.md).
+
+The only approved audio examples are the two complete generated replies in
+`research/examples/`, bound to exact hashes in the publication manifest.
+Additional media require explicit content/provenance review; raw session data
+remain private.

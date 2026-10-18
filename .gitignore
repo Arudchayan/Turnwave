@@ -28,6 +28,31 @@ outputs/experiments/
 !/docs/PRIVACY.md
 !/docs/PUBLICATION.md
 !/docs/RECORDED_SESSIONS.md
+!/docs/RESULTS.md
+!/docs/EVALUATION.md
+!/docs/THIRD_PARTY.md
+!/docs/assets/
+/docs/assets/*
+!/docs/assets/completion-screen.svg
+!/docs/assets/completion-screen.png
+!/docs/assets/short-turn-delay.svg
+!/docs/assets/short-turn-delay.png
+
+# Research publication remains a closed exact allowlist.
+/research/
+!/research/
+/research/*
+!/research/README.md
+!/research/publication-manifest.json
+!/research/results.json
+!/research/short-turn-cases.json
+!/research/candidate-screen-cases.json
+!/research/examples/
+/research/examples/*
+!/research/examples/README.md
+!/research/examples/examples.json
+!/research/examples/pass-reply.wav
+!/research/examples/failure-reply.wav
 
 # Local environments, tooling and caches.
 .venv/
@@ -68,3 +93,7 @@ secrets*.json
 *.ogg
 *.m4a
 .slim/deepwork/
+
+# Explicit publication examples override the global audio ignore rule above.
+!research/examples/pass-reply.wav
+!research/examples/failure-reply.wav

@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "path": "docs/assets/completion-screen.png",
+      "sha256": "aaa679e1ca82fcab8d3eafb0193144ed243744580d68c4b4f78ad0461ff0b3b3",
+      "bytes": 98045,
+      "kind": "chart_png",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "docs/assets/completion-screen.svg",
+      "sha256": "47e48afb6aac0045ff59ff3e768fbdf376261b35bb75808478ea3841c3dd7933",
+      "bytes": 17095,
+      "kind": "chart_svg",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "docs/assets/short-turn-delay.png",
+      "sha256": "682d9e06d58a364da7340b549b09deed1e70e47802c986961def6bfae1928057",
+      "bytes": 122342,
+      "kind": "chart_png",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "docs/assets/short-turn-delay.svg",
+      "sha256": "b58723f021293d5e73b83eee60564cee7b65574572fd30fffd54956e7433d541",
+      "bytes": 24389,
+      "kind": "chart_svg",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/candidate-screen-cases.json",
+      "sha256": "c5243bac27be160b4aef755b674747edf31cf8b7f5de0d0f55fe55d5b72f9bb9",
+      "bytes": 7109,
+      "kind": "evidence_json",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/examples/examples.json",
+      "sha256": "d17f8d7875d6026b2c6572de2143472df2791a17760284874b1cc79fc266de98",
+      "bytes": 4814,
+      "kind": "evidence_json",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/examples/failure-reply.wav",
+      "sha256": "7afd18c9fa81247e7c4a0e1d4f842b279a11d5ba0dc02fd6ed5ba3b6ec5c5786",
+      "bytes": 114284,
+      "kind": "generated_audio",
+      "source_type": "authored_synthetic_model_output",
+      "contains_human_recording": false,
+      "whole_reply": true
+    },
+    {
+      "path": "research/examples/pass-reply.wav",
+      "sha256": "c6cd30b2fc02685af7453183c72c89b948c38ed4565eda03ad262e0b75d8c1f7",
+      "bytes": 110444,
+      "kind": "generated_audio",
+      "source_type": "authored_synthetic_model_output",
+      "contains_human_recording": false,
+      "whole_reply": true
+    },
+    {
+      "path": "research/results.json",
+      "sha256": "bb97f5490a619734021d58a7f41711f51bef21401dec80a9c84549d93ad75617",
+      "bytes": 20218,
+      "kind": "evidence_json",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/short-turn-cases.json",
+      "sha256": "36decdc5894c2cc6eae59c9eebdfeb2e33dfea758d87a2bc529123ec13c8ad20",
+      "bytes": 5723,
+      "kind": "evidence_json",
+      "source_type": "curated_historical_research_observations",
+      "contains_human_recording": false,
+      "whole_reply": false
+    }
+  ]
+}

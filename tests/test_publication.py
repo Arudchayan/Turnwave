@@ -25,8 +25,16 @@ def test_provider_pattern_flags_without_echoing_value():
 
 
 def test_public_source_and_docs_pass():
-    for name in ['src/app.py', 'README.md', '.env.example', 'docs/PRIVACY.md']:
+    for name in ['src/app.py', 'README.md', '.env.example', 'docs/PRIVACY.md',
+                 'docs/RESULTS.md', 'docs/EVALUATION.md', 'docs/THIRD_PARTY.md',
+                 'research/README.md', 'research/examples/README.md']:
         assert not publication.inspect_file(name, b'Public example with no credentials.')
+
+
+def test_unapproved_research_audio_remains_blocked_by_default():
+    reasons = publication.inspect_file('research/examples/pass-reply.wav', b'not a wave')
+    assert any('private/generated file' in reason for reason in reasons)
+    assert any('lacks matching manifest approval' in reason for reason in reasons)
 
 
 @pytest.mark.parametrize('value,valid', [('/srv/test-user\n', True), ('relative', False), ('/srv/a\n/srv/b', False)])
