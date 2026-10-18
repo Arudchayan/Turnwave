@@ -88,5 +88,9 @@ The complete automated suite passed **390 tests** in the development checkout
 and **390 tests** in the separate public copy (Python 3.12). The evidence verifier,
 publication worktree/index checks and local documentation-link checks passed.
 Figures were rebuilt reproducibly with Matplotlib 3.10.0 and NumPy 2.1.3 and both
-PNG outputs were visually inspected. Hosted CI and a fresh-machine native build
-have not been run; these results describe the existing local environment.
+PNG outputs were visually inspected. The initial fresh GitHub Windows job passed
+384 tests and skipped the six WSL-dependent build contracts because Ubuntu WSL
+was unavailable. A separate Ubuntu job runs those six shell contracts with fake
+tools; it does not compile the native runner. Current results are visible in
+[GitHub Actions](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml).
+A fresh-machine native build and real-device acceptance remain unvalidated.

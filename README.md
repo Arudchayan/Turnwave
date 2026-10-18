@@ -1,5 +1,7 @@
 # Turnwave
 
+[![Tests](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml/badge.svg)](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml)
+
 An experimental local speech-to-speech assistant for Windows and WSL2, built
 around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner.
 

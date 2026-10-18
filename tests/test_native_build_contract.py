@@ -102,6 +102,9 @@ if [ "$1" = "--build" ]; then
   chmod +x "$FAKE_BUILD_DIR/bin/llama-liquid-audio-server" "$FAKE_BUILD_DIR/bin/llama-liquid-audio-cli"
 fi
 '''.encode("utf-8"))
+    if os.name != "nt":
+        for tool in fake_bin.iterdir():
+            tool.chmod(tool.stat().st_mode | 0o111)
     env = {
         "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
         "HOME": str(tmp_path),
