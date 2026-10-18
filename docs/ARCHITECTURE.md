@@ -7,19 +7,14 @@ capture, interruption, cancellation and recovery. This is not a native full-dupl
 
 ```mermaid
 flowchart LR
-    Mic[Selected microphone] --> IO[Channel selection and resampling
-16 kHz mono]
+    Mic[Selected microphone] --> IO["Channel selection and resampling<br/>16 kHz mono"]
     IO --> Queue[Bounded capture queue]
-    Queue --> Front[Echo processing and Silero VAD
-Audio-clock endpointing]
-    Front --> App[App capture coordinator
-Pre-roll, cap and generation fences]
+    Queue --> Front["Echo processing and Silero VAD<br/>Audio-clock endpointing"]
+    Front --> App["App capture coordinator<br/>Pre-roll, cap and generation fences"]
     App --> Client[WAV request / streaming client]
-    Client --> Runner[WSL Liquid audio runner
-LFM2.5-Audio]
+    Client --> Runner["WSL Liquid audio runner<br/>LFM2.5-Audio"]
     Runner --> Client
-    Client --> Player[Serialized player
-24 kHz generated audio]
+    Client --> Player["Serialized player<br/>24 kHz generated audio"]
     Player --> Speakers[Output device]
     Player -->|early render reference| Front
     UI[Loopback browser UI] <--> App
