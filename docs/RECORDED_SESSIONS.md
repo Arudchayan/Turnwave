@@ -1,16 +1,16 @@
-# Explicit recorded sessions
+# Recording experiments
 
 On Windows, install the optional raw recorder dependency with
 `python -m pip install -r requirements-recording.txt`.
 
 Per-turn archiving is opt-in. Normal app launches do not create audio archives.
-For an authorized recorded experiment, set `LOCALVOICE_RECORD_SESSION` to a
+To record a session, set `LOCALVOICE_RECORD_SESSION` to a
 new `turns` directory inside that experiment before launching the app. The
 directory must not already exist; a reused path fails before opening devices.
 Use `LOCALVOICE_START_MUTED=1` for the controlled startup.
 
-The independent physical recorder still records microphone and output loopback
-into the experiment's `audio` directory. Per-turn archives complement it:
+The separate physical recorder saves microphone and system output to the
+experiment's `audio` directory. Per-turn archives contain:
 
 | File | Meaning |
 | --- | --- |
@@ -43,7 +43,7 @@ is not a conversational turn archive.
 Keep the app and recorder running and invoke from the repository root:
 
 ```powershell
-C:/Python312/python.exe -m src.synth.finish_recorded_test outputs/experiments/<new-test> --timeout-s 90
+python -m src.synth.finish_recorded_test outputs/experiments/<new-test> --timeout-s 90
 ```
 
 The helper mutes capture without cancelling the reply, waits for generation,
@@ -73,11 +73,4 @@ The helper does not extend an independent recorder's deadline or repair audio
 already missed. A finalized snapshot is not proof of intelligibility, complete
 physical coverage, correct answers or an off-device backup. Recording again
 requires a new app session with a fresh archive directory; an already sealed
-experiment is not reopened for another test. Historical finalizers did not
-enforce this fence, so their existing snapshots remain historical evidence.
-Respect user-requested deletion; never restore removed material from old copies.
-
-Successful-write accounting applies from batch 4 onward. Older recordings used
-pre-write callbacks for this count, so a failed write could overstate submissions
-by one attempted block. Historical files remain unchanged; no exact correction is
-inferred for old device failures. The echo reference still precedes each write.
+experiment is not reopened for another test. Keep each recorded experiment in its own directory.

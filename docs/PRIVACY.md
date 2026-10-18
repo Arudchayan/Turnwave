@@ -1,29 +1,33 @@
 # Data handling
 
-Normal inference runs locally against the configured server. Model/dependency
-installation may access external services; optional custom endpoints change
-where requests go. Check configuration before use.
+## Local inference
+
+Normal inference runs against the configured local server. Installing models and
+dependencies may contact external services. Configuring a remote endpoint sends
+requests there instead.
 
 The microphone stream opens at startup. `LOCALVOICE_START_MUTED=1` prevents
-submitting microphone turns until unmuted; it does not mean the input device
-has never opened. The UI transcript is in memory. Normal app diagnostics under
-`outputs/logs/` contain timing, device/state and error metadata; errors and native
-server logs may include additional information and should be treated as private.
+submitting microphone turns until unmuted. The browser transcript stays in memory.
 
-`LOCALVOICE_RECORD_SESSION` explicitly enables per-turn archives. They contain
-processed input WAVs, exact request field values, generated audio, reported text,
-timings and cancellation/playback metadata. The separate physical recorder saves
-raw microphone and actual system output, potentially including unrelated sounds.
-Use it only with participants' knowledge.
+## Saved data
 
-Data, outputs, models, credentials, local agent notes and recordings are ignored
-by default and must not be committed. The sole audio exception is two explicitly
-reviewed, hash-pinned generated reply WAVs in `research/examples/`, containing
-fictional synthetic scenarios and no human recording. Sanitized metrics and chart
-data are separately allowlisted; raw requests and participant audio remain private. Saved experiments may also have backup
-copies outside the repository. Deleting or ignoring one file does not remove
-those copies or past Git objects. No automatic retention/deletion policy exists.
+Diagnostics under `outputs/logs/` contain timings, device/state information and
+errors. Native server logs and error messages may contain request-related data;
+treat them as private.
 
-The publication checker detects selected risky filenames and text patterns. It
-is a useful guard, not a complete secret detector, content classifier or privacy
-guarantee. Review the actual publication snapshot and its history before pushing.
+Setting `LOCALVOICE_RECORD_SESSION` enables per-turn archives: processed input
+WAVs, exact request fields, generated audio, model text, timings, cancellation and
+playback metadata. The separate physical recorder captures raw microphone and
+system output, which can include audio from other applications. Record only with
+participants' knowledge. See [recorded sessions](RECORDED_SESSIONS.md).
+
+Recordings and experiment outputs are ignored by Git. They can also have backup
+copies outside the repository. There is no automatic retention or deletion policy;
+removing a file from one location does not remove backups or committed copies.
+
+## Shared examples
+
+The repository contains two generated replies to fictional synthetic prompts,
+alongside numerical summaries and figures. No participant recordings, original
+synthetic input WAVs, benchmark audio or raw session requests are included.
+The [publication guide](PUBLICATION.md) describes content review and asset checks.

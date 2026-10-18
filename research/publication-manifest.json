@@ -48,8 +48,8 @@
     },
     {
       "path": "research/examples/examples.json",
-      "sha256": "d17f8d7875d6026b2c6572de2143472df2791a17760284874b1cc79fc266de98",
-      "bytes": 4814,
+      "sha256": "262290347930eec13f6f0a97f338b28bccb75944f75bab2446fc2c60260a269f",
+      "bytes": 4720,
       "kind": "evidence_json",
       "source_type": "curated_historical_research_observations",
       "contains_human_recording": false,

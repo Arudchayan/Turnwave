@@ -6,12 +6,11 @@ An experimental local speech-to-speech assistant for Windows and WSL2, built
 around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner.
 
 The app listens while the model replies and can cancel playback when you speak.
-This is application-level interruption around a turn-based audio model. Natural
-pauses, echo and response quality remain open problems; smooth conversation is
-not yet a demonstrated result.
+It adds interruption handling around a turn-based audio model. This is a research
+prototype: natural pauses, speaker echo and response quality remain limitations.
 
 [Architecture](docs/ARCHITECTURE.md) · [Results and lessons](docs/RESULTS.md) ·
-[Listen to actual synthetic replies](research/examples/README.md) ·
+[Example audio](research/examples/README.md) ·
 [Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
 ```mermaid
@@ -23,11 +22,7 @@ flowchart LR
     Player -->|render reference| Capture
 ```
 
-Previously named LocalVoice. Existing `LOCALVOICE_*` settings, cache locations
-and archive formats remain compatible; the public project and interface are now
-**Turnwave**.
-
-## What the evidence supports
+## What we tested
 
 | Work | Finding | Status |
 | --- | --- | --- |
@@ -35,11 +30,9 @@ and archive formats remain compatible; the public project and interface are now
 | Semantic completion screen | Faster completion gains also released four unfinished prefixes | Rejected |
 | Selective opening capture | Six paired cases produced identical captured bytes | Not adopted |
 | Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
-| Public audio examples | One text-rubric pass and one ownership failure, with separate ASR | Genuine saved synthetic replies |
+| Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
 
-Read [results](docs/RESULTS.md) for denominators, source pins and limits. The charts
-come from included numerical observations, not illustrative invented data. Unit
-passes, synthetic evidence, generated content and physical listening are distinct.
+See [results](docs/RESULTS.md) for methods, per-case data and limitations.
 
 ## Prerequisites
 
@@ -135,20 +128,18 @@ data reproduce reported counts and figures; exact historical neural reruns also
 require assets and source inputs that are not all distributed here. The 24-case
 content slice is not a full VoiceBench score or a leaderboard claim.
 
-## Recording and publication
+## Recording and privacy
 
 Normal launches write private diagnostics under `outputs/logs/`. Audio archiving
 is opt-in; see [data handling](docs/PRIVACY.md) and [recorded sessions](docs/RECORDED_SESSIONS.md).
 Muted startup opens the input device but does not submit microphone turns.
 Keep these loopback services local; they have no multi-user authentication.
 
-Raw experiments, human recordings, requests, weights, secrets and internal agent
-notes stay out of Git. The only audio publication exception is the two reviewed,
-hash-pinned **generated** reply WAVs under `research/examples/`; source inputs
-and raw sessions remain private. [Publication checks](docs/PUBLICATION.md) enforce
-an exact asset allowlist and hashes, with manual review still required.
+The repository includes two synthetic reply examples. Session recordings and
+raw experiment data are kept locally; see [data handling](docs/PRIVACY.md) for
+storage details and [sharing results](docs/PUBLICATION.md) before contributing media.
 
-## Repository map and terms
+## Repository map
 
 - `src/`: application, audio pipeline and native runner helpers.
 - `src/synth/`: optional evaluation and research tools with additional prerequisites.
@@ -156,8 +147,10 @@ an exact asset allowlist and hashes, with manual review still required.
 - `patches/`: reviewed changes against the pinned external runner.
 - `docs/`, `research/`: architecture, evidence, limitations and curated examples.
 
-The original application code is **unlicensed by maintainer choice**; no
-open-source application license has been granted. Models, dependencies, native
-runner and derived patches retain separate [third-party terms](docs/THIRD_PARTY.md).
+## License
+
+Turnwave's application code and documentation are [MIT licensed](LICENSE).
+Models and dependencies have their own [licenses](docs/THIRD_PARTY.md).
+
 See [contributing](CONTRIBUTING.md), [security](SECURITY.md) and
 [publication guidance](docs/PUBLICATION.md).

@@ -88,6 +88,6 @@
       "contains_human_recording": false
     }
   ],
-  "rights_and_review": "Authored fictional text and generated output only; no SAPI input audio, human recording, third-party dataset clip, full request, secret, or private history. Model terms linked in THIRD_PARTY.md; no application open-source license is granted.",
+  "rights_and_review": "Fictional prompts and generated responses; no participant recordings, original input WAVs or raw requests. See docs/THIRD_PARTY.md for model terms.",
   "limits": "Text-rubric labels do not certify spoken intelligibility. No human listening was performed. Different question wording and input voice conditions preclude causal comparisons."
 }

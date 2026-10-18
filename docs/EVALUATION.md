@@ -1,6 +1,9 @@
 # Evaluation and evidence boundaries
 
-Turnwave's research data records several different kinds of evidence. They answer different questions and must not be combined into one assistant-quality score. The published counts and figures are reproducible from the small curated JSON files in `research/`; historical neural reruns need original inputs, model/runtime assets and settings that are intentionally not distributed.
+The studies below measure separate parts of Turnwave. Their results are reported
+individually rather than combined into an overall quality score. Included data
+reproduce the counts and figures; rerunning historical model experiments also
+requires the original stimuli, model assets, runtimes and settings.
 
 ## Evidence map
 
@@ -14,10 +17,13 @@ flowchart TD
     P -->|No inference| X[Explicit client run is a separate API call]
     X --> E[export: retain denominator and eligibility]
     O[Six-pair CPU capture comparison] --> Q[Opening-buffer capture evidence only]
-    S[Two stopped setup attempts] --> Z[Zero model/capture cases; not model failures]
 ```
 
-`research/results.json` is the curated top-level ledger. It records the run class, denominator, decision and limits alongside the headline counts. The short-turn case files retain their authored labels and case-level outcomes. The public example manifest binds the two approved generated-reply WAVs to their sizes and hashes. The figure builder is `scripts/build_research_figures.py`; it reads the curated data and makes figures, it does not run a model or judge.
+[`research/results.json`](../research/results.json) records each study's method,
+denominator, outcome and limitations. The case files retain individual observations;
+the [reply examples](../research/examples/README.md) include saved WAVs and separate
+model text and machine transcripts. `scripts/build_research_figures.py` builds
+charts from those data without running inference.
 
 ## Main observations
 
@@ -28,10 +34,11 @@ flowchart TD
 | Combined semantic development suite | 7/7 frozen old-suite pairs passed with 7 actual submissions. Paired semantic submission differences ranged from −2.919 to +1.425 ms; quiet fallback was 4.563624 s. | Narrow development-suite integration evidence. | Broad timing acceptance, room acceptance or answer quality. A separate fresh benchmark attempt did not produce a valid completed score. |
 | Short-turn streaming capture and gate | One CPU synthetic diagnostic: 5/8 authored-complete cases released within 160 ms after the first raw VAD endpoint; all 8/8 unfinished prefixes stayed held for at least 2 seconds. All 16 cases were submitted once. | A measured timing-intent failure while the unfinished-prefix hold criterion passed. | Human conversation quality or a classifier-only benchmark; the metric includes capture/gate behavior and excludes the earlier silence wait. |
 | Fixed-endpoint audio OR rule | On a separate first-endpoint screen, Namo-only accepted 5/8 complete intents and held 8/8 prefixes; the proposed OR rule accepted 7/8 complete intents but falsely accepted 4/8 prefixes, so it was rejected. | A fixed-snapshot tradeoff for this small authored set. | A calibrated threshold, later-score behavior, or impossibility of a better temporal/contextual policy. |
-| Current capture path vs isolated opening candidate | One CPU-only, 20 ms step-paced run of 6 paired cases completed. Baseline and candidate detector events, capture intervals and captured bytes were identical in all six; 0 capture samples were added or removed. Noise-only and far-echo-only controls produced no event in either arm. The candidate remains private; recovery efficacy is unproven. | A narrow paired observation on two public audiobook clips from one speaker, plus seeded noise, synthetic echo, overlap, reset and mute controls. | Word-level recovery, intelligibility, arbitrary-room behavior or adoption. See `research/results.json` for the publication-safe numerical summary. |
+| Current capture path vs isolated opening candidate | One CPU-only, 20 ms step-paced run of 6 paired cases completed. Baseline and candidate detector events, capture intervals and captured bytes were identical in all six; 0 capture samples were added or removed. Noise-only and far-echo-only controls produced no event in either arm. The candidate remains private; recovery efficacy is unproven. | A narrow paired observation on two public audiobook clips from one speaker, plus seeded noise, synthetic echo, overlap, reset and mute controls. | Word-level recovery, intelligibility, arbitrary-room behavior or adoption. See `research/results.json` for the numerical summary. |
 | Native content diagnostic | One actual 24-request run used the pinned native LFM2.5-Audio runner and fixed VoiceBench inputs. It saved audio for 24/24 requests; 18 completed normally and 6 reached the token limit. | A small, fixed content slice with separately graded model text and machine transcription. | A full VoiceBench benchmark, leaderboard result, human-heard accuracy or overall quality score. |
 
-The six-pair capture experiment had two earlier setup attempts that stopped before frontend construction, model loading or case execution. The first could not resolve the pinned Silero package; the second failed the vendored PyWebRTC import guard after path mutation. Each had zero attempted cases and six unrun cases. They are preserved as setup failures, not model failures or capture outcomes. The later v3 run passed its runtime import preflight and completed all six pairs.
+Two earlier capture-test attempts stopped during dependency checks before any
+case ran. The completed run passed import preflight and finished all six pairs.
 
 ## Native 24-request content slice
 
@@ -58,7 +65,9 @@ or `openbookqa`), relative `audio` path, input `sha256` and scorer `metadata`.
 Inputs must be nonempty 16 kHz mono PCM16 WAVs. Keep source data and run outputs
 under ignored local folders and review their terms before use.
 
-There is deliberately no inference CLI. The Python API `infer_injected(...)` requires the caller to pass an explicit client and provenance; a real `ServerClient` also takes exclusive test ownership. Unit tests use injected fake clients and neutral generated fixtures. Those tests prove input, output, cancellation, hashing and denominator contracts, not model quality. `requirements-eval.txt` adds the pinned local ASR evaluation dependencies; it does not supply a dataset, a model, or permission to contact a judge.
+Inference is available through the Python API `infer_injected(...)`, with a
+caller-supplied client and provenance. A real `ServerClient` reserves exclusive
+backend ownership. Unit tests use injected fake clients and neutral generated fixtures. Those tests prove input, output, cancellation, hashing and denominator contracts, not model quality. `requirements-eval.txt` adds the pinned local ASR evaluation dependencies; it does not supply a dataset, a model, or permission to contact a judge.
 
 ## Reproduce summaries and checks
 
@@ -80,7 +89,7 @@ To reproduce historical neural results exactly, obtain the same frozen private s
 
 ## Boundaries
 
-The authored short-turn labels express the experimenter's intended task, not spontaneous-human ground truth. Public audiobook utterances are not conversational speech. Fixed 20 ms energy regions and full-recording nonzero spans are descriptive signal provenance, not word boundaries. No human recording, SAPI-rendered stimulus, third-party benchmark audio, model weights, native binary, private raw trace or private Git history is included in the public research bundle. The original application remains unlicensed by the maintainer's choice; third-party terms remain separate.
+The authored short-turn labels express the experimenter's intended task, not spontaneous-human ground truth. Public audiobook utterances are not conversational speech. Fixed 20 ms energy regions and full-recording nonzero spans are descriptive signal provenance, not word boundaries. No human recording, SAPI-rendered stimulus, third-party benchmark audio, model weights, native binary, private raw trace or private Git history is included in the public research bundle. Application code and documentation use the [MIT license](../LICENSE); [model and dependency terms](THIRD_PARTY.md) are separate.
 
 ## Release validation on 2026-10-18
 

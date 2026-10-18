@@ -14,7 +14,7 @@ generated reply examples are public. Raw private logs and recordings are not.
 | Does selective extra pre-roll improve fresh capture? | Six frozen paired CPU cases, 12 arms | Events and captured bytes identical in every pair | Do not adopt; benefit unproven |
 | Does native generation follow content tasks? | Adapted 24-request VoiceBench slice | 18 normal completions, 6 length-limited | Diagnostic baseline only |
 
-## A timing failure worth preserving
+## Short-turn completion delay
 
 ![Additional capture-gate delay for 16 synthetic cases](assets/short-turn-delay.png)
 
@@ -98,12 +98,11 @@ endpointing, playback and room latency. The 361.28 seconds of saved generated
 audio were not played in this test. This selected slice is not a full VoiceBench
 result and cannot rank this system against other implementations.
 
-## Successful narrow controls still need fresh tests
+## Earlier development controls
 
 An older combined semantic suite passed 7/7 synthetic development cases, including
 two stop commands and a joined sentence. It made seven actual submissions, with
-no generated-answer evaluation. A separate fresh attempt failed. The lesson is
-to retain development passes while distinguishing them from generalization.
+no generated-answer evaluation. A separate fresh attempt produced no valid score.
 
 The [two synthetic reply examples](../research/examples/README.md) similarly show
 one text-rubric pass and one ownership failure. They are selected illustrations,
@@ -111,8 +110,7 @@ not a two-case accuracy estimate or evidence that a particular voice caused fail
 
 ## What remains open
 
-False interruptions, paused-sentence behavior and reply quality remain known
-limitations and are parked while preparing this release. Controlled real-device
-acceptance and a clean-machine native installation are not established by the
-published unit suite. We do not claim SOTA, production readiness or solved smoothness.
+False interruptions, paused-sentence behavior and reply quality remain unresolved.
+Controlled real-device acceptance and a clean-machine native installation have
+not been established.
 See [evaluation boundaries and reproduction](EVALUATION.md).

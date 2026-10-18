@@ -1,8 +1,9 @@
-# Third-party components and publication scope
+# Third-party components
 
-The original Turnwave application is **unlicensed by maintainer choice**. No
-open-source application license has been granted. Dependency, runner and model
-terms are separate; this page does not replace them or grant additional rights.
+Turnwave's application code and documentation use the [MIT license](../LICENSE).
+Models, native runners and dependencies retain their own licenses. The
+llama.cpp notice for source included in the patches is preserved in
+[third-party notices](../THIRD_PARTY_NOTICES.md).
 
 | Component | Role | Source / terms to review |
 | --- | --- | --- |
@@ -22,9 +23,8 @@ illustrative replies are recorded in [examples.json](../research/examples/exampl
 
 The two response WAVs are genuine generated output from neutral, authored
 fictional scenarios, included for research documentation with model attribution.
-They contain no human recording. We do not redistribute Microsoft SAPI-rendered
-input WAVs or claim a general license to redistribute synthetic voices. Model
-terms remain relevant; no claim of universal commercial clearance is made.
+They contain no human recording. Microsoft SAPI-rendered input WAVs are not
+included. Uses of model-generated audio are subject to the model's terms.
 
 The capture comparison used two LibriSpeech utterances from the Hugging Face
 `hf-internal-testing/librispeech_asr_dummy` fixture at revision
@@ -42,12 +42,3 @@ This is not an official full benchmark submission. Semantic detector studies use
 [faster-whisper base.en](https://huggingface.co/Systran/faster-whisper-base.en).
 Frozen revisions are in the public evidence JSON. Review each upstream's terms
 before obtaining assets or rerunning studies.
-
-## Documentation references
-
-We used the organization of [OpenAI realtime agents](https://github.com/openai/openai-realtime-agents),
-[Anthropic cookbooks](https://github.com/anthropics/claude-cookbooks) and
-[Kyutai Moshi](https://github.com/kyutai-labs/moshi) as presentation references:
-clear setup, architecture, scenarios, evaluation boundaries and separate licenses.
-The diagrams and result narratives here describe Turnwave. These references
-do not imply endorsement or comparable model quality.
