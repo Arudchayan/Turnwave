@@ -128,8 +128,11 @@ def summarize(rows):
             known_limitation_false_cancels=sum(
                 row['false_cancel'] and row['limitation'] == 'known EOT limitation'
                 for row in items),
+            # Count only authored vocalisations, not the echo-only control or
+            # the mid-pause case that neither arm is expected to solve.
             backchannels_preserved=sum(
                 (not row['expected_cancel']) and (not row['cancelled'])
+                and row['id'] not in ('echo-only', 'mid-pause-400')
                 for row in items),
             cancel_latencies_ms=[row['cancel_from_onset_ms'] for row in items
                                  if row['cancelled']],
