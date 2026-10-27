@@ -69,6 +69,24 @@ Inference is available through the Python API `infer_injected(...)`, with a
 caller-supplied client and provenance. A real `ServerClient` reserves exclusive
 backend ownership. Unit tests use injected fake clients and neutral generated fixtures. Those tests prove input, output, cancellation, hashing and denominator contracts, not model quality. `requirements-eval.txt` adds the pinned local ASR evaluation dependencies; it does not supply a dataset, a model, or permission to contact a judge.
 
+## Floor replay
+
+`src/synth/floor_replay.py` is an offline policy/timing diagnostic for the
+experimental reversible floor. It feeds authored barge-in shapes (short
+backchannels, a cough, a short command, sustained speech, a mid-turn pause and
+echo-only) to the same `FloorPolicy` the app uses, for both hard and reversible
+modes. It writes per-case decisions and a small A/B summary:
+
+```powershell
+python -m src.synth.floor_replay --out outputs/floor_replay.json
+```
+
+The frozen cases are authored shapes, not human conversation. The mid-pause case
+is a known end-of-turn limitation and is counted separately. Commit latency is
+measured from the confirmed onset and excludes device, model and playback
+latency. Passing this replay is a prerequisite for a real-device A/B, not
+evidence that reversible mode improves live conversation.
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
@@ -78,6 +96,7 @@ optional plotting dependencies for charts. These commands do not run neural infe
 python -m pip install -r requirements-dev.txt
 python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
+python -m src.synth.floor_replay --out outputs/floor_replay.json
 python scripts/verify_research.py
 python scripts/check_publication.py --worktree
 python scripts/build_research_figures.py

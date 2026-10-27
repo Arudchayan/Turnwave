@@ -16,6 +16,7 @@ import numpy as np
 from audio_io import Mic, Player, list_input_devices, audio_thread
 from client import ServerClient, Turn, wav16k_bytes
 from duplex import DuplexFrontend
+from floor import FloorPolicy
 from diagnostics import Diagnostics, source_fingerprint
 from ui import PAGE
 from session_archive import ArchiveSealedError
@@ -45,9 +46,11 @@ class Job:
 
 class Assistant:
     """No import-time devices or threads; dependencies can be simulated in tests."""
-    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None):
+    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, floor_mode=None):
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
+        self.floor = FloorPolicy(mode=floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE', 'hard'))
+        self.floor_mode = self.floor.mode
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
@@ -200,11 +203,36 @@ class Assistant:
             except Exception as exc:
                 self.warning = 'Transcription unavailable: ' + str(exc)
 
+    def _apply_floor(self, action):
+        """Apply a floor decision. Injected players may not expose gain."""
+        if action.duck:
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(self.floor.duck_gain, 30)
+            self.diagnostics.event('floor_duck', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1))
+        if action.resume:
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(1.0, 100)
+            self.diagnostics.event('floor_resume', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1))
+        if action.cancel:
+            self.diagnostics.event('floor_commit', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1),
+                                   wall_ms=round(action.wall_ms, 1))
+            self.interrupt('barge-in')
+        if action.promote:
+            self.diagnostics.event('floor_promote', state=action.state,
+                                   reason=action.reason)
+
     def _loop(self):
         pre = collections.deque()
         rec = []
         rec_samples = 0
         recording = False
+        candidate = False
         while not self._stop.is_set():
             self._apply_device_requests()
             capture_queue = self.mic.q
@@ -229,7 +257,9 @@ class Assistant:
                     rec = []
                     rec_samples = 0
                     recording = False
+                    candidate = False
                     self.front.reset()
+                    self.floor.reset()
                     if self.status == 'recording':
                         self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
                 if not self.mic_on:
@@ -249,6 +279,23 @@ class Assistant:
                 continue
             if not len(clean):
                 continue
+            with self._lock:
+                # Mute/reset may arrive while the frontend is processing this
+                # block. Do not let a stale onset duck, cancel or submit.
+                if not self.mic_on or self._capture_reset.is_set():
+                    continue
+            rms = float(np.sqrt(np.mean(clean ** 2)))
+            # `speaking` is the frontend's segment state and stays true through
+            # the silence endpoint. The policy needs this block's speech
+            # evidence, not the segment state, or trailing silence would count
+            # as speech and turn every backchannel into a floor take.
+            policy_speaking = bool(getattr(self.front, 'hot', speaking))
+            action = self.floor.update(
+                now=time.perf_counter(), speaking=policy_speaking, started=started,
+                ended=ended, rms=rms, assistant_active=self._active is not None,
+                audible=bool(getattr(self.player, 'playing', False)),
+                block_s=len(clean) / 16000,
+                onset_ms=getattr(self.front, 'onset_speech_ms', None))
             if not recording:
                 pre.append(clean)
                 # Retain speech before confirmation without delaying onset.
@@ -258,24 +305,56 @@ class Assistant:
                     with self._lock:
                         if not self.mic_on or self._capture_reset.is_set():
                             continue
-                        self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(float(np.sqrt(np.mean(clean ** 2))), 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
-                        if self._active is not None:
-                            self.interrupt('barge-in')
+                        self._apply_floor(action)
+                        self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(rms, 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
                         recording = True
                         rec = list(pre)
                         rec_samples = sum(map(len, rec))
-                        self.status = 'recording'
+                        candidate = bool(self._active is not None and (action.duck or action.cancel))
+                        if action.cancel:
+                            self.status = 'recording'
+                        elif candidate:
+                            # The reply is still audible but ducked. Keep the
+                            # candidate private until the policy commits or
+                            # classifies it as a backchannel.
+                            self.status = 'speaking'
+                        else:
+                            self.status = 'recording'
             else:
                 rec.append(clean)
                 rec_samples += len(clean)
+                with self._lock:
+                    if not self.mic_on or self._capture_reset.is_set():
+                        continue
+                self._apply_floor(action)
+                if candidate and action.resume:
+                    # Short vocalisation: discard the candidate and let the
+                    # existing reply continue. No context reset, no submit.
+                    recording = False
+                    candidate = False
+                    rec = []
+                    rec_samples = 0
+                    pre.clear()
+                    with self._lock:
+                        self.status = ('speaking' if self._active is not None
+                                       else 'listening')
+                    continue
+                if candidate and action.cancel:
+                    candidate = False
+                    self.status = 'recording'
+                elif candidate and action.promote:
+                    candidate = False
+                    self.status = 'recording'
             if recording and (ended or rec_samples >= 20 * 16000):
                 audio = np.concatenate(rec)
                 self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended)
                 recording = False
+                candidate = False
                 rec = []
                 rec_samples = 0
                 pre.clear()
                 self.front.reset()
+                self.floor.reset()
                 if len(audio) >= 3200 and float(np.sqrt(np.mean(audio ** 2))) >= .006:
                     # Mute/reset may arrive while the frontend processes this
                     # block. Do not submit a stale automatic turn after mute.
@@ -461,7 +540,10 @@ class Assistant:
                 # Backend cannot truncate its KV to the played prefix.
                 self.first = True
             self.player.stop()
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(1.0, 0)
             self.front.clear_playback()
+            self.floor.reset()
             self.interrupt_candidate = False
             if announce:
                 self.interrupted_at = time.time()
@@ -700,6 +782,7 @@ class Assistant:
                         gen_start=self.gen_start, first_audio_at=self.first_audio_at,
                         eta_first_audio_ms=eta, eta_budget_ms=round(budget * 1000),
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
+                        floor_state=self.floor.state, floor_mode=self.floor.mode,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
                         error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error] if w) or None,

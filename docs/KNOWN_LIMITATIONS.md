@@ -3,7 +3,9 @@
 This is a research prototype, not a claim of universally reliable conversation.
 
 - A natural pause can end a turn too early. Current silence endpointing is about
-  480 ms, with a 20-second capture cap and pre-roll.
+  480 ms, with a 20-second capture cap and pre-roll. The experimental reversible
+  floor reduces cancellation on short backchannels but does not solve this
+  mid-turn-pause case; `hard` remains the default until a real-device A/B.
 - Speaker echo, quiet speech, room acoustics and device routing affect genuine
   and false interruption detection. Headphones are more predictable.
 - A clean output queue does not guarantee intelligible speech. Generated text

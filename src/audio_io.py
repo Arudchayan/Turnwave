@@ -364,6 +364,38 @@ class Player:
         self._lock = threading.Lock()
         self._stream = None
         self.playing = False
+        # Playback gain is a smooth ramp, not a step: ducking must not click.
+        self._gain = 1.0
+        self._gain_target = 1.0
+        self._gain_step = 0.0
+
+    def set_gain(self, gain, ramp_ms=30):
+        """Ramp rendered playback gain to ``gain`` over ``ramp_ms``."""
+        gain = max(0.0, min(1.0, float(gain)))
+        ramp_ms = max(0.0, float(ramp_ms))
+        with self._lock:
+            self._gain_target = gain
+            samples = max(1, round(self.rate * ramp_ms / 1000))
+            self._gain_step = (gain - self._gain) / samples
+
+    def _render_gain(self, samples):
+        """Apply the current gain envelope to one source block."""
+        with self._lock:
+            gain = self._gain
+            target = self._gain_target
+            step = self._gain_step
+        if not len(samples):
+            return samples
+        if gain == target:
+            return samples if gain == 1.0 else samples * gain
+        count = len(samples)
+        envelope = np.clip(gain + step * np.arange(1, count + 1), 0.0, 1.0)
+        with self._lock:
+            self._gain = float(envelope[-1])
+            if abs(self._gain - target) < 1e-6:
+                self._gain = target
+                self._gain_step = 0.0
+        return samples * envelope.astype(np.float32)
 
     def stop(self):
         with self._lock:
@@ -382,6 +414,9 @@ class Player:
         with self._lock:
             self._gen += 1
             generation = self._gen
+            self._gain = 1.0
+            self._gain_target = 1.0
+            self._gain_step = 0.0
         stream = None
         started = False
         self.stats = dict(underflows=0, source_samples=0, device_samples=0, max_gap_ms=0.0, latency_s=None)
@@ -406,7 +441,8 @@ class Player:
                             self.playing = True
                         stream.start()
                         self.stats['latency_s'] = float(getattr(stream, 'latency', 0))
-                    piece = audio[offset:offset + 480]
+                    source = audio[offset:offset + 480]
+                    piece = self._render_gain(source)
                     if not started:
                         started = True
                         if on_start is not None:
@@ -429,10 +465,10 @@ class Player:
                             self.stats['underflows'] += 1
                         previous_write = now
                         previous_duration = len(piece) / self.rate
-                        self.stats['source_samples'] += len(piece)
+                        self.stats['source_samples'] += len(source)
                         self.stats['device_samples'] += len(device_audio)
                         if on_written is not None:
-                            on_written(piece)
+                            on_written(source)
                     except sd.PortAudioError:
                         with self._lock:
                             interrupted = generation != self._gen

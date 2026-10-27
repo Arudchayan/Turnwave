@@ -36,6 +36,23 @@ interruption recovery resets model context. This sacrifices earlier memory.
 An OS-backed exclusive backend lease prevents app and benchmark processes from
 sharing one stateful conversation, including when the app is muted.
 
+## Reversible floor (experimental)
+
+The default barge-in path is deliberately conservative: a confirmed onset
+aborts the reply, stops playback and resets context. `LOCALVOICE_FLOOR_MODE=reversible`
+separates the reversible action from the irreversible one. An onset first
+**ducks** playback (`Player.set_gain`, a short ramp applied to both the device
+signal and the echo reference). While ducked, the app keeps the candidate audio
+private. Sustained speech or a sufficiently long endpoint commits the floor and
+cancels the reply; a short vocalisation is classified as a backchannel and
+playback resumes without a context reset. `src/floor.py` owns the decision and
+`src/app.py` applies it. This does not solve mid-turn pauses; that remains the
+end-of-turn problem described in [results](RESULTS.md).
+
+The offline replay `src/synth/floor_replay.py` drives the same policy with
+authored barge-in shapes and writes a hard-versus-reversible comparison. It
+opens no microphone, model or network connection.
+
 ## Streaming and playback
 
 `client.py` sends WAV requests and decodes streaming text/audio events. Model text

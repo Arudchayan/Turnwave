@@ -100,6 +100,11 @@ an input stream but does not submit microphone turns.
 `LOCALVOICE_SERVER` changes the backend URL (default local port 8080).
 `LOCALVOICE_CHAT_SYSTEM` changes the chat instruction. Optional transcription
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
+`LOCALVOICE_FLOOR_MODE=reversible` enables the experimental duck/backchannel
+path: a short vocalisation during a reply no longer has to cancel it. The
+default `hard` mode preserves immediate cancellation. See
+[architecture](docs/ARCHITECTURE.md) and the offline replay in
+[evaluation](docs/EVALUATION.md).
 The app and backend test entry points reserve exclusive context ownership;
 stop the app before running tests that use its backend, even while muted.
 

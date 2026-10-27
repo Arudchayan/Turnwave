@@ -60,9 +60,14 @@ class DuplexFrontend:
         self.residual_rejections = 0
         self._model = None
         self.speaking = False
+        self.hot = False
         self._hot = self._quiet = 0
         self.probability = 0.0
         self.level = 0.0
+        # Speech evidence already inside the confirmation window when the
+        # onset fires. A downstream policy must count this, not only the
+        # blocks that arrive after the callback.
+        self.onset_speech_ms = 0.0
 
     def warmup(self):
         with self._lock:
@@ -134,8 +139,10 @@ class DuplexFrontend:
             # acoustic timeline. AEC keeps its state and sub-10 ms mic frame.
             self._advance_history(self._raw_vad_buf, self._far_vad_buf, self._vad_buf)
             self.speaking = False
+            self.hot = False
             self._hot = self._quiet = 0
             self._onset_bits = 0
+            self.onset_speech_ms = 0.0
             self._vad_buf = np.zeros(0, np.float32)
             self._raw_vad_buf = np.zeros(0, np.float32)
             self._far_vad_buf = np.zeros(0, np.float32)
@@ -212,6 +219,7 @@ class DuplexFrontend:
                     self.residual_rejections += 1
             if not self.speaking and self._far_active and self.echo_score >= .6:
                 hot = False
+            self.hot = bool(hot)
             if not self.speaking:
                 # Brief echo masking need not erase genuine speech evidence.
                 # The default requires three eligible frames in five (160 ms).
@@ -222,6 +230,7 @@ class DuplexFrontend:
                         self.speaking = True
                         started = True
                         self._quiet = 0
+                        self.onset_speech_ms = self._hot * F_VAD * 1000.0 / 16000.0
             else:
                 self._quiet = 0 if hot else self._quiet + 1
                 if self._quiet >= self.end_chunks:
