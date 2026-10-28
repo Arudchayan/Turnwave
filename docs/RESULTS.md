@@ -120,6 +120,7 @@ snapshots above. Methods and limits are in [evaluation](EVALUATION.md).
 | Does the English EOT schedule transfer cross-lingually? | 400 German and 400 Spanish turns, English thresholds fixed | German: fixed 62.95% false cut-offs vs 45.40% (1 s) / 39.55% (2 s), 100% recall. Spanish: 67.25% vs 59.22% / 52.93%. Transfer is weak; per-language calibration needed. |
 | Is Smart Turn fast enough on this CPU? | 19 warm 8 s queries | 55.47 ms mean, 47.76 ms median, 81.93 ms p90. |
 | Does the LFM3 realtime transport work? | One public example WAV through `/v1/realtime` | Interleaved text and 24 kHz speech; 0.68 s first audio and 5.04 s reply on one warm local run. |
+| Is LFM3 ASR usable? | 20 LibriSpeech dummy clips, Q4_K_M CPU | 5.74% corpus WER, 65% sentence error; clean read speech, small subset. |
 
 The floor figures are policy/timing diagnostics. The EOT figures are
 per-pause observations on public English conversational audio, not per-turn or

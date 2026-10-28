@@ -137,12 +137,33 @@ def floor_acoustic_summary(source):
     )
 
 
+def lfm3_asr_summary(source):
+    rows = source.get('rows', [])
+    elapsed = sorted(row.get('elapsed_s', 0) for row in rows)
+    return dict(
+        schema_version=source.get('schema_version', 1),
+        evidence_class=source.get('evidence_class'),
+        dataset=source.get('dataset'),
+        model=source.get('model'),
+        clips=len(rows),
+        corpus_wer=source.get('corpus_wer'),
+        sentence_error_rate=source.get('sentence_error_rate'),
+        latency_s=dict(
+            min=elapsed[0] if elapsed else None,
+            median=elapsed[len(elapsed) // 2] if elapsed else None,
+            max=elapsed[-1] if elapsed else None,
+        ),
+        limits=source.get('limits'),
+    )
+
+
 def main():
     paths = [
         write('floor_replay_summary.json', floor_summary(read('floor_replay.json'))),
         write('floor_acoustic_summary.json',
               floor_acoustic_summary(read('floor_acoustic.json'))),
         write('eot_bench_summary.json', eot_summary(read('eot_bench.json'))),
+        write('lfm3_asr_summary.json', lfm3_asr_summary(read('lfm3_asr_bench.json'))),
     ]
     for path in paths:
         print(path)

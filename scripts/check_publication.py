@@ -40,6 +40,7 @@ PUBLIC_RESEARCH_ASSETS = {
     'research/floor_replay_summary.json',
     'research/floor_acoustic_summary.json',
     'research/eot_bench_summary.json',
+    'research/lfm3_asr_summary.json',
     'research/examples/examples.json',
     'research/examples/pass-reply.wav',
     'research/examples/failure-reply.wav',

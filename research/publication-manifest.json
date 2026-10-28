@@ -117,6 +117,15 @@
       "source_type": "curated_public_research_aggregate",
       "contains_human_recording": false,
       "whole_reply": false
+    },
+    {
+      "path": "research/lfm3_asr_summary.json",
+      "sha256": "237fa71b07356797002a22f244fc8f19c83bb507528202997a56245d0c743cc2",
+      "bytes": 763,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
     }
   ]
 }

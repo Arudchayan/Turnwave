@@ -38,6 +38,7 @@ flowchart LR
 | Cross-lingual EOT | English 0.9/0.7 schedule: German 45.40% false cut-offs (fixed 62.95%); Spanish 59.22% (fixed 67.25%), 100% recall | Weak transfer; per-language calibration needed |
 | Smart Turn CPU latency | 55.47 ms mean, 47.76 ms median, 81.93 ms p90 per 8 s query | 300 ms schedule feasible on this CPU |
 | LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
+| LFM3 ASR check | 20 LibriSpeech dummy clips, Q4_K_M CPU: 5.74% corpus WER, 65% sentence error | Clean read-speech diagnostic |
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.
 

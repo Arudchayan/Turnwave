@@ -103,6 +103,16 @@ python -m src.synth.lfm3_smoke --wav research/examples/pass-reply.wav \
   --url ws://127.0.0.1:8080/v1/realtime --out outputs/lfm3-reply.wav
 ```
 
+A small public ASR check used the first 20 clips of the LibriSpeech dummy
+fixture through LFM3-Audio-2B Q4_K_M on CPU. Corpus WER was 5.74% and sentence
+error rate 65%; per-clip latency ranged from 0.9 s to 9.0 s. This is clean read
+speech from a small speaker subset, not a full LibriSpeech or noisy-speech
+benchmark.
+
+```powershell
+python scripts/lfm3_asr_bench.py --limit 20 --url http://127.0.0.1:8091
+```
+
 ## Acoustic floor stress replay
 
 `src/synth/floor_acoustic.py` drives the real `DuplexFrontend` (Silero VAD,

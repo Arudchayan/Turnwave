@@ -12,6 +12,7 @@ including unsuccessful approaches and example model outputs.
 | [floor_replay_summary.json](floor_replay_summary.json) | Compact hard-vs-reversible floor policy comparison |
 | [floor_acoustic_summary.json](floor_acoustic_summary.json) | Real VAD/AEC floor stress replay, including the negative backchannel transfer |
 | [eot_bench_summary.json](eot_bench_summary.json) | Compact Smart Turn public-pause EOT comparison |
+| [lfm3_asr_summary.json](lfm3_asr_summary.json) | Compact LFM3 LibriSpeech ASR check |
 | [publication-manifest.json](publication-manifest.json) | Asset sizes, formats, provenance and SHA-256 hashes |
 
 ## Reproduce the summaries
