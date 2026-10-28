@@ -62,7 +62,9 @@ class Assistant:
             spec = os.getenv('LOCALVOICE_EOT_MODEL')
             scorer = SmartTurnScorer(None if spec in ('1', 'smart-turn') else spec)
             timeout = int(os.getenv('LOCALVOICE_EOT_TIMEOUT_MS', '2000'))
-            self.eot = CompletionPolicy(scorer, timeout_ms=timeout)
+            threshold = float(os.getenv('LOCALVOICE_EOT_THRESHOLD', '0.5'))
+            self.eot = CompletionPolicy(scorer, threshold=threshold,
+                                        timeout_ms=timeout)
         if self.eot is not None and hasattr(self.front, 'end_chunks'):
             self.front.end_chunks = max(1, round(getattr(self.eot, 'timeout_ms', 2000) / 32))
         if client is None:

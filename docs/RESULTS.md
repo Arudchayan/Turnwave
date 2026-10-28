@@ -108,6 +108,23 @@ The [two synthetic reply examples](../research/examples/README.md) similarly sho
 one text-rubric pass and one ownership failure. They are selected illustrations,
 not a two-case accuracy estimate or evidence that a particular voice caused failure.
 
+## Current policy diagnostics
+
+These are newer offline diagnostics, separate from the frozen historical
+snapshots above. Methods and limits are in [evaluation](EVALUATION.md).
+
+| Question | Evidence | Result |
+| --- | --- | --- |
+| Does reversible floor control preserve short backchannels? | Seven authored barge-in shapes; hard vs duck/backchannel | Hard: 3 non-limitation false cancels, 0/3 backchannels preserved. Reversible: 0 false cancels, 3/3 preserved, 0 missed floor takes, median commit 140 ms from confirmed onset. |
+| Does Smart Turn improve the public-pause trade-off? | 400 English turns from `livekit/eot-bench-data`; 864 pause cases at 300 ms | Fixed 480 ms: 33.65% false cut-offs, 100% recall. Re-query + 2 s timeout: 15.88% false cut-offs, 100% recall. |
+| Does the LFM3 realtime transport work? | One public example WAV through `/v1/realtime` | Interleaved text and 24 kHz speech; 0.68 s first audio and 5.04 s reply on one warm local run. |
+
+The floor figures are policy/timing diagnostics. The EOT figures are
+per-pause observations on public English conversational audio, not per-turn or
+real-device acceptance. The LFM3 figure is a single smoke test, not a latency
+benchmark. The mid-turn-pause false cancel is reduced but not eliminated; the
+optional sidecar and floor mode remain opt-in.
+
 ## What remains open
 
 False interruptions, paused-sentence behavior and reply quality remain unresolved.
