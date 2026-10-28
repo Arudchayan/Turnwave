@@ -42,6 +42,10 @@ def floor_summary(source):
 
 
 def eot_summary(source):
+    per_turn = None
+    per_turn_path = OUT / 'eot_per_turn.json'
+    if per_turn_path.exists():
+        per_turn = json.loads(per_turn_path.read_text(encoding='utf-8'))
     budgets = {}
     for key, row in source.get('budgets', {}).items():
         budgets[key] = dict(
@@ -73,6 +77,7 @@ def eot_summary(source):
         fixed_480ms=source.get('fixed_480ms'),
         temporal_policy=temporal,
         hybrid_timeouts=hybrid,
+        per_turn_300ms=per_turn,
         decision=source.get('decision'),
         limits=source.get('limits'),
     )

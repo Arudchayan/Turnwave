@@ -294,6 +294,17 @@
       }
     }
   },
+  "per_turn_300ms": {
+    "schema_version": 1,
+    "budget_ms": 300,
+    "denominator": "turns with at least one mid-turn pause >= 300 ms",
+    "turns": 165,
+    "fixed_480ms_cut": 125,
+    "fixed_480ms_rate": 0.7576,
+    "single_smart_turn_cut": 77,
+    "single_smart_turn_rate": 0.4667,
+    "note": "Descriptive subset; not the per-pause primary metric."
+  },
   "decision": {
     "current_fixed_480ms": {
       "threshold": 0.5,

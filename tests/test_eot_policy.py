@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
@@ -50,6 +51,24 @@ def test_speech_resets_the_waiting_state():
     assert policy.update([0], 100) is None
     assert policy.update([0], 300) == 'hold'
     assert policy.queries == 1
+
+
+def test_smart_turn_scorer_can_be_constructed_with_injected_components():
+    from types import SimpleNamespace
+    from eot import SmartTurnScorer
+
+    class Features:
+        def __call__(self, audio, **kwargs):
+            return SimpleNamespace(input_features=np.zeros((1, 80, 800), np.float32))
+
+    class Session:
+        def run(self, names, feeds):
+            assert feeds['input_features'].shape == (1, 80, 800)
+            return [np.array([[.7]], dtype=np.float32)]
+
+    scorer = SmartTurnScorer(model_path='fake', session=Session(),
+                             feature_extractor=Features())
+    assert scorer.score(np.zeros(16000, np.float32)) == pytest.approx(.7)
 
 
 def test_due_tracks_the_query_schedule_without_calling_the_model():

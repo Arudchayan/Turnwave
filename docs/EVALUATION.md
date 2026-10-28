@@ -124,6 +124,12 @@ The 2000 ms hybrid is the policy wired behind `LOCALVOICE_EOT_MODEL=smart-turn`;
 most final turns commit at the 300 ms query, while uncertain turns are bounded
 by the timeout.
 
+As a descriptive per-turn check, restrict to the 165 turns that contain a
+mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
+(75.8%) of those turns; one Smart Turn query at 300 ms cut off 77/165 (46.7%).
+This is a different denominator from the per-pause table and is not used for
+the policy decision.
+
 These are per-pause observations on public English conversational audio, not
 per-turn or real-device results. The labels are derived from the dataset's
 silence timing, not human adjudication of intent. Smart Turn is scored offline
@@ -149,6 +155,8 @@ python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
 python -m src.synth.floor_replay --out outputs/floor_replay.json
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+python scripts/eot_per_turn.py
+python scripts/export_research_summaries.py
 python scripts/verify_research.py
 python scripts/check_publication.py --worktree
 python scripts/build_research_figures.py
