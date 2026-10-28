@@ -1,0 +1,6 @@
+# Optional public-pause EOT diagnostic (src/synth/eot_bench.py).
+-r requirements.txt
+pandas>=2.2
+pyarrow>=17
+huggingface_hub>=0.27
+transformers>=4.47

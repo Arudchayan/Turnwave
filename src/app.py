@@ -46,7 +46,7 @@ class Job:
 
 class Assistant:
     """No import-time devices or threads; dependencies can be simulated in tests."""
-    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, floor_mode=None):
+    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, floor_mode=None, eot=None):
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
         self.floor = FloorPolicy(mode=floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE', 'hard'))
@@ -55,7 +55,23 @@ class Assistant:
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
         self.front = front if front is not None else DuplexFrontend()
-        self.client = client if client is not None else ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+        self.eot = eot
+        self.eot_error = None
+        if self.eot is None and os.getenv('LOCALVOICE_EOT_MODEL'):
+            from eot import CompletionPolicy, SmartTurnScorer
+            spec = os.getenv('LOCALVOICE_EOT_MODEL')
+            scorer = SmartTurnScorer(None if spec in ('1', 'smart-turn') else spec)
+            timeout = int(os.getenv('LOCALVOICE_EOT_TIMEOUT_MS', '2000'))
+            self.eot = CompletionPolicy(scorer, timeout_ms=timeout)
+        if self.eot is not None and hasattr(self.front, 'end_chunks'):
+            self.front.end_chunks = max(1, round(getattr(self.eot, 'timeout_ms', 2000) / 32))
+        if client is None:
+            if os.getenv('LOCALVOICE_TRANSPORT', 'http').lower() == 'realtime':
+                from realtime_client import RealtimeClient
+                client = RealtimeClient()
+            else:
+                client = ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+        self.client = client
         self.asr_client = asr_client
         if asr_client is not None and asr_client.base.rstrip('/') == self.client.base.rstrip('/'):
             raise ValueError('Transcription needs a separate server context')
@@ -163,6 +179,12 @@ class Assistant:
             for thread in list(self._threads):
                 if thread is not threading.current_thread():
                     thread.join(timeout=1)
+            close_client = getattr(self.client, 'close', None)
+            if close_client is not None:
+                try:
+                    close_client()
+                except Exception:
+                    pass
             self.diagnostics.event('shutdown')
             self.diagnostics.close()
 
@@ -260,6 +282,8 @@ class Assistant:
                     candidate = False
                     self.front.reset()
                     self.floor.reset()
+                    if self.eot is not None:
+                        self.eot.reset()
                     if self.status == 'recording':
                         self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
                 if not self.mic_on:
@@ -285,6 +309,26 @@ class Assistant:
                 if not self.mic_on or self._capture_reset.is_set():
                     continue
             rms = float(np.sqrt(np.mean(clean ** 2)))
+            eot_commit = False
+            if self.eot is not None and recording:
+                if getattr(self.front, 'hot', False):
+                    self.eot.reset()
+                elif not ended:
+                    quiet_ms = getattr(self.front, 'quiet_ms', 0)
+                    decision = None
+                    try:
+                        due = getattr(self.eot, 'due', None)
+                        if due is None or due(quiet_ms):
+                            decision = self.eot.update(
+                                np.concatenate(rec) if rec else clean, quiet_ms)
+                    except Exception as exc:
+                        self.eot_error = 'End-of-turn detection failed: ' + str(exc)
+                        self.eot = None
+                        if hasattr(self.front, 'end_chunks'):
+                            self.front.end_chunks = max(1, round(.48 * 1000 / 32))
+                        decision = None
+                    if decision == 'commit':
+                        eot_commit = True
             # `speaking` is the frontend's segment state and stays true through
             # the silence endpoint. The policy needs this block's speech
             # evidence, not the segment state, or trailing silence would count
@@ -345,9 +389,9 @@ class Assistant:
                 elif candidate and action.promote:
                     candidate = False
                     self.status = 'recording'
-            if recording and (ended or rec_samples >= 20 * 16000):
+            if recording and (ended or eot_commit or rec_samples >= 20 * 16000):
                 audio = np.concatenate(rec)
-                self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended)
+                self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended, eot_commit=eot_commit, eot_score=getattr(self.eot, 'last_score', None) if self.eot is not None else None)
                 recording = False
                 candidate = False
                 rec = []
@@ -355,6 +399,8 @@ class Assistant:
                 pre.clear()
                 self.front.reset()
                 self.floor.reset()
+                if self.eot is not None:
+                    self.eot.reset()
                 if len(audio) >= 3200 and float(np.sqrt(np.mean(audio ** 2))) >= .006:
                     # Mute/reset may arrive while the frontend processes this
                     # block. Do not submit a stale automatic turn after mute.
@@ -544,6 +590,8 @@ class Assistant:
                 self.player.set_gain(1.0, 0)
             self.front.clear_playback()
             self.floor.reset()
+            if self.eot is not None:
+                self.eot.reset()
             self.interrupt_candidate = False
             if announce:
                 self.interrupted_at = time.time()
@@ -783,9 +831,11 @@ class Assistant:
                         eta_first_audio_ms=eta, eta_budget_ms=round(budget * 1000),
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
                         floor_state=self.floor.state, floor_mode=self.floor.mode,
+                        eot_enabled=self.eot is not None, eot_error=self.eot_error,
+                        eot=self.eot.snapshot() if self.eot is not None else None,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
-                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error] if w) or None,
+                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self.eot_error] if w) or None,
                         audio_diagnostics=dict(residual_rejections=getattr(self.front, 'residual_rejections', 0), input_gain=getattr(self.mic, 'effective_gain', None), echo_score=getattr(self.front, 'echo_score', None), input_latency_s=getattr(self.mic, 'latency_s', None), input_drops=getattr(self.mic, 'dropped_blocks', 0), clipped_fraction=getattr(self.mic, 'clipped_fraction', 0), playback=getattr(self.player, 'stats', {})))
 
 

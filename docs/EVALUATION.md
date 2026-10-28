@@ -87,6 +87,57 @@ measured from the confirmed onset and excludes device, model and playback
 latency. Passing this replay is a prerequisite for a real-device A/B, not
 evidence that reversible mode improves live conversation.
 
+## LFM3 realtime smoke test
+
+`src/synth/lfm3_smoke.py` sends one public example WAV through the LFM3
+`/v1/realtime` client and saves the returned 24 kHz audio. On one warm local GPU
+run, the reply text was “Got it, you mentioned buying a blue lamp. What would
+you like to know about it?”, first audio arrived at 0.679 s, and the reply was
+5.04 s long with `finish_reason=stop`. Re-running LFM3 ASR over the saved reply
+returned the same sentence. This is a transport and intelligibility smoke test,
+not a latency benchmark: it is one clip, one machine, and the ASR is the same
+model family rather than an independent judge.
+
+```powershell
+python -m src.synth.lfm3_smoke --wav research/examples/pass-reply.wav \
+  --url ws://127.0.0.1:8080/v1/realtime --out outputs/lfm3-reply.wav
+```
+
+## Public-pause EOT diagnostic
+
+`src/synth/eot_bench.py` scores the English validation split of
+`livekit/eot-bench-data` with Smart Turn v3.2. It treats every pause long enough
+to reach a decision time as a case: a mid-turn pause that crosses the threshold
+is a false cut-off, and a trailing pause that crosses it is an end-of-turn
+detection. The 300 ms budget produced 864 pause cases (464 mid-turn, 400 final).
+
+| Policy | False cut-off | EOT recall | Note |
+| --- | ---: | ---: | --- |
+| Fixed 480 ms endpoint | 33.65% | 100% | Current app behaviour |
+| One Smart Turn query at 300 ms | 23.28% | 76% | No timeout recovery |
+| Re-query every 200 ms, no timeout | 14.35% | 83% | Lower false cut-off, misses uncertain finals |
+| Re-query + 1000 ms timeout | 20.82% | 100% | Bounded wait |
+| Re-query + 2000 ms timeout | 15.88% | 100% | Best measured trade-off |
+
+The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at 800 ms.
+The 2000 ms hybrid is the policy wired behind `LOCALVOICE_EOT_MODEL=smart-turn`;
+most final turns commit at the 300 ms query, while uncertain turns are bounded
+by the timeout.
+
+These are per-pause observations on public English conversational audio, not
+per-turn or real-device results. The labels are derived from the dataset's
+silence timing, not human adjudication of intent. Smart Turn is scored offline
+with Whisper features; the diagnostic excludes the app's microphone, AEC,
+playback and model latency. It is evidence for a bounded policy, not a claim of
+universal endpointing accuracy.
+
+Run it with:
+
+```powershell
+python -m pip install -r requirements-eot.txt
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+```
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
@@ -97,6 +148,7 @@ python -m pip install -r requirements-dev.txt
 python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
 python -m src.synth.floor_replay --out outputs/floor_replay.json
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 python scripts/verify_research.py
 python scripts/check_publication.py --worktree
 python scripts/build_research_figures.py

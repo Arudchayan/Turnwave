@@ -1,0 +1,330 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-28T13:53:26+00:00",
+  "evidence_class": "offline public-pause scoring; no microphone or live model",
+  "dataset": {
+    "repo": "livekit/eot-bench-data",
+    "file": "data/en/validation-00000-of-00001.parquet",
+    "sha256": "e475d435c8e693912243e8a810bf7e34a59e01e208551ce5b362c9c778b0fdc4",
+    "rows": 400
+  },
+  "model": {
+    "repo": "pipecat-ai/smart-turn-v3",
+    "file": "smart-turn-v3.2-cpu.onnx",
+    "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+  },
+  "sample_rate": 16000,
+  "budgets": {
+    "300": {
+      "cases": 864,
+      "mid_pauses": 464,
+      "final_pauses": 400,
+      "auc": 0.840536099137931,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2328,
+        "eot_recall": 0.76,
+        "precision": 0.7379,
+        "tp": 304,
+        "fp": 108,
+        "fn": 96,
+        "tn": 356
+      },
+      "operating_points": {
+        "max_5pct_false_cutoff": null,
+        "max_10pct_false_cutoff": {
+          "threshold": 0.95,
+          "false_cutoff": 0.0862,
+          "eot_recall": 0.485,
+          "precision": 0.8291,
+          "tp": 194,
+          "fp": 40,
+          "fn": 206,
+          "tn": 424
+        }
+      }
+    },
+    "500": {
+      "cases": 683,
+      "mid_pauses": 283,
+      "final_pauses": 400,
+      "auc": 0.8461572438162545,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2473,
+        "eot_recall": 0.7825,
+        "precision": 0.8172,
+        "tp": 313,
+        "fp": 70,
+        "fn": 87,
+        "tn": 213
+      },
+      "operating_points": {
+        "max_5pct_false_cutoff": null,
+        "max_10pct_false_cutoff": {
+          "threshold": 0.95,
+          "false_cutoff": 0.0848,
+          "eot_recall": 0.51,
+          "precision": 0.8947,
+          "tp": 204,
+          "fp": 24,
+          "fn": 196,
+          "tn": 259
+        }
+      }
+    },
+    "800": {
+      "cases": 505,
+      "mid_pauses": 105,
+      "final_pauses": 400,
+      "auc": 0.8518928571428571,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2857,
+        "eot_recall": 0.775,
+        "precision": 0.9118,
+        "tp": 310,
+        "fp": 30,
+        "fn": 90,
+        "tn": 75
+      },
+      "operating_points": {
+        "max_5pct_false_cutoff": null,
+        "max_10pct_false_cutoff": {
+          "threshold": 0.95,
+          "false_cutoff": 0.0857,
+          "eot_recall": 0.54,
+          "precision": 0.96,
+          "tp": 216,
+          "fp": 9,
+          "fn": 184,
+          "tn": 96
+        }
+      }
+    },
+    "1000": {
+      "cases": 479,
+      "mid_pauses": 79,
+      "final_pauses": 400,
+      "auc": 0.8491930379746836,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2658,
+        "eot_recall": 0.745,
+        "precision": 0.9342,
+        "tp": 298,
+        "fp": 21,
+        "fn": 102,
+        "tn": 58
+      },
+      "operating_points": {
+        "max_5pct_false_cutoff": null,
+        "max_10pct_false_cutoff": {
+          "threshold": 0.95,
+          "false_cutoff": 0.0886,
+          "eot_recall": 0.4975,
+          "precision": 0.966,
+          "tp": 199,
+          "fp": 7,
+          "fn": 201,
+          "tn": 72
+        }
+      }
+    }
+  },
+  "fixed_480ms": {
+    "threshold": 0.5,
+    "false_cutoff": 0.3365,
+    "eot_recall": 1.0,
+    "precision": 0.5831,
+    "tp": 400,
+    "fp": 286,
+    "fn": 0,
+    "tn": 564
+  },
+  "temporal_policy": {
+    "threshold": 0.5,
+    "step_ms": 200,
+    "max_wait_ms": 1000,
+    "at_0_5": {
+      "threshold": 0.5,
+      "false_cutoff": 0.1435,
+      "eot_recall": 0.83,
+      "precision": 0.7313,
+      "tp": 332,
+      "fp": 122,
+      "fn": 68,
+      "tn": 728
+    },
+    "median_final_latency_ms": 300.0,
+    "final_detected": 332,
+    "final_total": 400
+  },
+  "hybrid_timeouts": {
+    "600": {
+      "timeout_ms": 600,
+      "threshold": 0.5,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2812,
+        "eot_recall": 1.0,
+        "precision": 0.626,
+        "tp": 400,
+        "fp": 239,
+        "fn": 0,
+        "tn": 611
+      },
+      "median_final_latency_ms": 300.0,
+      "final_detected": 400,
+      "final_total": 400,
+      "reasons": {
+        "score": 454,
+        "mid-timeout": 117,
+        "final-timeout": 68
+      }
+    },
+    "800": {
+      "timeout_ms": 800,
+      "threshold": 0.5,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2294,
+        "eot_recall": 1.0,
+        "precision": 0.6723,
+        "tp": 400,
+        "fp": 195,
+        "fn": 0,
+        "tn": 655
+      },
+      "median_final_latency_ms": 300.0,
+      "final_detected": 400,
+      "final_total": 400,
+      "reasons": {
+        "score": 454,
+        "mid-timeout": 73,
+        "final-timeout": 68
+      }
+    },
+    "1000": {
+      "timeout_ms": 1000,
+      "threshold": 0.5,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.2082,
+        "eot_recall": 1.0,
+        "precision": 0.6932,
+        "tp": 400,
+        "fp": 177,
+        "fn": 0,
+        "tn": 673
+      },
+      "median_final_latency_ms": 300.0,
+      "final_detected": 400,
+      "final_total": 400,
+      "reasons": {
+        "score": 454,
+        "mid-timeout": 55,
+        "final-timeout": 68
+      }
+    },
+    "1200": {
+      "timeout_ms": 1200,
+      "threshold": 0.5,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.1918,
+        "eot_recall": 1.0,
+        "precision": 0.7105,
+        "tp": 400,
+        "fp": 163,
+        "fn": 0,
+        "tn": 687
+      },
+      "median_final_latency_ms": 300.0,
+      "final_detected": 400,
+      "final_total": 400,
+      "reasons": {
+        "score": 454,
+        "mid-timeout": 41,
+        "final-timeout": 68
+      }
+    },
+    "1500": {
+      "timeout_ms": 1500,
+      "threshold": 0.5,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.1788,
+        "eot_recall": 1.0,
+        "precision": 0.7246,
+        "tp": 400,
+        "fp": 152,
+        "fn": 0,
+        "tn": 698
+      },
+      "median_final_latency_ms": 300.0,
+      "final_detected": 400,
+      "final_total": 400,
+      "reasons": {
+        "score": 454,
+        "mid-timeout": 30,
+        "final-timeout": 68
+      }
+    },
+    "2000": {
+      "timeout_ms": 2000,
+      "threshold": 0.5,
+      "at_0_5": {
+        "threshold": 0.5,
+        "false_cutoff": 0.1588,
+        "eot_recall": 1.0,
+        "precision": 0.7477,
+        "tp": 400,
+        "fp": 135,
+        "fn": 0,
+        "tn": 715
+      },
+      "median_final_latency_ms": 300.0,
+      "final_detected": 400,
+      "final_total": 400,
+      "reasons": {
+        "score": 454,
+        "mid-timeout": 13,
+        "final-timeout": 68
+      }
+    }
+  },
+  "decision": {
+    "current_fixed_480ms": {
+      "threshold": 0.5,
+      "false_cutoff": 0.3365,
+      "eot_recall": 1.0,
+      "precision": 0.5831,
+      "tp": 400,
+      "fp": 286,
+      "fn": 0,
+      "tn": 564
+    },
+    "single_query_300ms": {
+      "threshold": 0.5,
+      "false_cutoff": 0.2328,
+      "eot_recall": 0.76,
+      "precision": 0.7379,
+      "tp": 304,
+      "fp": 108,
+      "fn": 96,
+      "tn": 356
+    },
+    "re_query": {
+      "threshold": 0.5,
+      "false_cutoff": 0.1435,
+      "eot_recall": 0.83,
+      "precision": 0.7313,
+      "tp": 332,
+      "fp": 122,
+      "fn": 68,
+      "tn": 728
+    }
+  },
+  "limits": "English validation split only; public conversational pauses, not this app's microphone or room. The 300 ms clip ends with exactly the budget's silence; longer waits include more silence. Smart Turn is scored offline with Whisper features; this is not a live latency or device test. A mid-pause crossing is a false cut-off even when the speaker later continues."
+}

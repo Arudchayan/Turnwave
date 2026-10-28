@@ -37,6 +37,8 @@ PUBLIC_RESEARCH_ASSETS = {
     'research/results.json',
     'research/short-turn-cases.json',
     'research/candidate-screen-cases.json',
+    'research/floor_replay_summary.json',
+    'research/eot_bench_summary.json',
     'research/examples/examples.json',
     'research/examples/pass-reply.wav',
     'research/examples/failure-reply.wav',

@@ -47,6 +47,8 @@ outputs/experiments/
 !/research/results.json
 !/research/short-turn-cases.json
 !/research/candidate-screen-cases.json
+!/research/floor_replay_summary.json
+!/research/eot_bench_summary.json
 !/research/examples/
 /research/examples/*
 !/research/examples/README.md

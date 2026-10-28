@@ -9,6 +9,8 @@ including unsuccessful approaches and example model outputs.
 | [short-turn-cases.json](short-turn-cases.json) | All 16 observations from the streaming completion diagnostic |
 | [candidate-screen-cases.json](candidate-screen-cases.json) | All 16 fixed-endpoint scores for the rejected audio OR rule |
 | [examples](examples/README.md) | Two complete generated replies, model text and independent ASR |
+| [floor_replay_summary.json](floor_replay_summary.json) | Compact hard-vs-reversible floor policy comparison |
+| [eot_bench_summary.json](eot_bench_summary.json) | Compact Smart Turn public-pause EOT comparison |
 | [publication-manifest.json](publication-manifest.json) | Asset sizes, formats, provenance and SHA-256 hashes |
 
 ## Reproduce the summaries
@@ -17,6 +19,14 @@ including unsuccessful approaches and example model outputs.
 python scripts/verify_research.py
 python -m pip install -r requirements-docs.txt
 python scripts/build_research_figures.py
+```
+
+The two policy summaries are regenerated from the local, ignored outputs:
+
+```powershell
+python -m src.synth.floor_replay --out outputs/floor_replay.json
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+python scripts/export_research_summaries.py
 ```
 
 The verifier recalculates counts and checks the example audio hashes and formats.

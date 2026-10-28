@@ -64,6 +64,7 @@ class DuplexFrontend:
         self._hot = self._quiet = 0
         self.probability = 0.0
         self.level = 0.0
+        self.quiet_ms = 0.0
         # Speech evidence already inside the confirmation window when the
         # onset fires. A downstream policy must count this, not only the
         # blocks that arrive after the callback.
@@ -141,6 +142,7 @@ class DuplexFrontend:
             self.speaking = False
             self.hot = False
             self._hot = self._quiet = 0
+            self.quiet_ms = 0.0
             self._onset_bits = 0
             self.onset_speech_ms = 0.0
             self._vad_buf = np.zeros(0, np.float32)
@@ -238,4 +240,5 @@ class DuplexFrontend:
                     ended = True
                     self._hot = 0
                     self._onset_bits = 0
+            self.quiet_ms = self._quiet * F_VAD * 1000.0 / 16000.0
         return self.speaking, started, ended, clean

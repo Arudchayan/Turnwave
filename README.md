@@ -3,7 +3,9 @@
 [![Tests](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml/badge.svg)](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml)
 
 An experimental local speech-to-speech assistant for Windows and WSL2, built
-around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner.
+around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner. An
+optional **LFM3-Audio-2B** path uses llama.cpp's `/v1/realtime` WebSocket for
+interleaved text and 24 kHz speech; the LFM2.5 path remains the default.
 
 The app listens while the model replies and can cancel playback when you speak.
 It adds interruption handling around a turn-based audio model. This is a research
@@ -102,11 +104,48 @@ an input stream but does not submit microphone turns.
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
 `LOCALVOICE_FLOOR_MODE=reversible` enables the experimental duck/backchannel
 path: a short vocalisation during a reply no longer has to cancel it. The
-default `hard` mode preserves immediate cancellation. See
-[architecture](docs/ARCHITECTURE.md) and the offline replay in
-[evaluation](docs/EVALUATION.md).
+default `hard` mode preserves immediate cancellation.
+`LOCALVOICE_EOT_MODEL=smart-turn` enables the optional Smart Turn completion
+sidecar and extends the silence wait to `LOCALVOICE_EOT_TIMEOUT_MS` (default
+2000); install `requirements-eot.txt` first. See [architecture](docs/ARCHITECTURE.md)
+and the offline replay in [evaluation](docs/EVALUATION.md).
 The app and backend test entry points reserve exclusive context ownership;
 stop the app before running tests that use its backend, even while muted.
+
+## Optional LFM3-Audio-2B realtime path
+
+LFM3-Audio-2B is a newer 2B local audio model with 32K context, 18 speech
+languages, tool calling, and native streaming through llama.cpp's
+OpenAI-compatible `/v1/realtime` WebSocket. It needs llama.cpp **b11960 or
+newer**; the pinned LFM2.5 runner is not used for this path.
+
+Place these files in `models/LFM3-Audio-2B-GGUF/`:
+
+- `LFM3-Audio-2B-Q4_K_M.gguf`
+- `mmproj-LFM3-Audio-2B-Q8_0.gguf`
+
+Obtain a b11960+ `llama-server` and start it from WSL:
+
+```powershell
+$env:LOCALVOICE_LFM3_RUNNER = "/path/to/llama.cpp/build/bin"
+wsl -d Ubuntu bash src/server_lfm3_wsl.sh
+```
+
+Then run the app with the realtime transport:
+
+```powershell
+python -m pip install -r requirements-realtime.txt
+$env:LOCALVOICE_TRANSPORT = "realtime"
+$env:LOCALVOICE_REALTIME = "ws://127.0.0.1:8080/v1/realtime"
+python src/app.py
+```
+
+The realtime client keeps one conversation socket between turns and opens a
+fresh one when the app resets context after an interruption. A local smoke test
+validated audio-in, interleaved text/audio-out, and `response.cancel`; controlled
+latency, long-session and real-device acceptance remain to be measured. LFM3
+model assets are not distributed here; review
+[their terms](docs/THIRD_PARTY.md).
 
 ## Tests
 

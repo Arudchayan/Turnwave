@@ -79,6 +79,34 @@ The forced fake-device test changed playback from 0/2,003 generated samples to
 2,003/2,003, with a separate 3,443-sample control. It establishes the scheduling
 fix, not the cause of every historical cutoff. See [results](RESULTS.md).
 
+## Optional end-of-turn sidecar
+
+`LOCALVOICE_EOT_MODEL=smart-turn` loads Smart Turn v3.2 and extends the
+frontend's silence endpoint to `LOCALVOICE_EOT_TIMEOUT_MS` (default 2000 ms).
+The app queries the scorer at 300 ms of silence and then every 200 ms. A
+confident score releases the turn immediately; an uncertain score keeps the
+turn open until speech resumes or the timeout releases it. This is the
+completion counterpart to the reversible floor: the floor decides whether a
+sound takes the reply, while the EOT sidecar decides whether a silence ends the
+user's turn. It is opt-in because it adds a model dependency and changes the
+waiting behaviour; see [evaluation](EVALUATION.md) for the public-pause
+diagnostic and its limits.
+
+## Optional LFM3 realtime transport
+
+The default client decodes server-sent events from the pinned Liquid runner.
+`LOCALVOICE_TRANSPORT=realtime` selects `realtime_client.RealtimeClient`
+instead. It uses llama.cpp's OpenAI-compatible `/v1/realtime` WebSocket with
+LFM3-Audio-2B: user audio is appended as PCM16 chunks, committed, and the
+response streams interleaved text and 24 kHz PCM. One socket carries context
+between turns. The app's existing `first` flag opens a fresh socket, which is
+how the current interruption/reset policy avoids a partially generated server
+context. The client sends `response.cancel` when a turn is interrupted.
+
+This path is opt-in and was validated on CPU only; GPU latency, long-session
+context growth and real-device behavior remain open. The LFM2.5 SSE path and
+its pinned runner are unchanged.
+
 ## UI, privacy and research boundaries
 
 `ui.py` serves controls through `app.py` on loopback. Pending controls retain user

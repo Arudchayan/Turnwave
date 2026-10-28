@@ -22,6 +22,8 @@ class ScriptedFront:
         self.events = list(events)
         self.calls = 0
         self.speaking = False
+        self.hot = False
+        self.quiet_ms = 0
         self.references = []
 
     def warmup(self):
@@ -37,7 +39,10 @@ class ScriptedFront:
         self.references.append((len(audio), rate))
 
     def update(self, audio):
-        speaking, started, ended = self.events[min(self.calls, len(self.events) - 1)]
+        event = self.events[min(self.calls, len(self.events) - 1)]
+        speaking, started, ended = event[:3]
+        self.hot = event[3] if len(event) > 3 else speaking
+        self.quiet_ms = event[4] if len(event) > 4 else 0
         self.calls += 1
         self.speaking = speaking
         return speaking, started, ended, np.asarray(audio, dtype=np.float32)
@@ -117,6 +122,47 @@ def test_reversible_sustained_barge_in_commits_and_submits():
         wait_for(lambda: len(client.calls) == 2)
         assert client.calls[1][0] is True
         assert assistant.floor.state == 'idle'
+    finally:
+        assistant.close()
+
+
+class FakeEOT:
+    timeout_ms = 2000
+    last_score = .9
+
+    def __init__(self):
+        self.calls = 0
+
+    def reset(self):
+        pass
+
+    def update(self, audio, silence_ms, speaking=False):
+        self.calls += 1
+        return 'commit' if silence_ms >= 300 else None
+
+    def snapshot(self):
+        return dict(calls=self.calls)
+
+
+def test_eot_commit_releases_a_turn_before_the_silence_endpoint():
+    # Speech confirms an onset, then 300 ms of silence. The fake completion
+    # policy commits before the frontend's own endpoint would fire.
+    front = ScriptedFront([(True, True, False, True, 0),
+                           (True, False, False, False, 300)])
+    player, client = GainPlayer(), LongClient()
+    eot = FakeEOT()
+    assistant = Assistant(mic=FakeMic(), player=player, front=front,
+                          client=client, floor_mode='hard', eot=eot)
+    assistant._spawn(assistant._loop)
+    try:
+        assistant.submit_audio(np.ones(8000, np.float32) * .1)
+        wait_for(lambda: player.playing)
+        assistant.mic.q.put(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: front.calls >= 1)
+        assistant.mic.q.put(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: len(client.calls) == 2)
+        assert eot.calls >= 1
+        assert assistant.eot is eot
     finally:
         assistant.close()
 

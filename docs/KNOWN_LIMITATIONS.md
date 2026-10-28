@@ -8,6 +8,13 @@ This is a research prototype, not a claim of universally reliable conversation.
   mid-turn-pause case; `hard` remains the default until a real-device A/B.
 - Speaker echo, quiet speech, room acoustics and device routing affect genuine
   and false interruption detection. Headphones are more predictable.
+- The optional Smart Turn sidecar changes silence timing and was evaluated on
+  public English pauses, not this app's microphone or room. The 2 s timeout is
+  a measured trade-off, not a guarantee that a pause was understood.
+- The optional LFM3-Audio-2B realtime path has only a single local smoke test.
+  Controlled latency, long-session context growth and real-device behavior are
+  unverified. Reconnecting after an interruption resets the realtime
+  conversation context.
 - A clean output queue does not guarantee intelligible speech. Generated text
   can disagree with generated audio, and correct content is a separate question.
 - Exact instructions, attribution and conversation memory can fail. Interruptions

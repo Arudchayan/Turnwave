@@ -7,8 +7,12 @@ llama.cpp notice for source included in the patches is preserved in
 
 | Component | Role | Source / terms to review |
 | --- | --- | --- |
-| LiquidAI LFM2.5-Audio-1.5B | Direct audio input/output model | [Model card](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B/blob/main/LICENSE) |
+| LiquidAI LFM2.5-Audio-1.5B | Default direct audio input/output model | [Model card](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B/blob/main/LICENSE) |
+| LiquidAI LFM3-Audio-2B | Optional 2B realtime audio model | [Model card](https://huggingface.co/LiquidAI/LFM3-Audio-2B), [GGUF](https://huggingface.co/LiquidAI/LFM3-Audio-2B-GGUF), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM3-Audio-2B/blob/main/LICENSE) |
 | llama.cpp Liquid audio integration | External native GGUF runner; local derived patches | [PR 18641](https://github.com/ggml-org/llama.cpp/pull/18641), [upstream license at pinned source](https://github.com/ggml-org/llama.cpp/blob/ec9d1fdd9cc18643c5e161b65b8053f6f6f34a4b/LICENSE) |
+| llama.cpp b11960+ | LFM3 GGUF audio and `/v1/realtime` server | [Release b11960](https://github.com/ggml-org/llama.cpp/releases/tag/b11960), [upstream license](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE) |
+| livekit/eot-bench-data | Public English conversational pauses for the EOT diagnostic | [Dataset](https://huggingface.co/datasets/livekit/eot-bench-data), CC BY 4.0 |
+| Smart Turn v3.2 | Optional end-of-turn ONNX classifier | [Model](https://huggingface.co/pipecat-ai/smart-turn-v3), BSD-2-Clause |
 | pywebrtc-audio | Echo processing wrapper | [Project](https://pypi.org/project/pywebrtc-audio/) and installed distribution notices |
 | Silero VAD | Voice activity detection | [Upstream](https://github.com/snakers4/silero-vad) |
 | ONNX Runtime | CPU inference runtime | [Upstream](https://github.com/microsoft/onnxruntime) |
@@ -25,6 +29,11 @@ The two response WAVs are genuine generated output from neutral, authored
 fictional scenarios, included for research documentation with model attribution.
 They contain no human recording. Microsoft SAPI-rendered input WAVs are not
 included. Uses of model-generated audio are subject to the model's terms.
+
+The EOT diagnostic used the English validation split of
+[`livekit/eot-bench-data`](https://huggingface.co/datasets/livekit/eot-bench-data)
+(CC BY 4.0) and Smart Turn v3.2 (BSD-2-Clause). Only aggregate counts, scores
+and source hashes are published; the dataset audio is not redistributed.
 
 The capture comparison used two LibriSpeech utterances from the Hugging Face
 `hf-internal-testing/librispeech_asr_dummy` fixture at revision

@@ -90,6 +90,24 @@
       "source_type": "curated_historical_research_observations",
       "contains_human_recording": false,
       "whole_reply": false
+    },
+    {
+      "path": "research/floor_replay_summary.json",
+      "sha256": "8e9924e008ce591801236b9e51cd6ac4995ba2ec3f5d9a4c1bbcc909c708edf7",
+      "bytes": 1609,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/eot_bench_summary.json",
+      "sha256": "a4d070bf6e0d8517a5642595b5b5c2088e977fc9704cfd96a07631a275dc686f",
+      "bytes": 7750,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
     }
   ]
 }
