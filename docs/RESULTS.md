@@ -129,5 +129,8 @@ optional sidecar and floor mode remain opt-in.
 
 False interruptions, paused-sentence behavior and reply quality remain unresolved.
 Controlled real-device acceptance and a clean-machine native installation have
-not been established.
-See [evaluation boundaries and reproduction](EVALUATION.md).
+not been established. The EOT held-out check is one deterministic English split;
+multi-seed, multilingual and live-microphone validation remain open. Streaming
+microphone append (prefilling while the user speaks), heard-prefix memory across
+realtime reconnects, LFM3 tool calling, and controlled long-session latency are
+also unexplored. See [evaluation boundaries and reproduction](EVALUATION.md).
