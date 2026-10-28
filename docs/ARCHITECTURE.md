@@ -83,9 +83,10 @@ fix, not the cause of every historical cutoff. See [results](RESULTS.md).
 
 `LOCALVOICE_EOT_MODEL=smart-turn` loads Smart Turn v3.2 and extends the
 frontend's silence endpoint to `LOCALVOICE_EOT_TIMEOUT_MS` (default 1000 ms;
-2000 ms lowers false cut-offs further at a longer worst-case wait);
-`LOCALVOICE_EOT_THRESHOLD` defaults to 0.5. The app queries the scorer at
-300 ms of silence and then every 200 ms. A
+2000 ms lowers false cut-offs further at a longer worst-case wait). The first
+query uses `LOCALVOICE_EOT_FIRST_THRESHOLD` (default 0.9); later queries use
+`LOCALVOICE_EOT_THRESHOLD` (default 0.7). The app queries at 300 ms of silence
+and then every 200 ms. A
 confident score releases the turn immediately; an uncertain score keeps the
 turn open until speech resumes or the timeout releases it. This is the
 completion counterpart to the reversible floor: the floor decides whether a

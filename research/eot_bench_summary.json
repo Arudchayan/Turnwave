@@ -319,6 +319,41 @@
       }
     }
   },
+  "two_threshold_schedule": {
+    "protocol": "saved 300/500/700/900 ms scores; two-threshold schedule",
+    "pauses": 864,
+    "rows": [
+      {
+        "first_threshold": 0.9,
+        "later_threshold": 0.7,
+        "timeout_ms": 1000,
+        "tp": 400,
+        "fp": 127,
+        "fn": 0,
+        "tn": 337,
+        "false_cutoff": 0.2737,
+        "eot_recall": 1.0,
+        "precision": 0.759,
+        "median_latency_ms": 300,
+        "p90_latency_ms": 1000
+      },
+      {
+        "first_threshold": 0.9,
+        "later_threshold": 0.7,
+        "timeout_ms": 2000,
+        "tp": 400,
+        "fp": 77,
+        "fn": 0,
+        "tn": 387,
+        "false_cutoff": 0.1659,
+        "eot_recall": 1.0,
+        "precision": 0.8386,
+        "median_latency_ms": 300,
+        "p90_latency_ms": 2000
+      }
+    ],
+    "note": "Screened on the same pauses; not held-out validation."
+  },
   "per_turn_300ms": {
     "schema_version": 1,
     "budget_ms": 300,

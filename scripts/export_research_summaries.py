@@ -57,6 +57,18 @@ def eot_summary(source):
     recomputed_path = OUT / 'eot_recomputed.json'
     recomputed = (json.loads(recomputed_path.read_text(encoding='utf-8'))
                   if recomputed_path.exists() else None)
+    schedule_path = OUT / 'eot_schedule_sweep.json'
+    schedule = (json.loads(schedule_path.read_text(encoding='utf-8'))
+                if schedule_path.exists() else None)
+    selected_schedule = None
+    if schedule:
+        selected = [row for row in schedule.get('rows', [])
+                    if row.get('first_threshold') == .9
+                    and row.get('later_threshold') == .7]
+        selected_schedule = dict(
+            protocol=schedule.get('protocol'), pauses=schedule.get('pauses'),
+            rows=selected,
+            note='Screened on the same pauses; not held-out validation.')
     if recomputed:
         fixed = recomputed.get('fixed_480ms')
         single = recomputed.get('single_300ms')
@@ -87,6 +99,7 @@ def eot_summary(source):
         single_300ms=single,
         temporal_no_timeout=temporal,
         hybrid_timeouts=hybrid,
+        two_threshold_schedule=selected_schedule,
         per_turn_300ms=per_turn,
         decision=source.get('decision'),
         limits=source.get('limits'),

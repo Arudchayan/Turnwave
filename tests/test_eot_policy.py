@@ -71,6 +71,16 @@ def test_smart_turn_scorer_can_be_constructed_with_injected_components():
     assert scorer.score(np.zeros(16000, np.float32)) == pytest.approx(.7)
 
 
+def test_first_query_is_stricter_than_later_queries():
+    scorer = FakeScorer(.8)
+    policy = CompletionPolicy(scorer, threshold=.7, first_threshold=.9,
+                              first_query_ms=300, step_ms=200,
+                              timeout_ms=1000)
+    assert policy.update([0], 300) == 'hold'   # .8 < .9
+    assert policy.update([0], 500) == 'commit'  # .8 >= .7
+    assert policy.queries == 2
+
+
 def test_due_tracks_the_query_schedule_without_calling_the_model():
     scorer = FakeScorer(.1)
     policy = CompletionPolicy(scorer, first_query_ms=300, step_ms=200,

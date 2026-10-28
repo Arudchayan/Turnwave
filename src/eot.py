@@ -60,14 +60,18 @@ class CompletionPolicy:
     20 ms capture loop does not run a model on every block.
     """
 
-    def __init__(self, scorer, threshold=.5, first_query_ms=300,
-                 step_ms=200, timeout_ms=1000):
-        if not 0 <= threshold <= 1:
-            raise ValueError('threshold must be in [0, 1]')
+    def __init__(self, scorer, threshold=.7, first_threshold=.9,
+                 first_query_ms=300, step_ms=200, timeout_ms=1000):
+        if not 0 <= threshold <= 1 or not 0 <= first_threshold <= 1:
+            raise ValueError('thresholds must be in [0, 1]')
         if first_query_ms < 0 or step_ms <= 0 or timeout_ms < first_query_ms:
             raise ValueError('invalid completion timing')
         self.scorer = scorer
+        # The first query is deliberately stricter: a mid-turn pause is most
+        # likely to look complete near its beginning. Later queries may use the
+        # lower threshold because the silence itself is now evidence.
         self.threshold = float(threshold)
+        self.first_threshold = float(first_threshold)
         self.first_query_ms = int(first_query_ms)
         self.step_ms = int(step_ms)
         self.timeout_ms = int(timeout_ms)
@@ -99,14 +103,17 @@ class CompletionPolicy:
         self._last_query_ms = silence_ms
         self.last_query_ms = silence_ms
         self.last_score = float(self.scorer.score(audio))
+        limit = self.first_threshold if self.queries == 0 else self.threshold
         self.queries += 1
-        if self.last_score >= self.threshold:
+        if self.last_score >= limit:
             return 'commit'
         if silence_ms >= self.timeout_ms:
             return 'commit'
         return 'hold'
 
     def snapshot(self):
-        return dict(threshold=self.threshold, last_score=self.last_score,
+        return dict(threshold=self.threshold,
+                    first_threshold=self.first_threshold,
+                    last_score=self.last_score,
                     last_query_ms=self.last_query_ms, queries=self.queries,
                     timeout_ms=self.timeout_ms)

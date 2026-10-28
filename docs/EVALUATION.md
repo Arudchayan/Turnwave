@@ -119,19 +119,23 @@ final). An earlier draft mixed pause sets and is superseded.
 | Fixed 480 ms endpoint | 61.64% | 100% | 480 ms |
 | One Smart Turn query at 300 ms | 23.28% | 76% | 300 ms |
 | Re-query every 200 ms, no timeout | 26.29% | 83% | 900 ms |
-| Re-query + 1000 ms timeout | 38.15% | 100% | 1000 ms |
-| Re-query + 2000 ms timeout | 29.09% | 100% | 2000 ms |
+| Re-query + 1 s timeout, 0.9/0.7 schedule | 27.37% | 100% | 1000 ms |
+| Re-query + 2 s timeout, 0.9/0.7 schedule | 16.59% | 100% | 2000 ms |
 
 Wilson 95% intervals for the false cut-off rate were 57.13–65.95% for the fixed
-endpoint and 25.15–33.39% for the 2000 ms hybrid; the intervals do not overlap.
-The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at 800 ms.
-The 1000 ms hybrid is the default behind `LOCALVOICE_EOT_MODEL=smart-turn`;
-the 2000 ms timeout is the lower-false-cut-off option. Most final turns commit
-at the 300 ms query, while uncertain turns are bounded by the timeout. The
-single 300 ms query has the lowest false cut-off but misses 24% of final pauses;
-the timeout is what recovers those turns. Re-querying without a timeout
-increases false cut-offs relative to one query (26.29% vs 23.28%) because a
-mid-turn pause gets more chances to cross the threshold.
+endpoint, 23.51–31.60% for the 1 s schedule and 13.49–20.25% for the 2 s
+schedule. The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at
+800 ms. The 1 s schedule is the default behind `LOCALVOICE_EOT_MODEL=smart-turn`;
+the 2 s timeout is the lower-false-cut-off option. Most final turns commit at
+the 300 ms query, while uncertain turns are bounded by the timeout. The single
+300 ms query has the lowest false cut-off but misses 24% of final pauses; the
+timeout recovers those turns. Re-querying without a timeout increases false
+cut-offs relative to one query (26.29% vs 23.28%) because a mid-turn pause gets
+more chances to cross the threshold.
+
+The 0.9-first / 0.7-later schedule was selected by sweeping the saved scores on
+the same 864 pauses. It is a **screening result, not held-out validation**; the
+thresholds should be rechecked on a separate split before strong claims.
 
 As a descriptive per-turn check, restrict to the 165 turns that contain a
 mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
@@ -165,6 +169,7 @@ python -m pytest tests -q
 python -m src.synth.floor_replay --out outputs/floor_replay.json
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 python scripts/eot_recompute.py
+python scripts/eot_schedule_sweep.py
 python scripts/eot_per_turn.py
 python scripts/export_research_summaries.py
 python scripts/verify_research.py
