@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-28T14:09:14+00:00",
+  "generated_at": "2026-10-28T14:19:18+00:00",
   "evidence_class": "offline policy/timing replay; no microphone, model or device",
   "step_ms": 20,
   "confirm_ms": 160,
@@ -8,7 +8,7 @@
   "source_sha256": {
     "src/floor.py": "e7fdc1336f7bbfea361576c8e393aec8dbc86bfd925a5f8b3831fa059ce316de",
     "src/duplex.py": "e67c4e058071083f5f988af0b176c37177def3bd895c145db6673520bd173a33",
-    "src/app.py": "558837a37e26e396bfd67082f27f0ef00aef2e2961b35527408c5cef3283c9e5"
+    "src/app.py": "c051332b254fda90853118535f06b0d53249e476895a7b6092a2895549ac529b"
   },
   "summary": {
     "hard": {

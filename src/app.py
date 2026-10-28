@@ -61,7 +61,7 @@ class Assistant:
             from eot import CompletionPolicy, SmartTurnScorer
             spec = os.getenv('LOCALVOICE_EOT_MODEL')
             scorer = SmartTurnScorer(None if spec in ('1', 'smart-turn') else spec)
-            timeout = int(os.getenv('LOCALVOICE_EOT_TIMEOUT_MS', '2000'))
+            timeout = int(os.getenv('LOCALVOICE_EOT_TIMEOUT_MS', '1000'))
             threshold = float(os.getenv('LOCALVOICE_EOT_THRESHOLD', '0.5'))
             self.eot = CompletionPolicy(scorer, threshold=threshold,
                                         timeout_ms=timeout)

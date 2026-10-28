@@ -34,7 +34,7 @@ flowchart LR
 | Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
 | Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
 | Reversible floor replay | 3 non-limitation false cancels with hard cancel vs 0 with duck/backchannel; 3/3 authored backchannels preserved | Opt-in; real-device A/B pending |
-| Public-pause EOT diagnostic | Fixed 480 ms: 33.65% per-pause false cut-off; re-query + 2 s timeout: 15.88% with 100% recall on 400 English turns | Opt-in Smart Turn sidecar |
+| Public-pause EOT diagnostic | Fixed 480 ms: 61.64% per-pause false cut-off; re-query + 1 s default: 38.15% with 100% recall (2 s: 29.09%) on 864 pauses (400 English turns) | Opt-in Smart Turn sidecar |
 | LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.
@@ -110,7 +110,8 @@ path: a short vocalisation during a reply no longer has to cancel it. The
 default `hard` mode preserves immediate cancellation.
 `LOCALVOICE_EOT_MODEL=smart-turn` enables the optional Smart Turn completion
 sidecar and extends the silence wait to `LOCALVOICE_EOT_TIMEOUT_MS` (default
-2000); `LOCALVOICE_EOT_THRESHOLD` defaults to 0.5. Install
+1000; 2000 lowers false cut-offs further at a longer worst-case wait);
+`LOCALVOICE_EOT_THRESHOLD` defaults to 0.5. Install
 `requirements-eot.txt` first. See [architecture](docs/ARCHITECTURE.md)
 and the offline replay in [evaluation](docs/EVALUATION.md).
 The app and backend test entry points reserve exclusive context ownership;

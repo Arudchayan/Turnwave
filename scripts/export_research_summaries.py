@@ -54,28 +54,38 @@ def eot_summary(source):
             at_0_5=row.get('at_0_5'),
             operating_points=row.get('operating_points'),
         )
-    temporal = source.get('temporal_policy', {})
-    temporal = {key: value for key, value in temporal.items()
-                if key != 'observations'}
-    hybrid = {}
-    for key, row in source.get('hybrid_timeouts', {}).items():
-        hybrid[key] = dict(timeout_ms=row.get('timeout_ms'),
-                           threshold=row.get('threshold'),
-                           at_0_5=row.get('at_0_5'),
-                           median_final_latency_ms=row.get('median_final_latency_ms'),
-                           final_detected=row.get('final_detected'),
-                           final_total=row.get('final_total'),
-                           reasons=row.get('reasons'))
+    recomputed_path = OUT / 'eot_recomputed.json'
+    recomputed = (json.loads(recomputed_path.read_text(encoding='utf-8'))
+                  if recomputed_path.exists() else None)
+    if recomputed:
+        fixed = recomputed.get('fixed_480ms')
+        single = recomputed.get('single_300ms')
+        temporal = recomputed.get('temporal_no_timeout')
+        hybrid = recomputed.get('hybrid_timeouts')
+        protocol = recomputed.get('protocol')
+    else:
+        fixed = source.get('fixed_480ms')
+        single = source.get('budgets', {}).get('300', {}).get('at_0_5')
+        temporal = {key: value for key, value in
+                    source.get('temporal_policy', {}).items()
+                    if key != 'observations'}
+        hybrid = {key: dict(timeout_ms=row.get('timeout_ms'),
+                            at_0_5=row.get('at_0_5'),
+                            median_final_latency_ms=row.get('median_final_latency_ms'))
+                  for key, row in source.get('hybrid_timeouts', {}).items()}
+        protocol = 'original per-policy denominators'
     return dict(
         schema_version=source.get('schema_version', 1),
         generated_at=source.get('generated_at'),
         evidence_class=source.get('evidence_class'),
+        protocol=protocol,
         dataset=source.get('dataset'),
         model=source.get('model'),
         sample_rate=source.get('sample_rate'),
         budgets=budgets,
-        fixed_480ms=source.get('fixed_480ms'),
-        temporal_policy=temporal,
+        fixed_480ms=fixed,
+        single_300ms=single,
+        temporal_no_timeout=temporal,
         hybrid_timeouts=hybrid,
         per_turn_300ms=per_turn,
         decision=source.get('decision'),

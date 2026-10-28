@@ -2,6 +2,7 @@
   "schema_version": 1,
   "generated_at": "2026-10-28T13:53:26+00:00",
   "evidence_class": "offline public-pause scoring; no microphone or live model",
+  "protocol": "all policies scored on pauses >= 300 ms; saved scores only",
   "dataset": {
     "repo": "livekit/eot-bench-data",
     "file": "data/en/validation-00000-of-00001.parquet",
@@ -133,164 +134,188 @@
     }
   },
   "fixed_480ms": {
-    "threshold": 0.5,
-    "false_cutoff": 0.3365,
-    "eot_recall": 1.0,
-    "precision": 0.5831,
     "tp": 400,
     "fp": 286,
     "fn": 0,
-    "tn": 564
+    "tn": 178,
+    "false_cutoff": 0.6164,
+    "false_cutoff_ci": [
+      0.5713,
+      0.6595
+    ],
+    "eot_recall": 1.0,
+    "eot_recall_ci": [
+      0.9905,
+      1
+    ],
+    "precision": 0.5831
   },
-  "temporal_policy": {
+  "single_300ms": {
     "threshold": 0.5,
-    "step_ms": 200,
-    "max_wait_ms": 1000,
-    "at_0_5": {
-      "threshold": 0.5,
-      "false_cutoff": 0.1435,
-      "eot_recall": 0.83,
-      "precision": 0.7313,
-      "tp": 332,
-      "fp": 122,
-      "fn": 68,
-      "tn": 728
-    },
-    "median_final_latency_ms": 300.0,
-    "final_detected": 332,
-    "final_total": 400
+    "false_cutoff": 0.2328,
+    "eot_recall": 0.76,
+    "precision": 0.7379,
+    "tp": 304,
+    "fp": 108,
+    "fn": 96,
+    "tn": 356,
+    "false_cutoff_ci": [
+      0.1966,
+      0.2733
+    ],
+    "eot_recall_ci": [
+      0.7158,
+      0.7993
+    ]
+  },
+  "temporal_no_timeout": {
+    "tp": 332,
+    "fp": 122,
+    "fn": 68,
+    "tn": 342,
+    "false_cutoff": 0.2629,
+    "false_cutoff_ci": [
+      0.2249,
+      0.3048
+    ],
+    "eot_recall": 0.83,
+    "eot_recall_ci": [
+      0.7901,
+      0.8636
+    ],
+    "precision": 0.7313
   },
   "hybrid_timeouts": {
     "600": {
+      "tp": 400,
+      "fp": 239,
+      "fn": 0,
+      "tn": 225,
+      "false_cutoff": 0.5151,
+      "false_cutoff_ci": [
+        0.4697,
+        0.5603
+      ],
+      "eot_recall": 1.0,
+      "eot_recall_ci": [
+        0.9905,
+        1
+      ],
+      "precision": 0.626,
       "timeout_ms": 600,
-      "threshold": 0.5,
-      "at_0_5": {
-        "threshold": 0.5,
-        "false_cutoff": 0.2812,
-        "eot_recall": 1.0,
-        "precision": 0.626,
-        "tp": 400,
-        "fp": 239,
-        "fn": 0,
-        "tn": 611
-      },
-      "median_final_latency_ms": 300.0,
-      "final_detected": 400,
-      "final_total": 400,
-      "reasons": {
-        "score": 454,
-        "mid-timeout": 117,
-        "final-timeout": 68
+      "final_latency_ms": {
+        "median": 300,
+        "p90": 600
       }
     },
     "800": {
+      "tp": 400,
+      "fp": 195,
+      "fn": 0,
+      "tn": 269,
+      "false_cutoff": 0.4203,
+      "false_cutoff_ci": [
+        0.3762,
+        0.4656
+      ],
+      "eot_recall": 1.0,
+      "eot_recall_ci": [
+        0.9905,
+        1
+      ],
+      "precision": 0.6723,
       "timeout_ms": 800,
-      "threshold": 0.5,
-      "at_0_5": {
-        "threshold": 0.5,
-        "false_cutoff": 0.2294,
-        "eot_recall": 1.0,
-        "precision": 0.6723,
-        "tp": 400,
-        "fp": 195,
-        "fn": 0,
-        "tn": 655
-      },
-      "median_final_latency_ms": 300.0,
-      "final_detected": 400,
-      "final_total": 400,
-      "reasons": {
-        "score": 454,
-        "mid-timeout": 73,
-        "final-timeout": 68
+      "final_latency_ms": {
+        "median": 300,
+        "p90": 800
       }
     },
     "1000": {
+      "tp": 400,
+      "fp": 177,
+      "fn": 0,
+      "tn": 287,
+      "false_cutoff": 0.3815,
+      "false_cutoff_ci": [
+        0.3384,
+        0.4265
+      ],
+      "eot_recall": 1.0,
+      "eot_recall_ci": [
+        0.9905,
+        1
+      ],
+      "precision": 0.6932,
       "timeout_ms": 1000,
-      "threshold": 0.5,
-      "at_0_5": {
-        "threshold": 0.5,
-        "false_cutoff": 0.2082,
-        "eot_recall": 1.0,
-        "precision": 0.6932,
-        "tp": 400,
-        "fp": 177,
-        "fn": 0,
-        "tn": 673
-      },
-      "median_final_latency_ms": 300.0,
-      "final_detected": 400,
-      "final_total": 400,
-      "reasons": {
-        "score": 454,
-        "mid-timeout": 55,
-        "final-timeout": 68
+      "final_latency_ms": {
+        "median": 300,
+        "p90": 1000
       }
     },
     "1200": {
+      "tp": 400,
+      "fp": 163,
+      "fn": 0,
+      "tn": 301,
+      "false_cutoff": 0.3513,
+      "false_cutoff_ci": [
+        0.3092,
+        0.3958
+      ],
+      "eot_recall": 1.0,
+      "eot_recall_ci": [
+        0.9905,
+        1
+      ],
+      "precision": 0.7105,
       "timeout_ms": 1200,
-      "threshold": 0.5,
-      "at_0_5": {
-        "threshold": 0.5,
-        "false_cutoff": 0.1918,
-        "eot_recall": 1.0,
-        "precision": 0.7105,
-        "tp": 400,
-        "fp": 163,
-        "fn": 0,
-        "tn": 687
-      },
-      "median_final_latency_ms": 300.0,
-      "final_detected": 400,
-      "final_total": 400,
-      "reasons": {
-        "score": 454,
-        "mid-timeout": 41,
-        "final-timeout": 68
+      "final_latency_ms": {
+        "median": 300,
+        "p90": 1200
       }
     },
     "1500": {
+      "tp": 400,
+      "fp": 152,
+      "fn": 0,
+      "tn": 312,
+      "false_cutoff": 0.3276,
+      "false_cutoff_ci": [
+        0.2864,
+        0.3716
+      ],
+      "eot_recall": 1.0,
+      "eot_recall_ci": [
+        0.9905,
+        1
+      ],
+      "precision": 0.7246,
       "timeout_ms": 1500,
-      "threshold": 0.5,
-      "at_0_5": {
-        "threshold": 0.5,
-        "false_cutoff": 0.1788,
-        "eot_recall": 1.0,
-        "precision": 0.7246,
-        "tp": 400,
-        "fp": 152,
-        "fn": 0,
-        "tn": 698
-      },
-      "median_final_latency_ms": 300.0,
-      "final_detected": 400,
-      "final_total": 400,
-      "reasons": {
-        "score": 454,
-        "mid-timeout": 30,
-        "final-timeout": 68
+      "final_latency_ms": {
+        "median": 300,
+        "p90": 1500
       }
     },
     "2000": {
+      "tp": 400,
+      "fp": 135,
+      "fn": 0,
+      "tn": 329,
+      "false_cutoff": 0.2909,
+      "false_cutoff_ci": [
+        0.2515,
+        0.3339
+      ],
+      "eot_recall": 1.0,
+      "eot_recall_ci": [
+        0.9905,
+        1
+      ],
+      "precision": 0.7477,
       "timeout_ms": 2000,
-      "threshold": 0.5,
-      "at_0_5": {
-        "threshold": 0.5,
-        "false_cutoff": 0.1588,
-        "eot_recall": 1.0,
-        "precision": 0.7477,
-        "tp": 400,
-        "fp": 135,
-        "fn": 0,
-        "tn": 715
-      },
-      "median_final_latency_ms": 300.0,
-      "final_detected": 400,
-      "final_total": 400,
-      "reasons": {
-        "score": 454,
-        "mid-timeout": 13,
-        "final-timeout": 68
+      "final_latency_ms": {
+        "median": 300,
+        "p90": 2000
       }
     }
   },

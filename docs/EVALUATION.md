@@ -111,20 +111,27 @@ to reach a decision time as a case: a mid-turn pause that crosses the threshold
 is a false cut-off, and a trailing pause that crosses it is an end-of-turn
 detection. The 300 ms budget produced 864 pause cases (464 mid-turn, 400 final).
 
-| Policy | False cut-off | EOT recall | Note |
-| --- | ---: | ---: | --- |
-| Fixed 480 ms endpoint | 33.65% | 100% | Current app behaviour |
-| One Smart Turn query at 300 ms | 23.28% | 76% | No timeout recovery |
-| Re-query every 200 ms, no timeout | 14.35% | 83% | Lower false cut-off, misses uncertain finals |
-| Re-query + 1000 ms timeout | 20.82% | 100% | Bounded wait |
-| Re-query + 2000 ms timeout | 15.88% | 100% | Best measured trade-off |
+All rows below use the **same 864 pauses of at least 300 ms** (464 mid-turn, 400
+final). An earlier draft mixed pause sets and is superseded.
 
-Wilson 95% intervals for the false cut-off rate were 30.55–36.89% for the fixed
-endpoint and 13.58–18.49% for the 2000 ms hybrid; the intervals do not overlap.
+| Policy | False cut-off | EOT recall | p90 final latency |
+| --- | ---: | ---: | ---: |
+| Fixed 480 ms endpoint | 61.64% | 100% | 480 ms |
+| One Smart Turn query at 300 ms | 23.28% | 76% | 300 ms |
+| Re-query every 200 ms, no timeout | 26.29% | 83% | 900 ms |
+| Re-query + 1000 ms timeout | 38.15% | 100% | 1000 ms |
+| Re-query + 2000 ms timeout | 29.09% | 100% | 2000 ms |
+
+Wilson 95% intervals for the false cut-off rate were 57.13–65.95% for the fixed
+endpoint and 25.15–33.39% for the 2000 ms hybrid; the intervals do not overlap.
 The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at 800 ms.
-The 2000 ms hybrid is the policy wired behind `LOCALVOICE_EOT_MODEL=smart-turn`;
-most final turns commit at the 300 ms query, while uncertain turns are bounded
-by the timeout.
+The 1000 ms hybrid is the default behind `LOCALVOICE_EOT_MODEL=smart-turn`;
+the 2000 ms timeout is the lower-false-cut-off option. Most final turns commit
+at the 300 ms query, while uncertain turns are bounded by the timeout. The
+single 300 ms query has the lowest false cut-off but misses 24% of final pauses;
+the timeout is what recovers those turns. Re-querying without a timeout
+increases false cut-offs relative to one query (26.29% vs 23.28%) because a
+mid-turn pause gets more chances to cross the threshold.
 
 As a descriptive per-turn check, restrict to the 165 turns that contain a
 mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
@@ -157,6 +164,7 @@ python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
 python -m src.synth.floor_replay --out outputs/floor_replay.json
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+python scripts/eot_recompute.py
 python scripts/eot_per_turn.py
 python scripts/export_research_summaries.py
 python scripts/verify_research.py

@@ -116,7 +116,7 @@ snapshots above. Methods and limits are in [evaluation](EVALUATION.md).
 | Question | Evidence | Result |
 | --- | --- | --- |
 | Does reversible floor control preserve short backchannels? | Seven authored barge-in shapes; hard vs duck/backchannel | Hard: 3 non-limitation false cancels, 0/3 backchannels preserved. Reversible: 0 false cancels, 3/3 preserved, 0 missed floor takes, median commit 140 ms from confirmed onset. |
-| Does Smart Turn improve the public-pause trade-off? | 400 English turns from `livekit/eot-bench-data`; 864 pause cases at 300 ms | Fixed 480 ms: 33.65% false cut-offs, 100% recall. Re-query + 2 s timeout: 15.88% false cut-offs, 100% recall. |
+| Does Smart Turn improve the public-pause trade-off? | 400 English turns from `livekit/eot-bench-data`; 864 pauses of at least 300 ms | Fixed 480 ms: 61.64% false cut-offs, 100% recall. Re-query + 1 s default: 38.15% false cut-offs, 100% recall, p90 1 s; 2 s: 29.09%, p90 2 s. |
 | Does the LFM3 realtime transport work? | One public example WAV through `/v1/realtime` | Interleaved text and 24 kHz speech; 0.68 s first audio and 5.04 s reply on one warm local run. |
 
 The floor figures are policy/timing diagnostics. The EOT figures are

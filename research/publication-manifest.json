@@ -93,7 +93,7 @@
     },
     {
       "path": "research/floor_replay_summary.json",
-      "sha256": "8e9924e008ce591801236b9e51cd6ac4995ba2ec3f5d9a4c1bbcc909c708edf7",
+      "sha256": "820b5a69049aa3d65777bd4544ff1a5848db76ecea47cef5580927b17f80d9f7",
       "bytes": 1609,
       "kind": "evidence_json",
       "source_type": "curated_public_research_aggregate",
@@ -102,8 +102,8 @@
     },
     {
       "path": "research/eot_bench_summary.json",
-      "sha256": "fde94714aadb3576167a22438a12b0685390cb205dbf6e723a057b1422a2c458",
-      "bytes": 8112,
+      "sha256": "fefc359e4d2877ce94d8228a55fbf63c0ecb7b20427aafde027f7911f66f2da2",
+      "bytes": 7978,
       "kind": "evidence_json",
       "source_type": "curated_public_research_aggregate",
       "contains_human_recording": false,
