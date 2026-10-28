@@ -9,11 +9,9 @@ import base64
 import io
 import json
 import pathlib
-import re
 import sys
 import time
 import urllib.request
-import wave
 
 import numpy as np
 import pandas as pd
@@ -21,6 +19,7 @@ import soundfile as sf
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
+from synth.text_metrics import edit_distance, normalize_text, word_error_rate
 
 
 def wav16k(samples, rate):
@@ -36,21 +35,6 @@ def wav16k(samples, rate):
               + (16).to_bytes(2, 'little'))
     buf.write(b'data' + len(pcm).to_bytes(4, 'little') + pcm)
     return buf.getvalue()
-
-
-def normalize(text):
-    return re.sub(r'[^A-Z0-9 ]+', ' ', text.upper()).split()
-
-
-def edit_distance(reference, hypothesis):
-    previous = list(range(len(hypothesis) + 1))
-    for i, ref in enumerate(reference, 1):
-        current = [i]
-        for j, hyp in enumerate(hypothesis, 1):
-            current.append(min(current[-1] + 1, previous[j] + 1,
-                               previous[j - 1] + (ref != hyp)))
-        previous = current
-    return previous[-1]
 
 
 def main():
@@ -92,13 +76,13 @@ def main():
             body = json.load(response)
         hypothesis = (body.get('choices') or [{}])[0].get('message', {}).get('content', '')
         reference = row['text']
-        ref_words, hyp_words = normalize(reference), normalize(hypothesis)
+        ref_words, hyp_words = normalize_text(reference), normalize_text(hypothesis)
         edits = edit_distance(ref_words, hyp_words)
         total_edits += edits
         total_words += len(ref_words)
         rows.append(dict(id=row['id'], reference=reference, hypothesis=hypothesis,
                          words=len(ref_words), edits=edits,
-                         wer=round(edits / max(1, len(ref_words)), 4),
+                         wer=round(word_error_rate(reference, hypothesis), 4),
                          elapsed_s=round(time.perf_counter() - started, 3)))
         print(json.dumps(rows[-1]), flush=True)
     report = dict(
