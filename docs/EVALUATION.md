@@ -103,6 +103,25 @@ python -m src.synth.lfm3_smoke --wav research/examples/pass-reply.wav \
   --url ws://127.0.0.1:8080/v1/realtime --out outputs/lfm3-reply.wav
 ```
 
+## Acoustic floor stress replay
+
+`src/synth/floor_acoustic.py` drives the real `DuplexFrontend` (Silero VAD,
+WebRTC AEC and echo correlation) with a public human LibriSpeech near-end and a
+generated far-end, plus a delayed attenuated echo. It is a stress test, not a
+room study.
+
+On four cases at 20 ms steps, both hard and reversible modes started on 3/4
+(echo-only did not start) and committed 3/3. The 220 ms backchannel produced
+about 316 ms of VAD evidence in this synthetic double-talk, so it crossed the
+300 ms commit threshold instead of resuming. This is a negative transfer result:
+the authored 3/3 backchannel preservation in the policy replay did not survive
+the real frontend and echo. The reversible path still ducked first and delayed
+the commit by about 220 ms, but it did not preserve the turn.
+
+The acoustic result is the reason the default remains hard and the feature
+remains opt-in. Backchannel preservation needs either better double-talk
+evidence, a different duration/energy policy, or real-device tuning.
+
 ## Public-pause EOT diagnostic
 
 `src/synth/eot_bench.py` scores the English validation split of
@@ -148,6 +167,31 @@ the odd rows (405 pauses, 205 mid-turn).
 This is the less biased estimate and the one used for the headline claim. It is
 still one deterministic English split, not multi-seed or live acceptance.
 
+### Zero-shot cross-lingual check
+
+The English thresholds were applied unchanged to German (`de`) and Spanish
+(`es`) from the same public dataset, 400 turns each and the same pause
+eligibility rule. Cells are false cut-off / EOT recall.
+
+| Language | Fixed 480 ms | 0.9/0.7 + 1 s | 0.9/0.7 + 2 s |
+| --- | ---: | ---: | ---: |
+| German | 62.95% / 95.64% | 45.40% / 100% | 39.55% / 100% |
+| Spanish | 67.25% / 97.72% | 59.22% / 100% | 52.93% / 100% |
+
+The schedule still beats the fixed endpoint, but transfer is weak: German false
+cut-off is about double the English held-out estimate, and Spanish improves only
+modestly. A stricter first query avoids many premature commits but misses more
+finals; the later 0.7 query then admits many mid-pauses in both languages. These
+results support per-language calibration rather than assuming English thresholds
+are universal. This is a negative transfer result, not a multilingual win.
+
+### Query latency
+
+On this CPU (ONNX Runtime, one inter-op thread), Smart Turn v3.2 on 8 s clips
+measured a 55.47 ms mean, 47.76 ms median and 81.93 ms p90 over 19 warm calls.
+The 300 ms first-query schedule has enough headroom for this hardware; the
+measurement is one local run, not a hardware-independent benchmark.
+
 As a descriptive per-turn check, restrict to the 165 turns that contain a
 mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
 (75.8%) of those turns; one Smart Turn query at 300 ms cut off 77/165 (46.7%).
@@ -178,6 +222,9 @@ python -m pip install -r requirements-dev.txt
 python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
 python -m src.synth.floor_replay --out outputs/floor_replay.json
+python -m src.synth.floor_acoustic --out outputs/floor_acoustic.json
+python scripts/eot_latency.py
+python scripts/eot_crosslingual.py --languages de es
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 python scripts/eot_recompute.py
 python scripts/eot_schedule_sweep.py

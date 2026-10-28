@@ -102,8 +102,17 @@
     },
     {
       "path": "research/eot_bench_summary.json",
-      "sha256": "1313a02bbb93f712ea9e030ece27de4387016e5a4fcfcdac4380ddda5e221788",
-      "bytes": 11982,
+      "sha256": "0847a06d7190d9f7bbd9a09bc17c575778425694556e7a6bfac244fb9d566596",
+      "bytes": 19261,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/floor_acoustic_summary.json",
+      "sha256": "53ee72cd8928aa6491902f9d5514bc0d2bc12d9c8560e126df6ce3d05c2479d3",
+      "bytes": 4324,
       "kind": "evidence_json",
       "source_type": "curated_public_research_aggregate",
       "contains_human_recording": false,

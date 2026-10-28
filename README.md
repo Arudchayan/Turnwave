@@ -33,8 +33,10 @@ flowchart LR
 | Selective opening capture | Six paired cases produced identical captured bytes | Not adopted |
 | Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
 | Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
-| Reversible floor replay | 3 non-limitation false cancels with hard cancel vs 0 with duck/backchannel; 3/3 authored backchannels preserved | Opt-in; real-device A/B pending |
+| Reversible floor replay | Authored: 3 non-limitation false cancels with hard vs 0 with duck/backchannel; 3/3 backchannels preserved. Acoustic stress: 220 ms backchannel produced ~316 ms VAD evidence and was committed | Opt-in; real-device A/B pending |
 | Public-pause EOT diagnostic | Held-out half: fixed 480 ms 61.46% per-pause false cut-off; 0.9/0.7 re-query + 1 s default 21.46% with 100% recall (2 s: 12.20%) | Opt-in Smart Turn sidecar; one deterministic English split |
+| Cross-lingual EOT | English 0.9/0.7 schedule: German 45.40% false cut-offs (fixed 62.95%); Spanish 59.22% (fixed 67.25%), 100% recall | Weak transfer; per-language calibration needed |
+| Smart Turn CPU latency | 55.47 ms mean, 47.76 ms median, 81.93 ms p90 per 8 s query | 300 ms schedule feasible on this CPU |
 | LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.

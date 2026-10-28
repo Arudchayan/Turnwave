@@ -115,8 +115,10 @@ snapshots above. Methods and limits are in [evaluation](EVALUATION.md).
 
 | Question | Evidence | Result |
 | --- | --- | --- |
-| Does reversible floor control preserve short backchannels? | Seven authored barge-in shapes; hard vs duck/backchannel | Hard: 3 non-limitation false cancels, 0/3 backchannels preserved. Reversible: 0 false cancels, 3/3 preserved, 0 missed floor takes, median commit 140 ms from confirmed onset. |
+| Does reversible floor control preserve short backchannels? | Seven authored barge-in shapes; plus a real-frontend acoustic stress replay | Authored: hard 3 non-limitation false cancels, 0/3 backchannels preserved; reversible 0 false cancels, 3/3 preserved, 0 missed, median commit 140 ms. Acoustic stress: a 220 ms backchannel produced ~316 ms of VAD evidence and was committed by both modes. |
 | Does Smart Turn improve the public-pause trade-off? | 400 English turns from `livekit/eot-bench-data`; deterministic even/odd split, 405 held-out pauses | Fixed 480 ms: 61.46% false cut-offs, 100% recall. Two-threshold 0.9/0.7 re-query + 1 s default: 21.46% false cut-offs, 100% recall, p90 1 s; 2 s: 12.20%, p90 2 s. |
+| Does the English EOT schedule transfer cross-lingually? | 400 German and 400 Spanish turns, English thresholds fixed | German: fixed 62.95% false cut-offs vs 45.40% (1 s) / 39.55% (2 s), 100% recall. Spanish: 67.25% vs 59.22% / 52.93%. Transfer is weak; per-language calibration needed. |
+| Is Smart Turn fast enough on this CPU? | 19 warm 8 s queries | 55.47 ms mean, 47.76 ms median, 81.93 ms p90. |
 | Does the LFM3 realtime transport work? | One public example WAV through `/v1/realtime` | Interleaved text and 24 kHz speech; 0.68 s first audio and 5.04 s reply on one warm local run. |
 
 The floor figures are policy/timing diagnostics. The EOT figures are

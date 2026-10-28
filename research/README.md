@@ -10,6 +10,7 @@ including unsuccessful approaches and example model outputs.
 | [candidate-screen-cases.json](candidate-screen-cases.json) | All 16 fixed-endpoint scores for the rejected audio OR rule |
 | [examples](examples/README.md) | Two complete generated replies, model text and independent ASR |
 | [floor_replay_summary.json](floor_replay_summary.json) | Compact hard-vs-reversible floor policy comparison |
+| [floor_acoustic_summary.json](floor_acoustic_summary.json) | Real VAD/AEC floor stress replay, including the negative backchannel transfer |
 | [eot_bench_summary.json](eot_bench_summary.json) | Compact Smart Turn public-pause EOT comparison |
 | [publication-manifest.json](publication-manifest.json) | Asset sizes, formats, provenance and SHA-256 hashes |
 
@@ -25,6 +26,9 @@ The two policy summaries are regenerated from the local, ignored outputs:
 
 ```powershell
 python -m src.synth.floor_replay --out outputs/floor_replay.json
+python -m src.synth.floor_acoustic --out outputs/floor_acoustic.json
+python scripts/eot_latency.py
+python scripts/eot_crosslingual.py --languages de es
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 python scripts/eot_recompute.py
 python scripts/eot_schedule_sweep.py

@@ -63,6 +63,12 @@ def eot_summary(source):
     holdout_path = OUT / 'eot_holdout.json'
     holdout = (json.loads(holdout_path.read_text(encoding='utf-8'))
                if holdout_path.exists() else None)
+    latency_path = OUT / 'eot_latency.json'
+    latency = (json.loads(latency_path.read_text(encoding='utf-8'))
+               if latency_path.exists() else None)
+    crosslingual_path = OUT / 'eot_crosslingual.json'
+    crosslingual = (json.loads(crosslingual_path.read_text(encoding='utf-8'))
+                    if crosslingual_path.exists() else None)
     selected_schedule = None
     if schedule:
         selected = [row for row in schedule.get('rows', [])
@@ -104,8 +110,29 @@ def eot_summary(source):
         hybrid_timeouts=hybrid,
         two_threshold_schedule=selected_schedule,
         holdout=holdout,
+        latency=latency,
+        crosslingual=crosslingual,
         per_turn_300ms=per_turn,
         decision=source.get('decision'),
+        limits=source.get('limits'),
+    )
+
+
+def floor_acoustic_summary(source):
+    return dict(
+        schema_version=source.get('schema_version', 1),
+        evidence_class=source.get('evidence_class'),
+        near_source=source.get('near_source'),
+        step_ms=source.get('step_ms'),
+        summary=source.get('summary'),
+        cases=[dict(id=row.get('id'), mode=row.get('mode'),
+                    started=row.get('started'), ducked=row.get('ducked'),
+                    resumed=row.get('resumed'), cancelled=row.get('cancelled'),
+                    cancel_at_ms=row.get('cancel_at_ms'),
+                    expected_cancel=row.get('expected_cancel'),
+                    false_cancel=row.get('false_cancel'),
+                    missed=row.get('missed'), actions=row.get('actions'))
+               for row in source.get('cases', [])],
         limits=source.get('limits'),
     )
 
@@ -113,6 +140,8 @@ def eot_summary(source):
 def main():
     paths = [
         write('floor_replay_summary.json', floor_summary(read('floor_replay.json'))),
+        write('floor_acoustic_summary.json',
+              floor_acoustic_summary(read('floor_acoustic.json'))),
         write('eot_bench_summary.json', eot_summary(read('eot_bench.json'))),
     ]
     for path in paths:

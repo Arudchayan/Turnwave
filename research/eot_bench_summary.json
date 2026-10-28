@@ -492,6 +492,311 @@
     },
     "limits": "One deterministic split, English only, saved offline scores; not a live or multi-seed validation."
   },
+  "latency": {
+    "schema_version": 1,
+    "model": {
+      "repo": "pipecat-ai/smart-turn-v3",
+      "file": "smart-turn-v3.2-cpu.onnx",
+      "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+    },
+    "clips": 20,
+    "measured": 19,
+    "cpu_threads": "onnxruntime default (inter_op=1)",
+    "mean_ms": 55.47,
+    "median_ms": 47.76,
+    "p90_ms": 81.93,
+    "min_ms": 33.32,
+    "max_ms": 99.96,
+    "note": "One local CPU run; not a hardware-independent benchmark."
+  },
+  "crosslingual": {
+    "de": {
+      "schema_version": 1,
+      "language": "de",
+      "dataset": {
+        "repo": "livekit/eot-bench-data",
+        "file": "data/de/validation-00000-of-00001.parquet",
+        "rows": 400
+      },
+      "model": {
+        "repo": "pipecat-ai/smart-turn-v3",
+        "file": "smart-turn-v3.2-cpu.onnx",
+        "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+      },
+      "pauses": 749,
+      "mid_pauses": 359,
+      "final_pauses": 390,
+      "policies": {
+        "fixed_480ms": {
+          "tp": 373,
+          "fp": 226,
+          "fn": 17,
+          "tn": 133,
+          "false_cutoff": 0.6295,
+          "false_cutoff_ci": [
+            0.5784,
+            0.6779
+          ],
+          "eot_recall": 0.9564,
+          "eot_recall_ci": [
+            0.9313,
+            0.9726
+          ],
+          "precision": 0.6227
+        },
+        "single_300_0.9": {
+          "tp": 274,
+          "fp": 108,
+          "fn": 116,
+          "tn": 251,
+          "false_cutoff": 0.3008,
+          "false_cutoff_ci": [
+            0.2557,
+            0.3502
+          ],
+          "eot_recall": 0.7026,
+          "eot_recall_ci": [
+            0.6554,
+            0.7458
+          ],
+          "precision": 0.7173
+        },
+        "two_0.9_0.7_1000": {
+          "tp": 390,
+          "fp": 163,
+          "fn": 0,
+          "tn": 196,
+          "false_cutoff": 0.454,
+          "false_cutoff_ci": [
+            0.4033,
+            0.5058
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9902,
+            1.0
+          ],
+          "precision": 0.7052,
+          "p90_latency_ms": 1000
+        },
+        "two_0.9_0.7_2000": {
+          "tp": 390,
+          "fp": 142,
+          "fn": 0,
+          "tn": 217,
+          "false_cutoff": 0.3955,
+          "false_cutoff_ci": [
+            0.3463,
+            0.447
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9902,
+            1.0
+          ],
+          "precision": 0.7331,
+          "p90_latency_ms": 2000
+        },
+        "single_300_0.5": {
+          "tp": 337,
+          "fp": 159,
+          "fn": 53,
+          "tn": 200,
+          "false_cutoff": 0.4429,
+          "false_cutoff_ci": [
+            0.3924,
+            0.4946
+          ],
+          "eot_recall": 0.8641,
+          "eot_recall_ci": [
+            0.8265,
+            0.8946
+          ],
+          "precision": 0.6794
+        },
+        "two_0.5_0.5_1000": {
+          "tp": 390,
+          "fp": 197,
+          "fn": 0,
+          "tn": 162,
+          "false_cutoff": 0.5487,
+          "false_cutoff_ci": [
+            0.497,
+            0.5994
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9902,
+            1.0
+          ],
+          "precision": 0.6644,
+          "p90_latency_ms": 700
+        },
+        "two_0.5_0.5_2000": {
+          "tp": 390,
+          "fp": 178,
+          "fn": 0,
+          "tn": 181,
+          "false_cutoff": 0.4958,
+          "false_cutoff_ci": [
+            0.4444,
+            0.5473
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9902,
+            1.0
+          ],
+          "precision": 0.6866,
+          "p90_latency_ms": 700
+        }
+      },
+      "note": "Thresholds fixed from English; zero-shot language transfer."
+    },
+    "es": {
+      "schema_version": 1,
+      "language": "es",
+      "dataset": {
+        "repo": "livekit/eot-bench-data",
+        "file": "data/es/validation-00000-of-00001.parquet",
+        "rows": 400
+      },
+      "model": {
+        "repo": "pipecat-ai/smart-turn-v3",
+        "file": "smart-turn-v3.2-cpu.onnx",
+        "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+      },
+      "pauses": 856,
+      "mid_pauses": 461,
+      "final_pauses": 395,
+      "policies": {
+        "fixed_480ms": {
+          "tp": 386,
+          "fp": 310,
+          "fn": 9,
+          "tn": 151,
+          "false_cutoff": 0.6725,
+          "false_cutoff_ci": [
+            0.6283,
+            0.7137
+          ],
+          "eot_recall": 0.9772,
+          "eot_recall_ci": [
+            0.9573,
+            0.988
+          ],
+          "precision": 0.5546
+        },
+        "single_300_0.9": {
+          "tp": 339,
+          "fp": 199,
+          "fn": 56,
+          "tn": 262,
+          "false_cutoff": 0.4317,
+          "false_cutoff_ci": [
+            0.3872,
+            0.4773
+          ],
+          "eot_recall": 0.8582,
+          "eot_recall_ci": [
+            0.8204,
+            0.8892
+          ],
+          "precision": 0.6301
+        },
+        "two_0.9_0.7_1000": {
+          "tp": 395,
+          "fp": 273,
+          "fn": 0,
+          "tn": 188,
+          "false_cutoff": 0.5922,
+          "false_cutoff_ci": [
+            0.5467,
+            0.6361
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9904,
+            1
+          ],
+          "precision": 0.5913,
+          "p90_latency_ms": 500
+        },
+        "two_0.9_0.7_2000": {
+          "tp": 395,
+          "fp": 244,
+          "fn": 0,
+          "tn": 217,
+          "false_cutoff": 0.5293,
+          "false_cutoff_ci": [
+            0.4837,
+            0.5744
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9904,
+            1
+          ],
+          "precision": 0.6182,
+          "p90_latency_ms": 500
+        },
+        "single_300_0.5": {
+          "tp": 370,
+          "fp": 268,
+          "fn": 25,
+          "tn": 193,
+          "false_cutoff": 0.5813,
+          "false_cutoff_ci": [
+            0.5358,
+            0.6255
+          ],
+          "eot_recall": 0.9367,
+          "eot_recall_ci": [
+            0.9082,
+            0.9568
+          ],
+          "precision": 0.5799
+        },
+        "two_0.5_0.5_1000": {
+          "tp": 395,
+          "fp": 310,
+          "fn": 0,
+          "tn": 151,
+          "false_cutoff": 0.6725,
+          "false_cutoff_ci": [
+            0.6283,
+            0.7137
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9904,
+            1
+          ],
+          "precision": 0.5603,
+          "p90_latency_ms": 300
+        },
+        "two_0.5_0.5_2000": {
+          "tp": 395,
+          "fp": 281,
+          "fn": 0,
+          "tn": 180,
+          "false_cutoff": 0.6095,
+          "false_cutoff_ci": [
+            0.5643,
+            0.653
+          ],
+          "eot_recall": 1.0,
+          "eot_recall_ci": [
+            0.9904,
+            1
+          ],
+          "precision": 0.5843,
+          "p90_latency_ms": 300
+        }
+      },
+      "note": "Thresholds fixed from English; zero-shot language transfer."
+    }
+  },
   "per_turn_300ms": {
     "schema_version": 1,
     "budget_ms": 300,
