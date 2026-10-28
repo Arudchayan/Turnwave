@@ -194,6 +194,9 @@ modestly. A stricter first query avoids many premature commits but misses more
 finals; the later 0.7 query then admits many mid-pauses in both languages. These
 results support per-language calibration rather than assuming English thresholds
 are universal. This is a negative transfer result, not a multilingual win.
+Other public turn-taking sets were not run: `Krisp-AI/turn-taking-test-v1` and
+`vapi-ai/eotd-multilingual` are gated, and `mundo-ai/turn-benchmark-*` shards
+are multi-gigabyte.
 
 ### Query latency
 
