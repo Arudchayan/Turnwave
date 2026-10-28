@@ -119,6 +119,8 @@ detection. The 300 ms budget produced 864 pause cases (464 mid-turn, 400 final).
 | Re-query + 1000 ms timeout | 20.82% | 100% | Bounded wait |
 | Re-query + 2000 ms timeout | 15.88% | 100% | Best measured trade-off |
 
+Wilson 95% intervals for the false cut-off rate were 30.55–36.89% for the fixed
+endpoint and 13.58–18.49% for the 2000 ms hybrid; the intervals do not overlap.
 The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at 800 ms.
 The 2000 ms hybrid is the policy wired behind `LOCALVOICE_EOT_MODEL=smart-turn`;
 most final turns commit at the 300 ms query, while uncertain turns are bounded
