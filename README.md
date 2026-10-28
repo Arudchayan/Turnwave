@@ -34,7 +34,7 @@ flowchart LR
 | Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
 | Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
 | Reversible floor replay | 3 non-limitation false cancels with hard cancel vs 0 with duck/backchannel; 3/3 authored backchannels preserved | Opt-in; real-device A/B pending |
-| Public-pause EOT diagnostic | Fixed 480 ms: 61.64% per-pause false cut-off; two-threshold 0.9/0.7 re-query + 1 s default: 27.37% with 100% recall (2 s: 16.59%) on 864 pauses (400 English turns) | Opt-in Smart Turn sidecar; schedule screened on the same pauses |
+| Public-pause EOT diagnostic | Held-out half: fixed 480 ms 61.46% per-pause false cut-off; 0.9/0.7 re-query + 1 s default 21.46% with 100% recall (2 s: 12.20%) | Opt-in Smart Turn sidecar; one deterministic English split |
 | LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.

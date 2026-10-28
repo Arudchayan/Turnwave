@@ -60,6 +60,9 @@ def eot_summary(source):
     schedule_path = OUT / 'eot_schedule_sweep.json'
     schedule = (json.loads(schedule_path.read_text(encoding='utf-8'))
                 if schedule_path.exists() else None)
+    holdout_path = OUT / 'eot_holdout.json'
+    holdout = (json.loads(holdout_path.read_text(encoding='utf-8'))
+               if holdout_path.exists() else None)
     selected_schedule = None
     if schedule:
         selected = [row for row in schedule.get('rows', [])
@@ -100,6 +103,7 @@ def eot_summary(source):
         temporal_no_timeout=temporal,
         hybrid_timeouts=hybrid,
         two_threshold_schedule=selected_schedule,
+        holdout=holdout,
         per_turn_300ms=per_turn,
         decision=source.get('decision'),
         limits=source.get('limits'),

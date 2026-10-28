@@ -134,8 +134,19 @@ cut-offs relative to one query (26.29% vs 23.28%) because a mid-turn pause gets
 more chances to cross the threshold.
 
 The 0.9-first / 0.7-later schedule was selected by sweeping the saved scores on
-the same 864 pauses. It is a **screening result, not held-out validation**; the
-thresholds should be rechecked on a separate split before strong claims.
+the same 864 pauses. To check that selection, rows were split deterministically
+by even/odd index: thresholds were chosen on the even rows and scored once on
+the odd rows (405 pauses, 205 mid-turn).
+
+| Held-out policy | False cut-off (95% CI) | EOT recall | p90 latency |
+| --- | ---: | ---: | ---: |
+| Fixed 480 ms | 61.46% (54.65–67.86) | 100% | 480 ms |
+| One 300 ms query at 0.5 | 20.98% (15.96–27.06) | 77% | 300 ms |
+| 0.9/0.7 + 1 s timeout | 21.46% (16.40–27.58) | 100% | 1000 ms |
+| 0.9/0.7 + 2 s timeout | 12.20% (8.40–17.38) | 100% | 2000 ms |
+
+This is the less biased estimate and the one used for the headline claim. It is
+still one deterministic English split, not multi-seed or live acceptance.
 
 As a descriptive per-turn check, restrict to the 165 turns that contain a
 mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
@@ -170,6 +181,7 @@ python -m src.synth.floor_replay --out outputs/floor_replay.json
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 python scripts/eot_recompute.py
 python scripts/eot_schedule_sweep.py
+python scripts/eot_holdout.py
 python scripts/eot_per_turn.py
 python scripts/export_research_summaries.py
 python scripts/verify_research.py

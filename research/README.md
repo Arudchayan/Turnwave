@@ -28,6 +28,7 @@ python -m src.synth.floor_replay --out outputs/floor_replay.json
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 python scripts/eot_recompute.py
 python scripts/eot_schedule_sweep.py
+python scripts/eot_holdout.py
 python scripts/eot_per_turn.py
 python scripts/export_research_summaries.py
 ```
