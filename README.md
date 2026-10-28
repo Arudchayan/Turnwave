@@ -12,7 +12,7 @@ It adds interruption handling around a turn-based audio model. This is a researc
 prototype: natural pauses, speaker echo and response quality remain limitations.
 
 [Architecture](docs/ARCHITECTURE.md) · [Results and lessons](docs/RESULTS.md) ·
-[Example audio](research/examples/README.md) ·
+[Real-device testing](docs/TESTING.md) · [Example audio](research/examples/README.md) ·
 [Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
 ```mermaid

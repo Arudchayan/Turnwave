@@ -23,7 +23,7 @@ from xml.etree import ElementTree
 PUBLIC_DOCS = {
     'ARCHITECTURE.md', 'KNOWN_LIMITATIONS.md', 'PRIVACY.md',
     'PUBLICATION.md', 'RECORDED_SESSIONS.md', 'RESULTS.md',
-    'EVALUATION.md', 'THIRD_PARTY.md',
+    'EVALUATION.md', 'THIRD_PARTY.md', 'TESTING.md',
 }
 PUBLIC_RESEARCH_DOCS = {
     'research/README.md', 'research/examples/README.md',
