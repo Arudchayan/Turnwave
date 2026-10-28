@@ -70,19 +70,24 @@ def main():
     spans = []
     for row_index, row in frame.iterrows():
         duration = float(row['duration'])
+        group = str(row['id']).split('__user_turn')[0]
         for span in row['silence_spans']:
             start, end = float(span['start']), float(span['end'])
             if end - start > 0:
                 spans.append((row_index, start, end, duration,
-                              end >= duration - .05))
-    eligible = [i for i, (_, start, end, _, _) in enumerate(spans)
+                              end >= duration - .05, group))
+    eligible = [i for i, (_, start, end, _, _, _) in enumerate(spans)
                 if (end - start) * 1000 >= MIN_MS]
-    train = [i for i in eligible if spans[i][0] % 2 == 0]
-    test = [i for i in eligible if spans[i][0] % 2 == 1]
+    groups = sorted({spans[i][5] for i in eligible})
+    group_split = {group: index % 2 for index, group in enumerate(groups)}
+    train = [i for i in eligible if group_split[spans[i][5]] == 0]
+    test = [i for i in eligible if group_split[spans[i][5]] == 1]
     labels = lambda indexes: [observations['labels'][i] for i in indexes]
     report = dict(
         schema_version=1,
-        protocol='deterministic even/odd row split; thresholds chosen on train',
+        protocol='conversation-grouped even/odd split; thresholds chosen on train',
+        groups=dict(total=len(groups), train=sum(1 for g in groups if group_split[g] == 0),
+                    test=sum(1 for g in groups if group_split[g] == 1)),
         pauses=dict(total=len(eligible), train=len(train), test=len(test)),
         train_mid=sum(1 for y in labels(train) if not y),
         test_mid=sum(1 for y in labels(test) if not y),
@@ -128,8 +133,9 @@ def main():
                             int(.9 * (len(final_latencies) - 1))])
         report['selected'][str(timeout)] = dict(
             train=chosen, test=test_row)
-    report['limits'] = ('One deterministic split, English only, saved offline '
-                        'scores; not a live or multi-seed validation.')
+    report['limits'] = ('One deterministic conversation-grouped split, English '
+                        'only, saved offline scores; not a live or multi-seed '
+                        'validation.')
     DEST.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8',
                     newline='\n')
     print(json.dumps(report, indent=2))

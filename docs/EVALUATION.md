@@ -163,19 +163,22 @@ cut-offs relative to one query (26.29% vs 23.28%) because a mid-turn pause gets
 more chances to cross the threshold.
 
 The 0.9-first / 0.7-later schedule was selected by sweeping the saved scores on
-the same 864 pauses. To check that selection, rows were split deterministically
-by even/odd index: thresholds were chosen on the even rows and scored once on
-the odd rows (405 pauses, 205 mid-turn).
+the same 864 pauses. To check that selection without leaking a conversation
+across halves, conversations were split deterministically by even/odd group:
+thresholds were chosen on 48 conversations and scored once on the other 48
+(466 pauses, 255 mid-turn).
 
 | Held-out policy | False cut-off (95% CI) | EOT recall | p90 latency |
 | --- | ---: | ---: | ---: |
-| Fixed 480 ms | 61.46% (54.65–67.86) | 100% | 480 ms |
-| One 300 ms query at 0.5 | 20.98% (15.96–27.06) | 77% | 300 ms |
-| 0.9/0.7 + 1 s timeout | 21.46% (16.40–27.58) | 100% | 1000 ms |
-| 0.9/0.7 + 2 s timeout | 12.20% (8.40–17.38) | 100% | 2000 ms |
+| Fixed 480 ms | 63.92% (57.86–69.57) | 100% | 480 ms |
+| One 300 ms query at 0.5 | 23.14% (18.38–28.69) | 72.51% | 300 ms |
+| 0.9/0.7 + 1 s timeout | 31.37% (25.99–37.31) | 100% | 1000 ms |
+| 0.9/0.7 + 2 s timeout | 19.22% (14.85–24.49) | 100% | 2000 ms |
 
 This is the less biased estimate and the one used for the headline claim. It is
-still one deterministic English split, not multi-seed or live acceptance.
+still one deterministic English conversation split, not multi-seed or live
+acceptance. The earlier row-level split was superseded because it could place
+turns from the same conversation on both sides.
 
 ### Zero-shot cross-lingual check
 

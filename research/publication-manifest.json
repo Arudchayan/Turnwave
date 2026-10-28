@@ -102,8 +102,8 @@
     },
     {
       "path": "research/eot_bench_summary.json",
-      "sha256": "0847a06d7190d9f7bbd9a09bc17c575778425694556e7a6bfac244fb9d566596",
-      "bytes": 19261,
+      "sha256": "0105403478d53147cbfecbadae19554ff4acbbef8c9a5c995a1b4ac64c637bba",
+      "bytes": 19366,
       "kind": "evidence_json",
       "source_type": "curated_public_research_aggregate",
       "contains_human_recording": false,

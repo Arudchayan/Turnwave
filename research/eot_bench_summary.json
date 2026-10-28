@@ -356,89 +356,94 @@
   },
   "holdout": {
     "schema_version": 1,
-    "protocol": "deterministic even/odd row split; thresholds chosen on train",
+    "protocol": "conversation-grouped even/odd split; thresholds chosen on train",
+    "groups": {
+      "total": 96,
+      "train": 48,
+      "test": 48
+    },
     "pauses": {
       "total": 864,
-      "train": 459,
-      "test": 405
+      "train": 398,
+      "test": 466
     },
-    "train_mid": 259,
-    "test_mid": 205,
+    "train_mid": 209,
+    "test_mid": 255,
     "baselines": {
       "fixed_480ms": {
-        "tp": 200,
-        "fp": 126,
+        "tp": 211,
+        "fp": 163,
         "fn": 0,
-        "tn": 79,
-        "false_cutoff": 0.6146,
+        "tn": 92,
+        "false_cutoff": 0.6392,
         "false_cutoff_ci": [
-          0.5465,
-          0.6786
+          0.5786,
+          0.6957
         ],
         "eot_recall": 1.0,
         "eot_recall_ci": [
-          0.9812,
+          0.9821,
           1
         ],
-        "precision": 0.6135
+        "precision": 0.5642
       },
       "single_300ms_0.5": {
-        "tp": 154,
-        "fp": 43,
-        "fn": 46,
-        "tn": 162,
-        "false_cutoff": 0.2098,
+        "tp": 153,
+        "fp": 59,
+        "fn": 58,
+        "tn": 196,
+        "false_cutoff": 0.2314,
         "false_cutoff_ci": [
-          0.1596,
-          0.2706
+          0.1838,
+          0.2869
         ],
-        "eot_recall": 0.77,
+        "eot_recall": 0.7251,
         "eot_recall_ci": [
-          0.7069,
-          0.8229
+          0.6613,
+          0.7809
         ],
-        "precision": 0.7817
+        "precision": 0.7217
       }
     },
     "selected": {
       "1000": {
         "train": {
-          "tp": 200,
-          "fp": 83,
+          "tp": 189,
+          "fp": 47,
           "fn": 0,
-          "tn": 176,
-          "false_cutoff": 0.3205,
+          "tn": 162,
+          "false_cutoff": 0.2249,
           "false_cutoff_ci": [
-            0.2666,
-            0.3796
+            0.1735,
+            0.2862
           ],
           "eot_recall": 1.0,
           "eot_recall_ci": [
-            0.9812,
+            0.9801,
             1
           ],
-          "precision": 0.7067,
+          "precision": 0.8008,
           "first_threshold": 0.9,
           "later_threshold": 0.7,
           "timeout_ms": 1000,
           "p90_latency_ms": 1000
         },
         "test": {
-          "tp": 200,
-          "fp": 44,
+          "tp": 211,
+          "fp": 80,
           "fn": 0,
-          "tn": 161,
-          "false_cutoff": 0.2146,
+          "tn": 175,
+          "false_cutoff": 0.3137,
           "false_cutoff_ci": [
-            0.164,
-            0.2758
+            0.2599,
+            0.3731
           ],
           "eot_recall": 1.0,
           "eot_recall_ci": [
-            0.9812,
+            0.9821,
             1
           ],
-          "precision": 0.8197,
+          "precision": 0.7251,
           "first_threshold": 0.9,
           "later_threshold": 0.7,
           "timeout_ms": 1000,
@@ -447,42 +452,42 @@
       },
       "2000": {
         "train": {
-          "tp": 200,
-          "fp": 52,
+          "tp": 189,
+          "fp": 28,
           "fn": 0,
-          "tn": 207,
-          "false_cutoff": 0.2008,
+          "tn": 181,
+          "false_cutoff": 0.134,
           "false_cutoff_ci": [
-            0.1565,
-            0.2538
+            0.0943,
+            0.1868
           ],
           "eot_recall": 1.0,
           "eot_recall_ci": [
-            0.9812,
+            0.9801,
             1
           ],
-          "precision": 0.7937,
+          "precision": 0.871,
           "first_threshold": 0.9,
           "later_threshold": 0.7,
           "timeout_ms": 2000,
           "p90_latency_ms": 2000
         },
         "test": {
-          "tp": 200,
-          "fp": 25,
+          "tp": 211,
+          "fp": 49,
           "fn": 0,
-          "tn": 180,
-          "false_cutoff": 0.122,
+          "tn": 206,
+          "false_cutoff": 0.1922,
           "false_cutoff_ci": [
-            0.084,
-            0.1738
+            0.1485,
+            0.2449
           ],
           "eot_recall": 1.0,
           "eot_recall_ci": [
-            0.9812,
+            0.9821,
             1
           ],
-          "precision": 0.8889,
+          "precision": 0.8115,
           "first_threshold": 0.9,
           "later_threshold": 0.7,
           "timeout_ms": 2000,
@@ -490,7 +495,7 @@
         }
       }
     },
-    "limits": "One deterministic split, English only, saved offline scores; not a live or multi-seed validation."
+    "limits": "One deterministic conversation-grouped split, English only, saved offline scores; not a live or multi-seed validation."
   },
   "latency": {
     "schema_version": 1,
