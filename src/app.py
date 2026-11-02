@@ -42,6 +42,7 @@ class Job:
     generation_closed: threading.Event = field(default_factory=threading.Event)
     playback_closed: threading.Event = field(default_factory=threading.Event)
     agent_input: str = ''
+    agent_input_saved: bool = False
     sources: list = field(default_factory=list)
 
 
@@ -245,6 +246,19 @@ class Assistant:
                     self.transcript_revision += 1
                     return True
             return False
+
+    def _remember_agent_input(self, job):
+        """Keep a recognized request once, even if its reply is interrupted.
+
+        Caller holds _lock. An unfinished reply is intentionally not recorded
+        as though it had been heard.
+        """
+        if self.agent and job.epoch == self._epoch and job.agent_input and not job.agent_input_saved:
+            self._agent_history.append({'role': 'user', 'content': job.agent_input})
+            job.agent_input_saved = True
+            self._agent_history = self._agent_history[-20:]
+            while self._agent_history and self._agent_history[0]['role'] != 'user':
+                self._agent_history.pop(0)
 
     def _asr_worker(self):
         while not self._stop.is_set():
@@ -491,16 +505,15 @@ class Assistant:
                         # ASR uses the turn for cancellation, but its partial
                         # text must never appear as an assistant reply.
                         turn.text_parts.clear()
-                    if turn.cancel.is_set():
-                        return
-                    job.agent_input = text
+                    with self._lock:
+                        if turn.cancel.is_set() or self._active is not job:
+                            return
+                        job.agent_input = text
+                        self._replace(job.user_id, 'user: ' + text)
+                        self._agent_phase = 'thinking'
                     turn.done.clear()
                     turn.first_event = turn.first_text = turn.ttft = None
                     turn.finish_reason = None
-                    with self._lock:
-                        if self._active is job:
-                            self._replace(job.user_id, 'user: ' + text)
-                            self._agent_phase = 'thinking'
                     def searching(active):
                         with self._lock:
                             if self._active is job:
@@ -594,11 +607,15 @@ class Assistant:
                 self._archive_call(job, 'finish_playback', job.played_samples, turn.cancel.is_set(), error=turn.error)
                 self._close_job_half(job)
                 with self._lock:
+                    if self.agent and not job.test and self._active is job and turn.error:
+                        self._remember_agent_input(job)
                     if (self.agent and not job.test and self._active is job and job.epoch == self._epoch
                             and not turn.cancel.is_set() and not turn.error and job.played_samples):
-                        self._agent_history.extend([{'role': 'user', 'content': job.agent_input},
-                                                    {'role': 'assistant', 'content': turn.text.strip()}])
+                        self._remember_agent_input(job)
+                        self._agent_history.append({'role': 'assistant', 'content': turn.text.strip()})
                         self._agent_history = self._agent_history[-20:]
+                        while self._agent_history and self._agent_history[0]['role'] != 'user':
+                            self._agent_history.pop(0)
                         self._agent_sources = job.sources
                     if job.epoch == self._epoch:
                         text = (turn.text.strip() if not self.agent or job.test or job.agent_input else '')
@@ -640,6 +657,7 @@ class Assistant:
             job = self._active
             if job is not None:
                 self.diagnostics.event('interrupt', turn_id=job.id, reason=why, played_s=round(job.played_samples/24000, 3))
+                self._remember_agent_input(job)
                 job.turn.abort()
                 self._active = None
                 # Backend cannot truncate its KV to the played prefix.

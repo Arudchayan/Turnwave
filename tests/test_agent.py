@@ -84,6 +84,26 @@ def test_agent_http_failure_does_not_expose_body_or_key(monkeypatch):
     assert 'secret' not in str(error.value)
 
 
+def test_response_close_error_does_not_hide_completed_reply(monkeypatch):
+    class FailingClose(io.BytesIO):
+        def close(self):
+            super().close()
+            raise OSError('close failed')
+    payload = json.dumps({'choices': [{'message': {'content': 'Hello.'}}]}).encode()
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: FailingClose(payload))
+    turn = Turn()
+    assert AgentClient('key').respond('Hi', [], turn) == ('Hello.', [])
+    assert turn._response is None
+
+
+def test_usage_limit_reports_actionable_message(monkeypatch):
+    def fail(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 429, 'limit', {}, io.BytesIO(b''))
+    monkeypatch.setattr('urllib.request.urlopen', fail)
+    with pytest.raises(AgentError, match='usage limit'):
+        AgentClient('key').respond('Hi', [], Turn())
+
+
 def test_cancelled_agent_does_not_send(monkeypatch):
     monkeypatch.setattr('urllib.request.urlopen', lambda *a, **k: pytest.fail('Unexpected request'))
     turn = Turn(); turn.abort()
@@ -151,7 +171,7 @@ def test_voice_agent_transcribes_speaks_remembers_and_resets():
         app.close()
 
 
-def test_interrupted_agent_reply_is_not_spoken_or_added_to_history():
+def test_interrupted_agent_keeps_request_but_not_unspoken_reply():
     import threading
     entered = threading.Event()
     class WaitingAgent(FakeAgent):
@@ -167,6 +187,50 @@ def test_interrupted_agent_reply_is_not_spoken_or_added_to_history():
         app.interrupt()
         wait_for(lambda: job.generation_closed.is_set() and job.playback_closed.is_set())
         assert job.turn.cancel.is_set() and job.played_samples == 0
-        assert app._agent_history == [] and app.state()['agent_sources'] == []
+        assert app._agent_history == [{'role': 'user', 'content': 'What is new?'}]
+        assert app.state()['agent_sources'] == []
+        app.reset()
+        assert app._agent_history == []
+    finally:
+        app.close()
+
+
+def test_next_agent_turn_receives_interrupted_user_request_without_answer():
+    import threading
+    entered = threading.Event()
+    class InterruptThenReply(FakeAgent):
+        def respond(self, text, history, turn, on_search):
+            self.histories.append(history)
+            if len(self.histories) == 1:
+                entered.set()
+                turn.cancel.wait(2)
+                return None
+            return 'A short answer.', []
+    agent = InterruptThenReply()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        first = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert entered.wait(1)
+        second = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        assert first.turn.cancel.is_set()
+        assert agent.histories[1] == [{'role': 'user', 'content': 'What is new?'}]
+        assert app._agent_history == [{'role': 'user', 'content': 'What is new?'},
+                                      {'role': 'user', 'content': 'What is new?'},
+                                      {'role': 'assistant', 'content': 'A short answer.'}]
+    finally:
+        app.close()
+
+
+def test_failed_agent_request_keeps_only_recognized_input():
+    class FailingAgent(FakeAgent):
+        def respond(self, text, history, turn, on_search):
+            raise AgentError('Provider unavailable')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=FailingAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert job.turn.error == 'Provider unavailable'
+        assert app._agent_history == [{'role': 'user', 'content': 'What is new?'}]
     finally:
         app.close()
