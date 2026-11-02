@@ -252,18 +252,18 @@ freshness or acoustic audibility in a room.
 
 ## Jarvis intermediary capabilities and pipelined synthesis
 
-When operating with an external reasoning provider (OpenCode Go or Zen), Turnwave
+When operating with an external reasoning provider (OpenCode Go, Zen, or a custom local OpenAI-compatible endpoint via `LOCALVOICE_CUSTOM_ENDPOINT`), Turnwave
 acts as a voice intermediary ("Jarvis" persona) coordinating local tool execution,
 deep technical delegation, and speech synthesis:
 
 ### Local tool execution and persona management
 
 The intermediary provides direct tool definitions to the chat-completions model:
-- `get_time`: Queries local clock, date, weekday, and optional IANA timezones.
+- `get_time`: Queries current time in remote IANA timezones (local clock, date, and weekday are pre-injected in the system prompt for zero-round-trip answers).
 - `get_weather`: Performs geocoding and current/forecast lookups via Open-Meteo.
-- `system_status`: Inspects local hardware vitals via `nvidia-smi` (VRAM used/total, GPU utilization, core temperature) and disk capacity.
+- `system_status`: Inspects local hardware vitals via `nvidia-smi` (VRAM used/total, GPU utilization, core temperature) and disk capacity, with a 10-second cached snapshot injected into the system prompt so common status questions resolve in a single LLM pass.
 - `remember` / `recall`: Retains facts and user preferences across turns (in memory or persistent JSON), searchable by keyword tokens.
-- `set_persona`: Adjusts system instructions dynamically between `jarvis` (composed intermediary), `natural`, `concise`, and `storyteller`.
+- `set_persona`: Adjusts system instructions dynamically between `jarvis` (composed intermediary), `direct` (zero-fluff operator), `natural`, `concise`, and `storyteller`.
 
 ### Expert delegation (`consult_expert`)
 
@@ -274,14 +274,20 @@ characters) is formatted into structured cards within the web interface's
 Expert Notes panel, while the voice client speaks a 2–3 sentence spoken summary.
 This decouples visual technical depth from spoken conciseness.
 
+### Turn-speed, HTTP Keep-Alive, and voice-quality optimizations
+
+- **Single-frame WebSocket ASR upload & `TCP_NODELAY`**: `LFM3Client._append` sends up to 128 KB per WebSocket frame instead of 50× 3,200-byte frames and catches Python 3.12 `TimeoutError` during socket reads, reducing 5.0 s local ASR transcription latency from **568.7 ms to 317.0 ms** (44% faster) while eliminating premature 0.6 s socket-timeout aborts.
+- **Persistent HTTP/1.1 Keep-Alive pooling**: `AgentClient` reuses a persistent `urllib3.PoolManager` connection pool across turns and tool-call iterations, avoiding repeated ~220 ms TLS handshakes.
+- **Natural RVQ acoustic sampling & boundary interpolation**: Replacing greedy argmax (`--temp 0`, which sets `top_k: 1` on LFM3's 8-codebook Mimi RVQ audio tokens) with `--temp 0.7 --top-k 40 --top-p 0.9 --min-p 0.05 --repeat-penalty 1.05` eliminates robotic pitch flattening and limit-cycle buzz, while linear tail extrapolation in `Player.play_chunks` removes the 50 Hz sample-clamping step during 24 kHz → 48 kHz resampling.
+
 ### Hybrid text prompt and sentence-pipelined TTS
 
 The interface exposes `/api/prompt` (`POST /api/prompt`), allowing typed prompts
 to enter the turn cycle without microphone capture. Replies are processed through
 the standard conversation context and played through the audio device.
 
-For answers exceeding 240 characters, `Assistant._speak_answer` segments text
-at punctuation boundaries into ~220-character units. The first segment is submitted
-immediately to the TTS engine, allowing audio playback to begin while subsequent
+For answers exceeding 110 characters, `Assistant._speak_answer` segments text
+at punctuation boundaries with a 120-character cap on the opening sentence and ~220-character units thereafter. The first sentence is submitted
+immediately to the TTS engine, allowing audio playback to begin in 50–90 ms while subsequent
 sentences continue to stream. In synthetic unit tests, pipelining reduced initial
 playback wait while preserving single-stream audio ordering across sentence boundaries.

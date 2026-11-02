@@ -121,16 +121,17 @@ Heretic compatibility with LFM3 Omni, export to GGUF, and speech quality have no
 yet been verified. The existing GGUF alone does not establish that Heretic can
 process this model. Model modifications may change behavior and quality.
 
-The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference optimizations
+The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference and acoustic sampling optimizations
 tuned for 4 GiB GPU memory limits:
 - FlashAttention (`--flash-attn on`)
 - Symmetric 8-bit quantized KV caching (`--cache-type-k q8_0 --cache-type-v q8_0`)
 - Single parallel sequence slot (`-np 1`)
+- Natural RVQ acoustic sampling (`--temp 0.7 --top-k 40 --top-p 0.9 --min-p 0.05 --repeat-penalty 1.05`)
 
 On an NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB), this configuration keeps peak VRAM
-at 3,451 MiB and reduces speaker-check time-to-first-audio (`last_ttft`) from 0.596 s
-to 0.102 s compared with unoptimized defaults. Environment overrides are
-`LOCALVOICE_FLASH_ATTN`, `LOCALVOICE_KV_TYPE`, and `LOCALVOICE_PARALLEL`.
+at 3,451 MiB, reduces speaker-check time-to-first-audio (`last_ttft`) from 0.596 s
+to 0.102 s, and avoids the flat pitch and metallic buzz caused by greedy (`--temp 0`) RVQ audio codec sampling. Environment overrides are
+`LOCALVOICE_FLASH_ATTN`, `LOCALVOICE_KV_TYPE`, `LOCALVOICE_PARALLEL`, `LOCALVOICE_TEMP`, `LOCALVOICE_TOP_K`, `LOCALVOICE_TOP_P`, `LOCALVOICE_MIN_P`, and `LOCALVOICE_REPEAT_PENALTY`. Optional voice conditioning overrides on the client side are `LOCALVOICE_VOICE` and `LOCALVOICE_SPEAKER_REF`.
 
 From the repository root, start the backend:
 
@@ -194,19 +195,19 @@ request failures. Agent context is kept in memory and reset with the conversatio
 
 ### Jarvis voice intermediary and local capabilities
 
-When an OpenCode agent backend is active (`LOCALVOICE_AGENT=opencode-go` or `opencode-zen`),
+When an external agent backend is active (`LOCALVOICE_AGENT=opencode-go`, `opencode-zen`, or `custom` via `LOCALVOICE_CUSTOM_ENDPOINT`, defaulting to `http://127.0.0.1:8081/v1/chat/completions`),
 Turnwave operates as a voice intermediary ("Jarvis" persona) bridging the user with
 local tools, expert reasoning delegation, and search:
 
 - **Built-in local tools**:
-  - `get_time`: Queries local clock, date, weekday, and optional IANA timezones.
+  - `get_time`: Queries remote IANA timezones (local clock, date, and weekday are pre-injected in the system prompt for zero-round-trip answers).
   - `get_weather`: Live conditions and forecasts via Open-Meteo.
-  - `system_status`: Queries GPU model, VRAM utilization, temperature, and disk space via `nvidia-smi` and system utilities.
+  - `system_status`: Queries GPU model, VRAM utilization, temperature, and disk space via `nvidia-smi` and system utilities (with a 10-second cached snapshot injected into the system prompt).
   - `remember` / `recall`: Retains session and persistent user preferences or facts across turns.
 - **Expert delegation (`consult_expert`)**: For complex programming, mathematical, or architectural questions, the intermediary delegates to a deep reasoning model (e.g. `kimi-k3`). The full structured technical brief is rendered in the web studio's Expert Notes cards, while the assistant speaks a concise 2–3 sentence takeaway.
-- **Persona switching (`set_persona`)**: Dynamically switches voice style between `jarvis` (composed intermediary), `natural`, `concise`, and `storyteller`.
+- **Persona switching (`set_persona`)**: Dynamically switches voice style between `jarvis` (composed intermediary), `direct` (zero-fluff operator), `natural`, `concise`, and `storyteller`.
 - **Hybrid text prompt (`/api/prompt`)**: Endpoint (`POST /api/prompt`) allowing users to type prompts directly from the studio interface while receiving spoken voice output and preserving conversation history.
-- **Sentence-pipelined TTS**: Multi-sentence replies (>240 characters) are chunked into sentence segments (~220 characters) and pipelined sequentially to the TTS runner, delivering initial spoken audio without waiting for the complete multi-sentence paragraph to synthesize.
+- **Sentence-pipelined TTS**: Multi-sentence replies (>110 characters) are chunked into sentence segments (first sentence capped at 120 characters, subsequent segments ~220 characters) and pipelined sequentially to the TTS runner, delivering initial spoken audio in 50–90 ms without waiting for the complete multi-sentence paragraph to synthesize.
 
 ## Tests
 

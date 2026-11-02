@@ -2,6 +2,7 @@
 import datetime
 import html
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -12,6 +13,13 @@ import urllib.parse
 import urllib.request
 import uuid
 import zoneinfo
+
+try:
+    import urllib3
+except ImportError:
+    urllib3 = None
+
+_DEFAULT_URLOPEN = urllib.request.urlopen
 
 
 SYSTEM = (
@@ -29,6 +37,10 @@ PERSONAS = {
         "Voice persona: Jarvis intermediary — warm, sharp, composed, and human. "
         "Act as an intelligent bridge between the user and deep reasoning/tools: "
         "distill complex technical or search findings into crisp, conversational spoken takeaways."
+    ),
+    'direct': (
+        "Voice persona: Direct operator — zero fluff, zero filler or comfort phrases, "
+        "immediate and sharp in 1 to 2 spoken sentences."
     ),
     'natural': (
         "Voice persona: Natural companion — warm, empathetic, relaxed, and genuinely conversational."
@@ -49,9 +61,9 @@ SEARCH_TOOL = {"type": "function", "function": {
 
 TIME_TOOL = {"type": "function", "function": {
     "name": "get_time",
-    "description": "Get the current local time, date, weekday, and timezone (or for a given IANA timezone).",
+    "description": "Get the current time for a DIFFERENT specified IANA timezone (e.g. UTC, America/New_York). Current local time is already in your system prompt; do not call get_time for local time.",
     "parameters": {"type": "object", "properties": {
-        "timezone": {"type": "string", "description": "Optional IANA timezone such as Europe/Zurich or UTC"}},
+        "timezone": {"type": "string", "description": "IANA timezone such as Europe/Zurich, UTC, or America/New_York"}},
         "additionalProperties": False}}}
 
 WEATHER_TOOL = {"type": "function", "function": {
@@ -63,7 +75,7 @@ WEATHER_TOOL = {"type": "function", "function": {
 
 STATUS_TOOL = {"type": "function", "function": {
     "name": "system_status",
-    "description": "Get local hardware status including GPU, VRAM usage, temperature, and disk free space.",
+    "description": "Refresh live local hardware status (GPU, VRAM, temperature, disk) if explicitly asked for a fresh re-check; current snapshot is already in your system prompt.",
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}}
 
 REMEMBER_TOOL = {"type": "function", "function": {
@@ -91,9 +103,9 @@ EXPERT_TOOL = {"type": "function", "function": {
 
 PERSONA_TOOL = {"type": "function", "function": {
     "name": "set_persona",
-    "description": "Switch conversational voice style (jarvis, natural, concise, or storyteller).",
+    "description": "Switch conversational voice style (jarvis, direct, natural, concise, or storyteller).",
     "parameters": {"type": "object", "properties": {
-        "persona": {"type": "string", "enum": ["jarvis", "natural", "concise", "storyteller"]}},
+        "persona": {"type": "string", "enum": ["jarvis", "direct", "natural", "concise", "storyteller"]}},
         "required": ["persona"], "additionalProperties": False}}}
 
 LOCAL_TOOLS = [TIME_TOOL, WEATHER_TOOL, STATUS_TOOL, REMEMBER_TOOL, RECALL_TOOL, EXPERT_TOOL, PERSONA_TOOL]
@@ -114,6 +126,7 @@ _DDG_RESULT = re.compile(
     r'(?:.*?class="result__snippet"[^>]*>(.*?)</(?:a|div)>)?', re.S)
 _TAG = re.compile(r'<[^>]+>')
 _STAGE_DIR = re.compile(r'\*[^*\n]{2,80}\*')
+_BRACKET_META = re.compile(r'\[(?:Interrupted|interrupted|reply incomplete|reply reached length limit)[^\]]*\]')
 _MD_CODE = re.compile(r'```[\s\S]*?```|`([^`\n]+)`')
 _MD_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
 _MD_BOLD = re.compile(r'(\*\*|__)(.*?)\1')
@@ -126,6 +139,7 @@ def _clean_html(text):
 def _clean_spoken_text(text):
     """Strip markdown decorations and stage directions so TTS speaks cleanly."""
     cleaned = _MD_CODE.sub(lambda m: m.group(1) or '', str(text or ''))
+    cleaned = _BRACKET_META.sub(' ', cleaned)
     cleaned = _MD_BOLD.sub(r'\2', cleaned)
     cleaned = _STAGE_DIR.sub(' ', cleaned)
     cleaned = _MD_LINK.sub(r'\1', cleaned)
@@ -153,8 +167,8 @@ class AgentClient:
     """
     def __init__(self, key, model='kimi-k3', search_key=None, timeout=30, provider='go',
                  search_provider=None, reasoning_effort='low', local_tools=None,
-                 persona='jarvis', expert_model=None, memory_path=None):
-        if provider not in ('go', 'zen'):
+                 persona='jarvis', expert_model=None, memory_path=None, custom_endpoint=None):
+        if provider not in ('go', 'zen', 'custom'):
             raise ValueError('Unsupported OpenCode provider')
         if search_provider is None:
             search_provider = 'brave' if search_key else 'none'
@@ -162,15 +176,18 @@ class AgentClient:
             raise ValueError('Unsupported search provider')
         if persona not in PERSONAS:
             raise ValueError('Unsupported persona')
-        self._key = key
+        self._key = key or ('local' if provider == 'custom' else key)
         self._search_key = search_key
         self.model = model
         self.expert_model = expert_model or model
         self.persona = persona
         self.provider = provider
-        self.label = 'OpenCode Go' if provider == 'go' else 'OpenCode Zen'
+        self.custom_endpoint = (custom_endpoint or os.getenv('LOCALVOICE_CUSTOM_ENDPOINT')
+                                or 'http://127.0.0.1:8081/v1/chat/completions')
+        self.label = ('Custom Endpoint' if provider == 'custom'
+                      else 'OpenCode Go' if provider == 'go' else 'OpenCode Zen')
         self.timeout = timeout
-        self.reasoning_effort = reasoning_effort
+        self.reasoning_effort = None if provider == 'custom' else reasoning_effort
         self._session = uuid.uuid4().hex
         self.search_provider = ('ddg' if search_provider in ('ddg', 'duckduckgo')
                                 else 'brave' if search_provider == 'brave' and search_key else 'none')
@@ -178,10 +195,13 @@ class AgentClient:
         self.local_tools = self.search_enabled if local_tools is None else bool(local_tools)
         self.memory_path = Path(memory_path) if memory_path else None
         self._memories = self._load_memories()
+        self._hw_cache = (0.0, {})
+        self._pool = (urllib3.PoolManager(timeout=urllib3.Timeout(total=self.timeout), retries=False, maxsize=6)
+                      if urllib3 is not None else None)
         self.last_trace = None
         self.last_notes = []
         key_name = 'OPENCODE_GO_API_KEY' if provider == 'go' else 'OPENCODE_ZEN_API_KEY'
-        self.configuration_error = None if key else f'Set {key_name} to use cloud conversation.'
+        self.configuration_error = None if self._key else f'Set {key_name} to use cloud conversation.'
 
     def _load_memories(self):
         if self.memory_path is None or not self.memory_path.exists():
@@ -223,14 +243,37 @@ class AgentClient:
         self.last_trace = None
         self.last_notes = []
 
+    def _chat_endpoint(self):
+        if self.provider == 'custom':
+            return self.custom_endpoint
+        if self.provider == 'go':
+            return 'https://opencode.ai/inference/go/openai/v1/chat/completions'
+        return 'https://opencode.ai/inference/openai/v1/chat/completions'
+
     def _read(self, request, turn, service):
         if turn.cancel.is_set():
             return None
         response = None
         try:
-            response = urllib.request.urlopen(request, timeout=self.timeout)
-            with turn._lock:
-                turn._response = response
+            if urllib.request.urlopen is _DEFAULT_URLOPEN and self._pool is not None:
+                headers = dict(request.header_items())
+                response = self._pool.request(
+                    request.get_method(), request.full_url,
+                    body=request.data, headers=headers, preload_content=False)
+                with turn._lock:
+                    turn._response = response
+                if response.status >= 400:
+                    code = response.status
+                    response.release_conn()
+                    hint = (' Check your provider account balance.' if code == 402 else
+                            ' Check the API key and provider access.' if code in (401, 403) else
+                            ' The provider rate or usage limit may have been reached; check the account or retry later.'
+                            if code == 429 else '')
+                    raise AgentError(f'{service} returned HTTP {code}.' + hint)
+            else:
+                response = urllib.request.urlopen(request, timeout=self.timeout)
+                with turn._lock:
+                    turn._response = response
             if turn.cancel.is_set():
                 return None
             data = response.read(MAX_RESPONSE + 1)
@@ -246,7 +289,9 @@ class AgentClient:
                     ' The provider rate or usage limit may have been reached; check the account or retry later.'
                     if exc.code == 429 else '')
             raise AgentError(f'{service} returned HTTP {exc.code}.' + hint) from None
-        except OSError as exc:
+        except Exception as exc:
+            if isinstance(exc, AgentError):
+                raise
             if turn.cancel.is_set():
                 return None
             raise AgentError(service + ' request failed') from exc
@@ -256,6 +301,8 @@ class AgentClient:
                     turn._response = None
             if response is not None:
                 try:
+                    if hasattr(response, 'release_conn'):
+                        response.release_conn()
                     response.close()
                 except Exception:
                     # Cleanup cannot replace a completed reply or cancellation.
@@ -383,7 +430,17 @@ class AgentClient:
                 pass
         info['memories_saved'] = len(self._memories)
         info['persona'] = self.persona
+        self._hw_cache = (time.monotonic(), dict(info))
         return info
+
+    def cached_system_status(self, max_age=10.0):
+        ts, cached = self._hw_cache
+        if cached and (time.monotonic() - ts) < max_age:
+            out = dict(cached)
+            out['memories_saved'] = len(self._memories)
+            out['persona'] = self.persona
+            return out
+        return self.system_status()
 
     def remember(self, fact, category='general'):
         if not isinstance(fact, str) or not fact.strip():
@@ -412,8 +469,7 @@ class AgentClient:
     def consult_expert(self, question, turn):
         if not isinstance(question, str) or not question.strip():
             raise AgentError('Invalid expert question')
-        endpoint = ('https://opencode.ai/inference/go/openai/v1/chat/completions'
-                    if self.provider == 'go' else 'https://opencode.ai/inference/openai/v1/chat/completions')
+        endpoint = self._chat_endpoint()
         payload = {
             'model': self.expert_model,
             'messages': [
@@ -538,10 +594,10 @@ class AgentClient:
     def _build_messages(system, history, user_text):
         """Normalize conversation history so interrupted turns never stack or repeat."""
         recent = [
-            {'role': item['role'], 'content': str(item.get('content', '')).strip()}
-            for item in history[-20:]
+            {'role': item['role'], 'content': _BRACKET_META.sub(' ', str(item.get('content', ''))).strip()}
+            for item in history[-16:]
             if isinstance(item, dict) and item.get('role') in ('user', 'assistant')
-            and str(item.get('content', '')).strip()
+            and _BRACKET_META.sub(' ', str(item.get('content', ''))).strip()
         ]
         normalized = []
         deduped = 0
@@ -558,12 +614,12 @@ class AgentClient:
                 normalized.append({'role': 'user', 'content': content[:8000]})
                 normalized.append({
                     'role': 'assistant',
-                    'content': '[Interrupted before reply; the user moved on to a new request.]',
+                    'content': 'Understood.',
                 })
                 closed_unanswered += 1
             else:
                 normalized.append({'role': role, 'content': content[:8000]})
-        trimmed = normalized[-20:]
+        trimmed = normalized[-12:]
         while trimmed and trimmed[0]['role'] != 'user':
             trimmed.pop(0)
         messages = [{'role': 'system', 'content': system}, *trimmed,
@@ -652,9 +708,14 @@ class AgentClient:
             facts = '; '.join(m['fact'] for m in self._memories[-8:])
             memory_hint = f' Known user context from memory: {facts}.'
         if self.local_tools:
-            tool_hint = (" You have tools for get_time, get_weather (live city weather via Open-Meteo), "
-                         "system_status (GPU/VRAM/disk), remember, recall, consult_expert (deep analysis "
-                         "delegation with UI display), and set_persona.")
+            hw = self.cached_system_status()
+            gpu_part = (f"GPU {hw['gpu']} ({hw.get('vram_used_mb')}/{hw.get('vram_total_mb')} MB VRAM, "
+                        f"{hw.get('gpu_temp_c')}°C, {hw.get('gpu_util_percent')}% util), " if hw.get('gpu') else '')
+            disk_part = f"Disk free {hw.get('disk_free_gb')} GB." if hw.get('disk_free_gb') is not None else ''
+            hw_context = f" Local hardware: {gpu_part}{disk_part}".rstrip()
+            tool_hint = (" Answer local time or hardware status questions directly from your system prompt "
+                         "without calling get_time or system_status unless a different timezone or fresh re-check is needed. "
+                         "Use get_weather for city weather, consult_expert for deep technical analysis, remember/recall for memory, and set_persona for voice style.") + hw_context
         else:
             tool_hint = ""
         if self.search_enabled:
@@ -683,10 +744,9 @@ class AgentClient:
         for iteration in range(4):
             if turn.cancel.is_set():
                 return None
-            endpoint = ('https://opencode.ai/inference/go/openai/v1/chat/completions'
-                        if self.provider == 'go' else 'https://opencode.ai/inference/openai/v1/chat/completions')
+            endpoint = self._chat_endpoint()
             iter_t0 = time.perf_counter()
-            max_tokens = 900
+            max_tokens = 450
             empty_retried = False
             for attempt in range(3):
                 payload = {'model': self.model, 'messages': messages, 'stream': False, 'max_tokens': max_tokens}

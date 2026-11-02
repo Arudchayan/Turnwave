@@ -217,12 +217,14 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <option value="opencode-go:beam-free">Cloud Agent · OpenCode Go (beam-free)</option>
 <option value="opencode-go:iceman-contributor-free">Cloud Agent · OpenCode Go (iceman-contributor-free)</option>
 <option value="opencode-go:kimi-k3">Cloud Agent · OpenCode Go (kimi-k3)</option>
+<option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
 </select>
 </div>
 <div class=field-row>
 <label class=ctrl-lbl for=personasel>Voice persona &amp; intermediary style</label>
 <select id=personasel aria-label="Voice persona">
 <option value="jarvis">Jarvis · Warm Executive Intermediary</option>
+<option value="direct">Direct · Zero-Fluff Operator</option>
 <option value="natural">Natural · Empathetic Companion</option>
 <option value="concise">Concise · Direct Tactical Briefing</option>
 <option value="storyteller">Storyteller · Expressive Narrative</option>
@@ -354,7 +356,7 @@ lastPersona=s.agent_persona;psel.value=lastPersona;}
 psel.disabled=!s.agent_mode||pendingActions.has('personasel');}
 let agsel=$('agentsel');
 if(agsel&&!observedAgentPending&&observedAgentVersion===agentVersion&&!pendingActions.has('agentsel')){
-let cur=s.agent_mode?((s.agent_provider==='OpenCode Zen'?'opencode-zen':'opencode-go')+':'+(s.agent_model||'beam-free')):'local';
+let cur=s.agent_mode?((s.agent_provider==='Custom Endpoint'?'custom':s.agent_provider==='OpenCode Zen'?'opencode-zen':'opencode-go')+':'+(s.agent_model||'beam-free')):'local';
 if(!Array.from(agsel.options).some(o=>o.value===cur)&&s.agent_mode){
 let o=document.createElement('option');o.value=cur;o.textContent='Cloud Agent · '+(s.agent_provider||'OpenCode')+' ('+(s.agent_model||'custom')+')';agsel.appendChild(o);}
 lastAgentVal=cur;agsel.value=cur;}

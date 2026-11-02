@@ -2,6 +2,8 @@
 import base64
 import io
 import json
+import os
+import socket
 import threading
 import time
 import urllib.error
@@ -53,14 +55,16 @@ class LFM3Client:
                 if event.get('type') == 'error':
                     raise RuntimeError(str((event.get('error') or {}).get('message', 'Voice server error')))
                 return event
-            except websocket.WebSocketTimeoutException:
+            except (websocket.WebSocketTimeoutException, TimeoutError):
                 if time.monotonic() >= deadline:
                     raise TimeoutError('Voice server timed out')
         return None
 
     def _connect(self, turn, transcription=False):
         url = self.base.replace('http://', 'ws://', 1).replace('https://', 'wss://', 1) + '/v1/realtime'
-        sock = websocket.create_connection(url, timeout=8, enable_multithread=True)
+        sock = websocket.create_connection(
+            url, timeout=8, enable_multithread=True,
+            sock_opt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
         try:
             sock.settimeout(.2)
             event = self._receive(sock, turn)
@@ -97,11 +101,19 @@ class LFM3Client:
 
     @staticmethod
     def _append(sock, pcm, turn):
-        for offset in range(0, len(pcm), 3200):
-            if turn.cancel.is_set():
-                return
-            sock.send(json.dumps({'type': 'input_audio_buffer.append',
-                                  'audio': base64.b64encode(pcm[offset:offset + 3200]).decode('ascii')}))
+        if turn.cancel.is_set() or not pcm:
+            return
+        sock.settimeout(5.0)
+        try:
+            for offset in range(0, len(pcm), 131072):
+                if turn.cancel.is_set():
+                    return
+                sock.send(json.dumps({
+                    'type': 'input_audio_buffer.append',
+                    'audio': base64.b64encode(pcm[offset:offset + 131072]).decode('ascii'),
+                }))
+        finally:
+            sock.settimeout(.2)
 
     def _acquire(self, turn):
         while not turn.cancel.is_set():
@@ -224,6 +236,12 @@ class LFM3Client:
                 return
             self._close_chat()
             payload = {'input': text, 'response_format': 'pcm', 'stream': True, 'n_predict': max_tokens}
+            voice = os.getenv('LOCALVOICE_VOICE', '').strip()
+            speaker_ref = os.getenv('LOCALVOICE_SPEAKER_REF', '').strip()
+            if voice:
+                payload['voice'] = voice
+            if speaker_ref:
+                payload['speaker_ref'] = speaker_ref
             if turn.request_observer:
                 turn.request_observer(payload)
             if turn.cancel.is_set():

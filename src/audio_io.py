@@ -505,9 +505,11 @@ class Player:
                         on_play(piece)
                     try:
                         device_audio = piece
-                        if self.native_rate != self.rate:
+                        if self.native_rate != self.rate and len(piece):
                             positions = np.arange(round(len(piece) * self.native_rate / self.rate)) * self.rate / self.native_rate
-                            device_audio = np.interp(positions, np.arange(len(piece)), piece).astype(np.float32)
+                            tail = np.clip(2.0 * float(piece[-1]) - float(piece[-2]), -1.0, 1.0) if len(piece) > 1 else float(piece[-1])
+                            ext = np.append(piece, np.float32(tail))
+                            device_audio = np.interp(positions, np.arange(len(ext)), ext).astype(np.float32)
                         if self.native_channels > 1:
                             device_audio = np.repeat(device_audio[:, None], self.native_channels, axis=1)
                         now = time.perf_counter()

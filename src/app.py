@@ -511,18 +511,23 @@ class Assistant:
             return job
 
     def _speak_answer(self, answer, turn, receive):
-        """Synthesize short answers in one call; pipeline long multi-sentence answers."""
+        """Synthesize short answers in one call; pipeline multi-sentence answers for fast first audio."""
         text = answer.strip()
-        if len(text) <= 240:
+        if len(text) <= 110:
             self.client.tts(text, turn, max_tokens=512, on_audio=receive)
             return
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])(?<!\b[A-Za-z]\.)\s+', text) if s.strip()]
+        if len(sentences) <= 1:
+            self.client.tts(text, turn, max_tokens=512, on_audio=receive)
+            return
         segments = []
         current = ''
         for sent in sentences:
+            limit = 120 if not segments else 220
+            min_len = 25 if not segments else 80
             if not current:
                 current = sent
-            elif len(current) < 90 or len(current) + 1 + len(sent) <= 220:
+            elif len(current) < min_len or len(current) + 1 + len(sent) <= limit:
                 current += ' ' + sent
             else:
                 segments.append(current)
@@ -858,7 +863,7 @@ class Assistant:
         if not isinstance(mode, str):
             raise ValueError('Invalid agent mode')
         mode = mode.strip().lower()
-        if mode not in ('local', 'opencode-go', 'opencode-zen', 'go', 'zen'):
+        if mode not in ('local', 'opencode-go', 'opencode-zen', 'go', 'zen', 'custom'):
             raise ValueError('Unsupported agent mode')
         if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 100):
             raise ValueError('Invalid model name')
@@ -869,14 +874,16 @@ class Assistant:
                 self._agent_sources = []
                 self.diagnostics.event('agent_mode_changed', agent_mode=False, provider=None, model=None)
                 return {'ok': True, 'agent_mode': False}
-            provider = 'zen' if mode in ('opencode-zen', 'zen') else 'go'
+            provider = ('custom' if mode == 'custom'
+                        else 'zen' if mode in ('opencode-zen', 'zen') else 'go')
             desired_model = (model.strip() if model else None) or getattr(self._saved_agent, 'model', None) or os.getenv('LOCALVOICE_AGENT_MODEL', 'beam-free')
             if self._saved_agent is not None and getattr(self._saved_agent, 'provider', 'go') == provider:
                 self._saved_agent.model = desired_model
                 self.agent = self._saved_agent
             else:
                 from agent import AgentClient
-                key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
+                key_name = ('LOCALVOICE_CUSTOM_API_KEY' if provider == 'custom'
+                            else 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY')
                 search_key = os.getenv('BRAVE_SEARCH_API_KEY')
                 search_provider = os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or ('brave' if search_key else 'ddg')
                 mem_path = self.trace_path.parent / 'agent_memory.json' if self.trace_path is not None else None

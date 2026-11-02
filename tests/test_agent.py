@@ -384,7 +384,7 @@ def test_empty_reasoning_reply_retries_without_effort(monkeypatch):
     monkeypatch.setattr('urllib.request.urlopen', open_url)
     answer, _ = AgentClient('key').respond('Hello', [], Turn())
     assert answer == 'Recovered reply.'
-    assert attempts == [('low', 900), (None, 1200)]
+    assert attempts == [('low', 450), (None, 1200)]
 
 
 def test_traces_and_checks_are_saved_and_runtime_mode_switches(tmp_path):
