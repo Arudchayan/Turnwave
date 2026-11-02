@@ -63,7 +63,9 @@ class AgentClient:
         except urllib.error.HTTPError as exc:
             exc.close()
             hint = (' Check your provider account balance.' if exc.code == 402 else
-                    ' Check the API key and provider access.' if exc.code in (401, 403) else '')
+                    ' Check the API key and provider access.' if exc.code in (401, 403) else
+                    ' The provider rate or usage limit may have been reached; check the account or retry later.'
+                    if exc.code == 429 else '')
             raise AgentError(f'{service} returned HTTP {exc.code}.' + hint) from None
         except (OSError, ValueError) as exc:
             if turn.cancel.is_set():

@@ -84,6 +84,14 @@ def test_agent_http_failure_does_not_expose_body_or_key(monkeypatch):
     assert 'secret' not in str(error.value)
 
 
+def test_usage_limit_reports_actionable_message(monkeypatch):
+    def fail(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 429, 'limit', {}, io.BytesIO(b''))
+    monkeypatch.setattr('urllib.request.urlopen', fail)
+    with pytest.raises(AgentError, match='usage limit'):
+        AgentClient('key').respond('Hi', [], Turn())
+
+
 def test_cancelled_agent_does_not_send(monkeypatch):
     monkeypatch.setattr('urllib.request.urlopen', lambda *a, **k: pytest.fail('Unexpected request'))
     turn = Turn(); turn.abort()
