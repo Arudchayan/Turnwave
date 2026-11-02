@@ -5,8 +5,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODEL_DIR="${LOCALVOICE_LFM3_MODEL_DIR:-$ROOT/models/LFM3-Omni-2B-GGUF}"
 RUNNER_DIR="${LOCALVOICE_LFM3_RUNNER:-$ROOT/models/runner/llama-b12032-cuda/files/llama-b12032}"
 RUNTIME_DIR="${LOCALVOICE_CUDA_LIB:-$ROOT/models/runner/llama-b12032-cuda/runtime/cudart-llama-b12032-bin-ubuntu-cuda-13.4-x64}"
-MODEL="$MODEL_DIR/LFM3-Omni-2B-Q4_K_M.gguf"
-PROJECTOR="$MODEL_DIR/mmproj-LFM3-Omni-2B-Q4_K_M.gguf"
+case "${LOCALVOICE_LFM3_VARIANT:-standard}" in
+  standard)
+    MODEL="$MODEL_DIR/LFM3-Omni-2B-Q4_K_M.gguf"
+    PROJECTOR="$MODEL_DIR/mmproj-LFM3-Omni-2B-Q4_K_M.gguf"
+    ;;
+  research)
+    MODEL="${LOCALVOICE_LFM3_RESEARCH_MODEL:?Set LOCALVOICE_LFM3_RESEARCH_MODEL to the research GGUF path}"
+    PROJECTOR="${LOCALVOICE_LFM3_RESEARCH_PROJECTOR:?Set LOCALVOICE_LFM3_RESEARCH_PROJECTOR to its matching projector GGUF path}"
+    ;;
+  *) echo "Unknown LFM3 variant; use standard or research" >&2; exit 1 ;;
+esac
 for file in "$MODEL" "$PROJECTOR" "$RUNNER_DIR/llama-server"; do
   [ -f "$file" ] || { echo "Missing LFM3 artifact: $file" >&2; exit 1; }
 done

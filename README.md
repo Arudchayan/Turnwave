@@ -104,6 +104,23 @@ In a second terminal, set `$env:LOCALVOICE_BACKEND = 'lfm3'` before launching
 for speech conversation and transcription, and streaming PCM for synthesis.
 The tested configuration and its limits are recorded in [results](docs/RESULTS.md).
 
+To try an independently prepared LFM3 Omni research variant, stop the backend and
+start it again in WSL with all three variables set:
+
+```bash
+LOCALVOICE_LFM3_VARIANT=research \
+LOCALVOICE_LFM3_RESEARCH_MODEL=/path/to/research-model.gguf \
+LOCALVOICE_LFM3_RESEARCH_PROJECTOR=/path/to/matching-projector.gguf \
+bash src/server_lfm3_wsl.sh
+```
+
+Use a projector validated against that specific model. Restart the backend without
+these variables to return to the standard model. This selects weights at server
+startup; it is not a live toggle. The research files must be prepared separately:
+Heretic compatibility with LFM3 Omni, export to GGUF, and speech quality have not
+yet been verified. The existing GGUF alone does not establish that Heretic can
+process this model. Model modifications may change behavior and quality.
+
 The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference optimizations
 tuned for 4 GiB GPU memory limits:
 - FlashAttention (`--flash-attn on`)
