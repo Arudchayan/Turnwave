@@ -1,111 +1,205 @@
 """Local browser interface, served by app.py."""
-PAGE = """<!doctype html><html><head><meta charset=utf-8>
+PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Turnwave</title>
 <style>
-:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;
---green:#3fb950;--red:#f85149;--amber:#d29922;--blue:#58a6ff}
-*{box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;
-max-width:760px;margin:0 auto;padding:16px;color:var(--txt);background:var(--bg)}
-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-h1{font-size:1.3em;margin:0}
-.dot{width:12px;height:12px;border-radius:50%;background:var(--red);flex:none}
-.dot.ok{background:var(--green)}#srvlbl{font-size:.8em;color:var(--dim)}
-#st{font-size:1.15em;font-weight:600;padding:.35em .9em;border-radius:999px;
-background:var(--card);border:1px solid var(--line)}
-#st.listening{border-color:var(--green);color:var(--green)}
-#st.recording{border-color:var(--red);color:var(--red);animation:pulse 1s infinite}
-#st.thinking{border-color:var(--amber);color:var(--amber)}
-#st.speaking{border-color:var(--blue);color:var(--blue)}
+:root{
+--bg:#f4f0e8;--bg-elev:#fbf8f1;--card:#fffdf7;--inset:#ebe7dc;--line:#d5cebe;--line-strong:#bfb6a2;
+--txt:#1f2521;--dim:#5c675a;--muted:#828c7e;
+--green:#2d6348;--green-soft:#e1ece5;--red:#ad4335;--red-soft:#faeae5;--amber:#94621d;--amber-soft:#f8eedb;--blue:#2f5963;
+--shadow:0 1px 2px rgba(31,37,33,.04),0 10px 28px -12px rgba(31,37,33,.08)
+}
+*{box-sizing:border-box}
+body{
+margin:0;color:var(--txt);background:radial-gradient(1100px 520px at 50% -140px,#fbf9f3 0%,var(--bg) 72%);
+font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif;line-height:1.5;-webkit-font-smoothing:antialiased
+}
+main{max-width:1040px;margin:0 auto;padding:clamp(18px,3.6vw,44px) clamp(16px,4vw,40px) 36px}
+#srvlbl,#lvl,button,select,#stages,#banner,#cards,footer,summary,#mode,#sources,#diag,.chip,.sect-hdr,.ctrl-lbl{
+font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif
+}
+header{
+display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;
+padding-bottom:18px;margin-bottom:22px;border-bottom:1px solid var(--line)
+}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-mark{
+width:34px;height:34px;border-radius:9px;background:var(--green);color:#fffdf7;
+display:grid;place-items:center;font:600 .95rem "Segoe UI",sans-serif;letter-spacing:-.03em;
+box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)
+}
+h1{font-size:1.55rem;letter-spacing:-.04em;font-weight:normal;margin:0;line-height:1.1}
+.srv-pill{
+display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
+background:var(--card);border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.02)
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex:none;transition:background .2s,box-shadow .2s}
+.dot.ok{background:var(--green);box-shadow:0 0 0 3px var(--green-soft)}
+#srvlbl{font-size:.76rem;color:var(--dim);letter-spacing:.01em}
+#mode{
+font-size:.8rem;color:var(--dim);background:var(--bg-elev);border:1px solid var(--line);
+border-radius:8px;padding:8px 13px;margin:0 0 18px;display:flex;align-items:center;gap:8px;line-height:1.4
+}
+#mode::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue);flex:none}
+#banner{
+display:none;white-space:pre-line;background:var(--red-soft);border:1px solid #d79588;color:#6e2419;
+border-radius:10px;padding:.75em 1.05em;margin:0 0 18px;font-size:.86rem;line-height:1.45;box-shadow:var(--shadow)
+}
+.workspace{display:grid;grid-template-columns:minmax(310px,390px) minmax(0,1fr);gap:22px;align-items:start}
+.panel{
+background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)
+}
+.status-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
+#st{
+display:inline-block;font-size:clamp(1.45rem,2.6vw,2rem);font-weight:normal;letter-spacing:-.035em;
+color:var(--txt);line-height:1.2
+}
+#st.listening{color:var(--green)}
+#st.recording{color:var(--red);animation:pulse 1.1s ease-in-out infinite}
+#st.thinking{color:var(--amber)}
+#st.speaking{color:var(--blue)}
 @keyframes pulse{50%{opacity:.55}}
-#banner{display:none;white-space:pre-line;background:#3a1d1d;border:1px solid var(--red);border-radius:8px;
-padding:.6em 1em;margin:10px 0;font-size:.9em}
-#wavewrap{background:#000;border-radius:10px;padding:6px;margin:10px 0}
-canvas{width:100%;height:64px;display:block}
-#lvl{font-size:.8em;color:var(--dim);margin-top:2px}
-#controls{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;align-items:center}
-button{font-size:.95em;padding:.5em 1em;border-radius:8px;border:1px solid var(--line);
-background:var(--card);color:var(--txt);cursor:pointer}
-button:hover{border-color:var(--blue)}
-button:disabled,select:disabled{opacity:.55;cursor:wait}
-button.big{background:var(--blue);border-color:var(--blue);color:#04121f;font-weight:700}
-select{font-size:.9em;padding:.5em;border-radius:8px;background:var(--card);
-color:var(--txt);border:1px solid var(--line);max-width:220px}
-#cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;
-padding:.5em;text-align:center}
-.card b{display:block;font-size:1.1em}.card span{font-size:.72em;color:var(--dim)}
-#log{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;
-background:#000;border-radius:10px;padding:12px}
-.msg{max-width:85%;padding:.45em .8em;border-radius:12px;font-size:.93em;line-height:1.35}
-.msg.u{align-self:flex-end;background:#1f6feb;color:#fff}
-.msg.a{align-self:flex-start;background:var(--card);border:1px solid var(--line)}
-.msg.s{align-self:center;color:var(--dim);font-style:italic;font-size:.82em}
-.msg.a.draft{border-style:dashed;opacity:.8}
-#stages{display:flex;gap:6px;list-style:none;margin:8px 0 0;padding:0;font-size:.82em}
-#stages li{padding:.25em .8em;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
-#stages li.done{border-color:var(--green);color:var(--green)}
-#stages li.active{border-color:var(--amber);color:var(--amber)}
-#etawrap{display:none;background:#000;border:1px solid var(--line);border-radius:8px;
-height:22px;margin:10px 0;position:relative;overflow:hidden}
-#etafill{height:100%;width:0;background:var(--amber);transition:width .15s linear}
-#etawrap.hit #etafill{background:var(--green)}
-#etalbl{position:absolute;inset:0;text-align:center;font-size:.75em;line-height:22px;color:var(--txt)}
-details#metrics{margin:10px 0}details#metrics summary{cursor:pointer;color:var(--dim);font-size:.85em}
-footer{margin-top:10px;font-size:.75em;color:var(--dim)}
-/* A quiet listening room: keep the controls close, diagnostics in the background. */
-:root{--bg:#f4f0e8;--card:#fffdf7;--line:#d7d0c2;--txt:#252b26;--dim:#626e60;--green:#356d51;--red:#ac4c3d;--amber:#94621d;--blue:#355d4b}
-body{max-width:940px;padding:clamp(20px,5vw,56px);font-family:Georgia,serif;line-height:1.5}
-header{margin-bottom:clamp(28px,6vw,68px);gap:12px}
-h1{font-size:1.65rem;letter-spacing:-.06em;font-weight:normal}
-#srvlbl,#lvl,button,select,#stages,#banner,#cards,footer,summary{font-family:Segoe UI,sans-serif}
-#srvlbl{font-size:.75rem;letter-spacing:.02em}
-.dot{width:8px;height:8px}
-#st{display:inline-block;font-size:clamp(1.6rem,4vw,2.8rem);font-weight:normal;letter-spacing:-.04em;padding:0;background:none;border:0;border-radius:0;color:var(--txt)!important}
-#stages{margin:10px 0 24px;gap:12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em}
-#stages li{border:0;border-bottom:2px solid var(--line);border-radius:0;padding:.3em 0}
-#banner{background:#f9e9e2;border-color:#c47b6a;color:#702b20}
-#wavewrap{background:#e7e8dc;border-radius:4px;padding:14px;margin:20px 0}
-#lvl{font-size:.72rem;margin-top:4px}
-#controls{gap:8px;margin:24px 0 34px}
-#pause-control{display:flex;align-items:center;gap:8px;font:.8rem Segoe UI,sans-serif;color:var(--dim);white-space:nowrap}
-button,select{border-radius:4px;background:transparent;padding:.7em 1em;font-size:.85rem}
-button:hover{border-color:var(--green);background:#e8ebe0}
-button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #b47439;outline-offset:3px}
-button.big{background:var(--green);border-color:var(--green);color:#fffdf7}
-button.big:hover{background:#254f3b}
-#cards{gap:0;border-top:1px solid var(--line)}
-.card{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;text-align:left;padding:12px 8px}
-#log{background:transparent;border-top:1px solid var(--line);border-radius:0;padding:20px 0;gap:14px;min-height:60px}
-.msg{border-radius:4px;line-height:1.5;padding:.65em .9em}
-.msg.u{background:#dce6d8;color:var(--txt)}
-.msg.a{background:var(--card);border-color:var(--line)}
-#etawrap{background:#e7e8dc}#etalbl{color:var(--txt)}
-#mode{font: .8rem Segoe UI,sans-serif;color:var(--dim);margin:8px 0 0}
-#sources{font: .82rem Segoe UI,sans-serif;line-height:1.6}
-#sources a{color:var(--green);overflow-wrap:anywhere}
-#diag{font:.78rem Segoe UI,sans-serif;color:var(--dim);padding:10px 8px 2px;line-height:1.5}
-footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
-@media(max-width:560px){#cards{grid-template-columns:repeat(2,1fr)}#controls select,#pause-control{max-width:100%;width:100%}#pause-control{justify-content:space-between}.msg{max-width:95%}}
+#stages{
+display:grid;grid-template-columns:repeat(3,1fr);gap:8px;list-style:none;margin:12px 0 16px;padding:0;
+font-size:.7rem;text-transform:uppercase;letter-spacing:.08em
+}
+#stages li{
+border:0;border-top:2.5px solid var(--line);padding:.45em 0 0;color:var(--muted);transition:border-color .2s,color .2s
+}
+#stages li.done{border-color:var(--green);color:var(--green);font-weight:600}
+#stages li.active{border-color:var(--amber);color:var(--amber);font-weight:600}
+#etawrap{
+display:none;background:var(--inset);border:1px solid var(--line);border-radius:999px;
+height:22px;margin:0 0 14px;position:relative;overflow:hidden
+}
+#etafill{height:100%;width:0;background:linear-gradient(90deg,#c58b37,var(--amber));transition:width .15s linear}
+#etawrap.hit #etafill{background:linear-gradient(90deg,#3d7b5b,var(--green))}
+#etalbl{position:absolute;inset:0;text-align:center;font-size:.73rem;line-height:20px;color:var(--txt);font-weight:500}
+#wavewrap{
+background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:12px 12px 9px;margin:0 0 16px
+}
+canvas{width:100%;height:64px;display:block;border-radius:4px}
+#lvl{font-size:.73rem;color:var(--dim);margin-top:6px;display:flex;justify-content:space-between}
+#controls{display:flex;flex-direction:column;gap:10px;margin:0}
+.btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button,select{
+border-radius:8px;border:1px solid var(--line-strong);background:var(--bg-elev);color:var(--txt);
+padding:.68em .95em;font-size:.84rem;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,transform .06s
+}
+button:hover,select:hover{border-color:var(--green);background:#e8ece1}
+button:active{transform:translateY(1px)}
+button:disabled,select:disabled{opacity:.52;cursor:wait;transform:none}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:2.5px solid #b47439;outline-offset:2px}
+button.big{background:var(--green);border-color:var(--green);color:#fffdf7;font-weight:600}
+button.big:hover{background:#234f39;border-color:#234f39}
+.field-row{display:flex;flex-direction:column;gap:5px;padding-top:4px;border-top:1px solid var(--line)}
+.ctrl-lbl,#pause-control{
+display:flex;align-items:center;justify-content:space-between;gap:10px;
+font-size:.78rem;color:var(--dim)
+}
+#controls select{width:100%;max-width:100%;background:var(--card)}
+#pause-control select{width:auto;min-width:165px}
+details#metrics{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+details#metrics summary{
+cursor:pointer;color:var(--dim);font-size:.78rem;font-weight:600;text-transform:uppercase;
+letter-spacing:.06em;user-select:none
+}
+#cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.card{
+background:var(--bg-elev);border:1px solid var(--line);border-radius:8px;text-align:left;padding:9px 11px
+}
+.card b{display:block;font-size:1.05rem;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums}
+.card span{font-size:.71rem;color:var(--dim)}
+#diag{
+font:.74rem "Segoe UI",sans-serif;color:var(--dim);background:var(--bg-elev);border:1px solid var(--line);
+border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.45;font-variant-numeric:tabular-nums
+}
+.conv-panel{display:flex;flex-direction:column;min-height:460px}
+.sect-hdr{
+display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;
+border-bottom:1px solid var(--line);margin:0 0 14px
+}
+.sect-hdr h2{
+margin:0;font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)
+}
+.chip{font-size:.73rem;color:var(--muted);background:var(--bg-elev);border:1px solid var(--line);padding:2px 9px;border-radius:999px}
+#log{
+display:flex;flex-direction:column;gap:12px;flex:1;min-height:310px;max-height:520px;overflow-y:auto;
+padding:4px 4px 8px 0
+}
+#log:empty::before{
+content:"No turns yet — unmute the microphone or run a speaker check to begin.";
+color:var(--muted);font:italic .88rem Georgia,serif;margin:auto;text-align:center;padding:36px 16px
+}
+.msg{
+max-width:86%;padding:.7em 1em;border-radius:12px;font-size:.96rem;line-height:1.5;
+box-shadow:0 1px 2px rgba(0,0,0,.03);word-wrap:break-word
+}
+.msg.u{
+align-self:flex-end;background:var(--green-soft);color:#183526;border:1px solid #bfd4c7;
+border-bottom-right-radius:3px
+}
+.msg.a{
+align-self:flex-start;background:var(--bg-elev);border:1px solid var(--line);color:var(--txt);
+border-bottom-left-radius:3px
+}
+.msg.s{align-self:center;color:var(--dim);font-style:italic;font-size:.83rem;background:none;border:0;box-shadow:none;padding:.2em .6em}
+.msg.a.draft{border-style:dashed;opacity:.85;margin-top:10px}
+#sources{
+font:.8rem "Segoe UI",sans-serif;line-height:1.55;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)
+}
+#sources:empty{display:none}
+#sources strong{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin-bottom:6px}
+#sources div{margin:4px 0}
+#sources a{
+display:inline-block;color:var(--green);text-decoration:none;background:var(--bg-elev);
+border:1px solid var(--line);border-radius:6px;padding:3px 9px;overflow-wrap:anywhere;transition:border-color .15s,background .15s
+}
+#sources a:hover{border-color:var(--green);background:var(--green-soft)}
+footer{
+display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
+border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76rem;color:var(--dim)
+}
+@media(max-width:820px){
+.workspace{grid-template-columns:1fr}
+.conv-panel{min-height:340px}
+}
+@media(max-width:520px){
+.btn-grid,#cards{grid-template-columns:1fr}
+#pause-control{flex-direction:column;align-items:stretch}
+#pause-control select{width:100%}
+.msg{max-width:95%}
+}
 @media(prefers-reduced-motion:reduce){#st.recording{animation:none}#etafill{transition:none}}
-</style></head><body>
-<header><div class=dot id=srv></div><div><h1>Turnwave</h1>
-<div id=srvlbl>checking server…</div></div></header>
+</style></head><body><main>
+<header>
+<div class=brand><div class=brand-mark aria-hidden=true>Tw</div><div><h1>Turnwave</h1></div></div>
+<div class=srv-pill><div class=dot id=srv></div><div id=srvlbl>checking server…</div></div>
+</header>
 <div id=mode>Checking processing mode…</div>
-<div><span id=st>starting…</span></div>
+<div id=banner role=alert></div>
+<div class=workspace>
+<section class=panel aria-label="Voice controls and status">
+<div class=status-row><span id=st>starting…</span></div>
 <ol id=stages><li id=st_heard>heard</li><li id=st_under>understanding</li><li id=st_voice>voicing</li></ol>
-<div id=banner></div>
 <div id=etawrap><div id=etafill></div><span id=etalbl></span></div>
 <div id=wavewrap><canvas id=wave width=700 height=64></canvas>
 <div id=lvl>mic level —</div></div>
 <div id=controls>
+<div class=btn-grid>
 <button id=micbtn disabled>checking mic…</button>
 <button id=intbtn class=big>interrupt</button>
 <button id=newbtn>new conversation</button>
 <button id=tstbtn>test speaker</button>
+</div>
+<div class=field-row>
+<label class=ctrl-lbl for=micsel>Input microphone</label>
 <select id=micsel aria-label="Input device"></select>
+</div>
+<div class=field-row>
 <label id=pause-control for=pausesel>Pause before reply
 <select id=pausesel><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
+</div>
 </div>
 <details id=metrics><summary>diagnostics &amp; metrics</summary>
 <div id=cards>
@@ -114,11 +208,16 @@ footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 <div class=card><b id=m_turn>—</b><span>turn time</span></div>
 <div class=card><b id=m_n>0</b><span>replies</span></div>
 </div><div id=diag></div></details>
-<h3 style="margin:.4em 0">conversation</h3><div id=log role=log aria-live=polite></div>
+</section>
+<section class="panel conv-panel" aria-label="Conversation">
+<div class=sect-hdr><h2>conversation</h2><span class=chip>live transcript</span></div>
+<div id=log role=log aria-live=polite></div>
 <div id=draft class="msg a draft" style=display:none></div>
 <div id=sources></div>
-<footer>Voice uses your configured server · headphones improve interruption handling</footer>
-<script>
+</section>
+</div>
+<footer><span>Voice uses your configured server · headphones improve interruption handling</span><span>Local audio capture &amp; synthesis</span></footer>
+</main><script>
 let lv=[],lastRevision=-1,pollDelay=300;
 const STLBL={st_heard:'heard',st_under:'understanding',st_voice:'voicing'};
 function setStage(id,ts,activePh,ph){let e=$(id);
@@ -238,9 +337,9 @@ pollDelay=(ph==='hearing'||ph==='thinking'||ph==='speaking'||ph==='interrupted')
 let db=s.level>0?(20*Math.log10(s.level)).toFixed(0):'-inf';
 $('lvl').textContent='mic level '+db+' dBFS · '+s.mic;
 lv.push(Math.min(1,s.level*8));if(lv.length>140)lv.shift();
-let c=$('wave'),x=c.getContext('2d');x.fillStyle='#e7e8dc';x.fillRect(0,0,700,64);
+let c=$('wave'),x=c.getContext('2d');x.fillStyle='#ebe7dc';x.fillRect(0,0,700,64);
 lv.forEach((v,i)=>{let h=Math.max(2,v*60);
-x.fillStyle=s.status==='recording'?'#ac4c3d':(s.status==='speaking'?'#4c7560':'#8e9f86');
+x.fillStyle=s.status==='recording'?'#ad4335':(s.status==='speaking'?'#2f5963':'#7b8b75');
 x.fillRect(i*5,32-h/2,4,h);});
 }catch(e){$('srvlbl').textContent='app unreachable — is app.py running?';pollDelay=300;}
 setTimeout(tick,pollDelay);}
