@@ -167,3 +167,19 @@ The model's first emitted text used “Myra” and its second answered “Your n
 is Myra.” This demonstrates that the second text reply reflected the prior
 response in this one case; it does not verify spelling, spoken audio, or memory
 after interruption.
+
+## Adjustable pause between turns
+
+The interface offers 480, 800 and 1,120 ms silence waits. In one CPU replay
+through the Silero frontend with echo processing disabled and no holdoff, the
+SAPI phrase above was trimmed to 100 ms around samples above 0.008 absolute
+amplitude, resulting in a 2.196 s clip. It was repeated with either 650 or
+850 ms of inserted silence, followed by 1.5 s of silence, in 20 ms steps.
+At both inserted gaps, the 480 and 800 ms settings produced
+two detected turns; the 1,120 ms setting produced one. For the 650 ms gap,
+the final endpoints were at 5.46, 5.78 and 6.10 s, respectively: joining the
+two clips came with 640 ms of additional final wait compared with 480 ms.
+The inserted silence is not the entire VAD-measured silence because the clips
+also contain quiet audio. This is one synthetic voice and does not establish
+word retention, false-interruption rates or a generally safe setting. The
+default remains 480 ms and the setting changes only between utterances.
