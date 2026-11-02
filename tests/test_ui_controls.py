@@ -16,9 +16,9 @@ const vm=require('node:vm');
 const input=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
 const nodes={},requests=[],timers=[];
 const state={status:'listening',phase:'listening',mic_on:false,mic:'test',server_ok:true,mics:[],mic_index:1,transcript:[],transcript_revision:0,level:0,warning:'Recording warning',end_silence_ms:480};
-function element(){return {style:{},options:[],disabled:false,appendChild(){},getContext(){return {fillRect(){}}}};}
+function element(){return {style:{},options:[],children:[],disabled:false,appendChild(c){this.children.push(c);},getContext(){return {fillRect(){}}}};}
 let release,releaseState,stateRequests=0;
-const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared=true;},setTimeout(fn,ms){timers.push({fn,ms});return timers.length-1;},document:{getElementById(id){return nodes[id]??=element();},createElement:element},fetch:async(path,options={})=>{
+const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cleared=true;},setTimeout(fn,ms){timers.push({fn,ms});return timers.length-1;},document:{getElementById(id){return nodes[id]??=element();},createElement:element},fetch:async(path,options={})=>{
  if(path==='/api/state'){
   stateRequests++;
   if(input.scenario==='stale_poll'&&stateRequests>1)return new Promise(resolve=>{releaseState=()=>resolve({ok:true,json:async()=>state});});
@@ -39,6 +39,11 @@ const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared
  if(input.scenario==='pause'){
   await nodes.pausesel.onchange({target:{value:'800'}});
   process.stdout.write(JSON.stringify({requests,value:nodes.pausesel.value}));
+ }else if(input.scenario==='agent_privacy'){
+  Object.assign(state,{agent_mode:true,agent_provider:'OpenCode Go',agent_model:'beam-free',search_enabled:true,search_provider:'ddg',agent_phase:'searching',agent_sources:[{title:'Valid Source',url:'https://example.org/item'},{title:'Bad',url:'javascript:alert(1)'}],audio_diagnostics:{input_gain:1,input_drops:0,echo_score:0.12,residual_rejections:2,playback:{underflows:0,max_gap_ms:4.5}}});
+  await context.tick();
+  const links=nodes.sources.children.slice(1).map(row=>({href:row.children[0].href,text:row.children[0].textContent}));
+  process.stdout.write(JSON.stringify({mode:nodes.mode.textContent,links,diag:nodes.diag.textContent}));
  }else if(input.scenario==='stale_poll'){
   const first=nodes.micbtn.onclick();await new Promise(setImmediate);
   const poll=context.tick();await new Promise(setImmediate);
@@ -130,3 +135,11 @@ def test_pause_selection_sends_requested_duration():
     result=run_browser('pause')
     assert result['requests']==[{'path':'/api/pause','body':{'milliseconds':800}}]
     assert str(result['value'])=='800'
+
+
+def test_agent_mode_sources_and_diagnostics_render_safely():
+    result=run_browser('agent_privacy')
+    assert 'OpenCode Go (beam-free)' in result['mode']
+    assert 'enabled (ddg)' in result['mode'] and 'searching' in result['mode']
+    assert result['links']==[{'href':'https://example.org/item','text':'Valid Source'}]
+    assert 'underflows 0' in result['diag'] and 'residual rejections 2' in result['diag']

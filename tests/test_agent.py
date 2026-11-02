@@ -117,6 +117,44 @@ def test_missing_key_produces_actionable_error():
         client.respond('Hi', [], Turn())
 
 
+def test_ddg_search_parses_results_and_filters_unsafe_urls(monkeypatch):
+    page = (b'<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fnews">'
+            b'<b>Latest</b> News</a><a class="result__snippet">First <b>snippet</b>.</a>'
+            b'<a class="result__a" href="javascript:alert(1)">Bad</a>')
+    class RawResponse(io.BytesIO):
+        pass
+    def open_url(req, timeout):
+        if 'duckduckgo.com' in req.full_url:
+            return RawResponse(page)
+        body = json.loads(req.data)
+        if len(body['messages']) == 2:
+            assert body['reasoning_effort'] == 'low'
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None,
+                'tool_calls': [{'id': 'c1', 'type': 'function', 'function': {
+                    'name': 'web_search', 'arguments': '{"query":"space news"}'}}]}}]})
+        return response({'choices': [{'message': {'content': 'Found Latest News.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='ddg')
+    assert client.search_enabled and client.search_provider == 'ddg'
+    answer, sources = client.respond('What is new?', [], Turn())
+    assert answer == 'Found Latest News.'
+    assert sources == [{'title': 'Latest News', 'url': 'https://example.org/news',
+                        'description': 'First snippet.'}]
+
+
+def test_reasoning_effort_falls_back_when_model_rejects_parameter(monkeypatch):
+    efforts = []
+    def open_url(req, timeout):
+        body = json.loads(req.data)
+        efforts.append(body.get('reasoning_effort'))
+        if len(efforts) == 1:
+            raise urllib.error.HTTPError(req.full_url, 400, 'bad param', {}, io.BytesIO(b''))
+        return response({'choices': [{'message': {'content': 'Fallback succeeded.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    assert AgentClient('key').respond('Hi', [], Turn()) == ('Fallback succeeded.', [])
+    assert efforts == ['low', None]
+
+
 class LocalVoice:
     base = 'http://local'
     def health(self): return False

@@ -60,7 +60,7 @@ class LFM3Client:
 
     def _connect(self, turn, transcription=False):
         url = self.base.replace('http://', 'ws://', 1).replace('https://', 'wss://', 1) + '/v1/realtime'
-        sock = websocket.create_connection(url, timeout=2, enable_multithread=True)
+        sock = websocket.create_connection(url, timeout=8, enable_multithread=True)
         try:
             sock.settimeout(.2)
             event = self._receive(sock, turn)

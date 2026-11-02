@@ -142,17 +142,20 @@ $env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-com
 
 Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
 preferred secret manager. Set `BRAVE_SEARCH_API_KEY` there as well to enable
-search. Avoid saving either key in a script or committing it to the repository.
+Brave search, or set `LOCALVOICE_SEARCH=ddg` to enable DuckDuckGo HTML search
+without a search API key. Avoid saving any key in a script or committing it to
+the repository.
 
 The local voice server still performs transcription and speech synthesis. The
 recognized text and recent conversation are sent to OpenCode Zen; if configured,
-search queries go to Brave and search results go to the model. The interface
-shows the active mode, search availability, and links returned by search. Without
-a search key, conversation works but web search is unavailable. The model may
-choose whether to search. `LOCALVOICE_AGENT=opencode-go` selects Go and uses
-`OPENCODE_GO_API_KEY`. OpenCode describes Go as intended for coding-agent
-traffic, so general conversation may not be supported; choose Zen for general
-conversation. See [OpenCode Go model endpoints](https://opencode.ai/v2/docs/console/go/)
+search queries go to the configured search provider (Brave or DuckDuckGo) and
+search results go to the model. The interface shows the active mode, model,
+search availability, and links returned by search. Without a search key or
+`LOCALVOICE_SEARCH=ddg`, conversation works but web search is unavailable. The
+model may choose whether to search. `LOCALVOICE_AGENT=opencode-go` selects Go
+and uses `OPENCODE_GO_API_KEY`. OpenCode describes Go as intended for
+coding-agent traffic, so general conversation may not be supported; choose Zen
+for general conversation. See [OpenCode Go model endpoints](https://opencode.ai/v2/docs/console/go/)
 and [Brave Search](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started).
 Keep keys in your process environment, never in tracked files. The cloud path
 requires network access and provider accounts; it is not covered by the local

@@ -899,7 +899,9 @@ class Assistant:
                         end_silence_ms=getattr(self.front, 'end_chunks', 0) * 32 or None,
                         agent_mode=bool(self.agent), agent_phase=self._agent_phase,
                         agent_provider=getattr(self.agent, 'label', None),
+                        agent_model=getattr(self.agent, 'model', None),
                         search_enabled=bool(self.agent and self.agent.search_enabled),
+                        search_provider=getattr(self.agent, 'search_provider', None),
                         agent_sources=list(self._agent_sources),
                         active_turn=self._active is not None,
                         pending_turns=len(self._pending_jobs),
@@ -1060,9 +1062,11 @@ def main():
         from agent import AgentClient
         provider = 'zen' if agent_mode == 'opencode-zen' else 'go'
         key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
+        search_provider = os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or None
         agent = AgentClient(os.getenv(key_name), provider=provider,
                             model=os.getenv('LOCALVOICE_AGENT_MODEL', 'kimi-k3'),
-                            search_key=os.getenv('BRAVE_SEARCH_API_KEY'))
+                            search_key=os.getenv('BRAVE_SEARCH_API_KEY'),
+                            search_provider=search_provider)
     elif agent_mode:
         raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
     backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()

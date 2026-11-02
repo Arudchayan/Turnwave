@@ -84,8 +84,9 @@ button.big:hover{background:#254f3b}
 #mode{font: .8rem Segoe UI,sans-serif;color:var(--dim);margin:8px 0 0}
 #sources{font: .82rem Segoe UI,sans-serif;line-height:1.6}
 #sources a{color:var(--green);overflow-wrap:anywhere}
+#diag{font:.78rem Segoe UI,sans-serif;color:var(--dim);padding:10px 8px 2px;line-height:1.5}
 footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
-@media(max-width:560px){#cards{grid-template-columns:repeat(2,1fr)}#controls select{max-width:100%;width:100%}.msg{max-width:95%}}
+@media(max-width:560px){#cards{grid-template-columns:repeat(2,1fr)}#controls select,#pause-control{max-width:100%;width:100%}#pause-control{justify-content:space-between}.msg{max-width:95%}}
 @media(prefers-reduced-motion:reduce){#st.recording{animation:none}#etafill{transition:none}}
 </style></head><body>
 <header><div class=dot id=srv></div><div><h1>Turnwave</h1>
@@ -106,13 +107,13 @@ footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 <label id=pause-control for=pausesel>Pause before reply
 <select id=pausesel><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
 </div>
-<details id=metrics><summary>metrics</summary>
+<details id=metrics><summary>diagnostics &amp; metrics</summary>
 <div id=cards>
 <div class=card><b id=m_ttft>—</b><span>time to first audio</span></div>
 <div class=card><b id=m_aud>—</b><span>reply audio</span></div>
 <div class=card><b id=m_turn>—</b><span>turn time</span></div>
 <div class=card><b id=m_n>0</b><span>replies</span></div>
-</div></details>
+</div><div id=diag></div></details>
 <h3 style="margin:.4em 0">conversation</h3><div id=log role=log aria-live=polite></div>
 <div id=draft class="msg a draft" style=display:none></div>
 <div id=sources></div>
@@ -189,7 +190,7 @@ if(!observedPausePending&&observedPauseVersion===pauseVersion&&!pendingActions.h
 lastPause=s.end_silence_ms;pause.value=String(lastPause);}
 pause.disabled=lastPause===null||pendingActions.has('pausesel');
 let mode=$('mode');mode.textContent=s.agent_mode?
-('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?'enabled':'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
+('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+(s.agent_model?' ('+s.agent_model+')':'')+' · web search '+(s.search_enabled?('enabled'+(s.search_provider?' ('+s.search_provider+')':'')):'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
 let sources=$('sources');sources.innerHTML='';
 if(Array.isArray(s.agent_sources)&&s.agent_sources.length){
@@ -205,6 +206,8 @@ $('srvlbl').textContent=ok?'voice server connected':'voice server offline — ch
 renderAlerts();
 $('m_ttft').textContent=s.last_ttft??'—';$('m_aud').textContent=s.last_audio_s??'—';
 $('m_turn').textContent=s.last_turn_s??'—';$('m_n').textContent=s.turns;
+let ad=s.audio_diagnostics||{},pb=ad.playback||{},diag=$('diag');
+if(diag)diag.textContent='gain '+(ad.input_gain??'—')+' · drops '+(ad.input_drops??0)+' · echo '+(ad.echo_score??0).toFixed?.(2)+' · residual rejections '+(ad.residual_rejections??0)+' · underflows '+(pb.underflows??0)+' · max write gap '+(pb.max_gap_ms??0)+' ms';
 if(Array.isArray(s.mics)&&!observedDevicePending&&observedDeviceVersion===deviceVersion&&!pendingActions.has('micsel')){
 let sel=$('micsel'),roster=s.mics.map(([i,n])=>[String(i),String(n)]);
 if(sel.options.length!==roster.length||roster.some(([i,n],j)=>sel.options[j].value!==i||sel.options[j].textContent!==n)){

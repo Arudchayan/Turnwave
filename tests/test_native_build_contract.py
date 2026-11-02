@@ -28,7 +28,10 @@ def _shell_command(path: Path, args: list[str], env: dict[str, str]):
     wsl = shutil.which("wsl.exe")
     if not wsl:
         pytest.skip("WSL is unavailable for the fake-shell contract test")
-    probe = subprocess.run([wsl, "-d", "Ubuntu", "--", "true"], capture_output=True)
+    try:
+        probe = subprocess.run([wsl, "-d", "Ubuntu", "--", "true"], capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        pytest.skip("Ubuntu WSL is unresponsive for the fake-shell contract test")
     if probe.returncode:
         pytest.skip("Ubuntu WSL is unavailable for the fake-shell contract test")
 
@@ -139,7 +142,10 @@ def test_native_build_script_syntax_and_no_moving_or_destructive_git_commands(tm
         wsl = shutil.which("wsl.exe")
         if not wsl:
             pytest.skip("WSL is unavailable for Bash syntax validation")
-        probe = subprocess.run([wsl, "-d", "Ubuntu", "--", "true"], capture_output=True)
+        try:
+            probe = subprocess.run([wsl, "-d", "Ubuntu", "--", "true"], capture_output=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            pytest.skip("Ubuntu WSL is unresponsive for Bash syntax validation")
         if probe.returncode:
             pytest.skip("Ubuntu WSL is unavailable for Bash syntax validation")
         result = subprocess.run([wsl, "-d", "Ubuntu", "--", "bash", "-n", _win_to_wsl(SCRIPT)],

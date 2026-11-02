@@ -211,6 +211,19 @@ An additional app-level agent check used a synthetic “Find an update about the
 moon” WAV, LFM3 for local transcription and synthesis, and a real Windows
 output device. The model and search HTTP responses were simulated: the agent
 issued a mock search request and received a mock source, which appeared in app
-state, and the player accepted 46,080 synthesized samples. This checks the
-local integration path only; it does not establish a live OpenCode or Brave
-request, an accurate current answer, or acoustic audibility.
+state, and the player accepted 46,080 synthesized samples.
+
+A subsequent live spoken-search check ran that same 2.54 s WAV (SHA-256
+`212860194694fbb74374ac3872435f9eee7d479500114b0a6a758dc9565eb879`) through
+local LFM3 ASR, a live OpenCode Go model (`beam-free`, `reasoning_effort=low`)
+with DuckDuckGo HTML search (`LOCALVOICE_SEARCH=ddg`), and local LFM3 speech
+synthesis to the active Windows output device. Local ASR transcribed “Find an
+update about the moon.”; the agent called `web_search`, returned five HTTPS
+sources in application state, and synthesized a 30.64 s spoken answer (735,360
+source samples). Time from submission to first device write was 4.096 s (including
+ASR, search, and cloud generation; TTS first audio was 0.226 s), with zero
+reported playback underflows and a 13.95 ms maximum write gap across 34.81 s
+total turn time. Paid OpenCode Go models on the tested account returned HTTP 429
+(`GoUsageLimitError`), which the interface surfaces as a rate/usage limit error;
+this single live run checks the end-to-end spoken search path, not factual
+freshness or acoustic audibility in a room.
