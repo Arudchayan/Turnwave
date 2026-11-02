@@ -902,7 +902,10 @@ class Assistant:
                 key_name = ('LOCALVOICE_CUSTOM_API_KEY' if provider == 'custom'
                             else 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY')
                 search_key = os.getenv('BRAVE_SEARCH_API_KEY')
-                search_provider = os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or ('brave' if search_key else 'ddg')
+                previous = self.agent or self._saved_agent
+                search_provider = (getattr(previous, 'search_provider', None) or
+                                   os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or
+                                   ('brave' if search_key else 'ddg'))
                 mem_path = self.trace_path.parent / 'agent_memory.json' if self.trace_path is not None else None
                 prev_persona = getattr(self.agent or self._saved_agent, 'persona', 'jarvis') or 'jarvis'
                 self._saved_agent = AgentClient(
@@ -915,6 +918,23 @@ class Assistant:
                                    model=getattr(self.agent, 'model', None))
             return {'ok': True, 'agent_mode': True, 'provider': getattr(self.agent, 'label', None),
                     'model': getattr(self.agent, 'model', None)}
+
+    def set_search_provider(self, provider):
+        if provider not in ('none', 'ddg', 'bing', 'brave'):
+            raise ValueError('Unsupported search provider')
+        with self._lock:
+            if self.agent is None:
+                raise ValueError('Select a cloud agent before configuring web search')
+            if provider == 'brave' and not getattr(self.agent, '_search_key', None):
+                raise ValueError('Brave search requires BRAVE_SEARCH_API_KEY in the app environment')
+            if getattr(self.agent, 'search_provider', None) != provider:
+                self.interrupt('search provider change', announce=False)
+                self.agent.search_provider = provider
+                self.agent.search_enabled = provider != 'none'
+                self._agent_sources = []
+                self._agent_search_warning = None
+                self.diagnostics.event('search_provider_changed', provider=provider)
+            return {'ok': True, 'search_provider': provider, 'search_enabled': provider != 'none'}
 
     def set_persona(self, persona):
         if not isinstance(persona, str) or not persona.strip():
@@ -1330,6 +1350,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(desired, dict) or 'mode' not in desired or not set(desired) <= {'mode', 'model'}:
                     raise ValueError('Expected agent mode settings')
                 result = assistant.set_agent_mode(desired['mode'], desired.get('model'))
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/search-provider':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'provider'}:
+                    raise ValueError('Expected a search provider')
+                result = assistant.set_search_provider(desired['provider'])
                 self._send(json.dumps(result))
                 return
             elif self.path == '/api/persona':

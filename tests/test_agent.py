@@ -508,6 +508,59 @@ def test_traces_and_checks_are_saved_and_runtime_mode_switches(tmp_path):
         app.close()
 
 
+def test_search_selection_and_zen_switch_preserve_provider(monkeypatch):
+    monkeypatch.delenv('BRAVE_SEARCH_API_KEY', raising=False)
+    monkeypatch.setenv('OPENCODE_ZEN_API_KEY', 'test-key')
+    agent = AgentClient('test-key', search_provider='ddg')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        assert app.set_search_provider('bing')['search_enabled']
+        assert app.state()['search_provider'] == 'bing'
+        with pytest.raises(ValueError, match='BRAVE_SEARCH_API_KEY'):
+            app.set_search_provider('brave')
+        assert app.state()['search_provider'] == 'bing'
+        app.set_agent_mode('opencode-zen', 'kimi-k3')
+        assert app.state()['agent_provider'] == 'OpenCode Zen'
+        assert app.state()['search_provider'] == 'bing'
+        assert not app.set_search_provider('none')['search_enabled']
+        app.set_agent_mode('local')
+        with pytest.raises(ValueError, match='cloud agent'):
+            app.set_search_provider('bing')
+    finally:
+        app.close()
+
+
+def test_search_provider_http_rejects_missing_brave_key_and_invalid_body():
+    import threading
+    from http.server import ThreadingHTTPServer
+    from app import Handler
+
+    agent = AgentClient('test-key', search_provider='ddg')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    server.assistant = app
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f'http://127.0.0.1:{server.server_port}/api/search-provider'
+    def post(body):
+        request = urllib.request.Request(base, data=json.dumps(body).encode(),
+                                         headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request) as result:
+            return json.load(result)
+    try:
+        assert post({'provider': 'bing'})['search_provider'] == 'bing'
+        for body in ({'provider': 'brave'}, {'provider': 'bing', 'extra': True}, {'provider': 'other'}):
+            with pytest.raises(urllib.error.HTTPError) as error:
+                post(body)
+            assert error.value.code == 400
+        assert app.state()['search_provider'] == 'bing'
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+        app.close()
+
+
 def test_player_recovers_when_cached_output_device_fails(monkeypatch):
     import sounddevice as sd
     from audio_io import Player

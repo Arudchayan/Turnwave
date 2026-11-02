@@ -25,8 +25,9 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
   return {ok:true,json:async()=>state};
  }
  requests.push({path,body:options.body?JSON.parse(options.body):null});
+ if(input.scenario==='search_failure'&&path==='/api/search-provider')return {ok:false,status:400,json:async()=>({error:'Brave search requires an API key'})};
  if(input.scenario==='retry'&&requests.length===1)return {ok:false,status:409,json:async()=>({error:'First attempt failed'})};
- if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes'||input.scenario==='voice_tuning')return {ok:true,status:200,json:async()=>({ok:true})};
+ if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes'||input.scenario==='voice_tuning'||input.scenario==='search_selection')return {ok:true,status:200,json:async()=>({ok:true})};
  if(path==='/api/interrupt')return {ok:true,status:200,json:async()=>({ok:true})};
  if(input.scenario==='http_error')return {ok:false,status:409,json:async()=>({error:'Microphone unavailable'})};
  if(input.scenario==='network_error')throw Error('connection lost');
@@ -63,6 +64,17 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
    requests,personaDisabledInitially,personaDisabledAfter,personaVal,
    finalPersona:nodes.personasel.value,notes:{notesHdr,cardHdr,cardBody}
   }));
+ }else if(input.scenario==='search_failure'){
+  Object.assign(state,{agent_mode:true,agent_provider:'OpenCode Zen',agent_model:'kimi-k3',search_provider:'ddg'});
+  await context.tick();
+  await nodes.searchsel.onchange({target:{value:'brave'}});
+  process.stdout.write(JSON.stringify({value:nodes.searchsel.value,banner:nodes.banner.textContent}));
+ }else if(input.scenario==='search_selection'){
+  Object.assign(state,{agent_mode:true,agent_provider:'OpenCode Zen',agent_model:'kimi-k3',search_provider:'ddg'});
+  await context.tick();
+  await nodes.searchsel.onchange({target:{value:'bing'}});
+  await nodes.agentsel.onchange({target:{value:'opencode-zen:kimi-k3'}});
+  process.stdout.write(JSON.stringify({requests,searchValue:nodes.searchsel.value,disabled:nodes.searchsel.disabled}));
  }else if(input.scenario==='voice_tuning'){
   await nodes.vpreset.onchange({target:{value:'crisp'}});
   nodes.v_temp.value='0.65';
@@ -194,6 +206,22 @@ def test_agent_mode_controls_persona_dropdown_and_renders_notes():
     assert result['notes']['notesHdr']=='Expert Deep-Dive Brief'
     assert result['notes']['cardHdr']=='kimi-k3 · Architecture'
     assert 'FlashAttention-2 SRAM tiling' in result['notes']['cardBody']
+
+
+def test_search_and_zen_controls_dispatch_the_selected_values():
+    result = run_browser('search_selection')
+    assert result['requests'] == [
+        {'path': '/api/search-provider', 'body': {'provider': 'bing'}},
+        {'path': '/api/agent', 'body': {'mode': 'opencode-zen', 'model': 'kimi-k3'}},
+    ]
+    assert result['searchValue'] == 'bing'
+    assert result['disabled'] is False
+
+
+def test_search_selection_error_preserves_previous_provider():
+    result = run_browser('search_failure')
+    assert result['value'] == 'ddg'
+    assert 'requires an API key' in result['banner']
 
 
 def test_voice_tuning_preset_and_manual_apply_dispatch_api():

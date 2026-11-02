@@ -208,9 +208,11 @@ $env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-com
 Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
 preferred secret manager. When the cloud agent is enabled, web search defaults
 to Brave if `BRAVE_SEARCH_API_KEY` is set, and otherwise to DuckDuckGo HTML
-search without a search API key. Set `LOCALVOICE_SEARCH=bing` before starting
-the app to use Bing RSS search instead, or `LOCALVOICE_SEARCH=none` to disable
-search. Avoid saving any key in a script or committing it to the repository.
+search without a search API key. The interface can switch between DuckDuckGo,
+Bing RSS, Brave and off while an agent is selected; Brave requires a key in the
+app environment. Set `LOCALVOICE_SEARCH=bing` or `LOCALVOICE_SEARCH=none`
+before launch to choose the initial setting. Avoid saving any key in a script
+or committing it to the repository.
 
 ```powershell
 $env:LOCALVOICE_SEARCH = 'bing' # set before launching the app

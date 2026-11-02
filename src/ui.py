@@ -224,7 +224,17 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <option value="opencode-go:beam-free">Cloud Agent · OpenCode Go (beam-free)</option>
 <option value="opencode-go:iceman-contributor-free">Cloud Agent · OpenCode Go (iceman-contributor-free)</option>
 <option value="opencode-go:kimi-k3">Cloud Agent · OpenCode Go (kimi-k3)</option>
+<option value="opencode-zen:kimi-k3">Cloud Agent · OpenCode Zen (kimi-k3)</option>
 <option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
+</select>
+</div>
+<div class=field-row>
+<label class=ctrl-lbl for=searchsel>Web search provider</label>
+<select id=searchsel aria-label="Web search provider" disabled>
+<option value="none">Off</option>
+<option value="ddg">DuckDuckGo · Wikipedia fallback</option>
+<option value="bing">Bing · RSS search</option>
+<option value="brave">Brave · API key required</option>
 </select>
 </div>
 <div class=field-row>
@@ -302,6 +312,7 @@ let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
 let lastDeviceIndex=null,deviceVersion=0;
 let lastPause=null,pauseVersion=0;
 let lastAgentVal=null,agentVersion=0;
+let lastSearch=null,searchVersion=0;
 let lastPersona=null,personaVersion=0;
 let voiceVersion=0,voiceDirty=false;
 const VPRESETS={
@@ -362,6 +373,12 @@ agentVersion++;
 let body=val==='local'?{mode:'local'}:{mode:val.split(':')[0],model:val.split(':').slice(1).join(':')};
 if(await action('agentsel','/api/agent',body))lastAgentVal=val;
 sel.value=lastAgentVal??'local';};
+if($('searchsel'))$('searchsel').onchange=async e=>{
+let sel=$('searchsel'),val=String(e.target.value);
+if(pendingActions.has('searchsel')||!['none','ddg','bing','brave'].includes(val))return;
+searchVersion++;
+if(await action('searchsel','/api/search-provider',{provider:val}))lastSearch=val;
+sel.value=lastSearch??'none';};
 if($('personasel'))$('personasel').onchange=async e=>{
 let sel=$('personasel'),val=String(e.target.value);
 if(pendingActions.has('personasel')||!val)return;
@@ -415,6 +432,7 @@ let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
 let observedPauseVersion=pauseVersion,observedPausePending=pendingActions.has('pausesel');
 let observedAgentVersion=agentVersion,observedAgentPending=pendingActions.has('agentsel');
+let observedSearchVersion=searchVersion,observedSearchPending=pendingActions.has('searchsel');
 let observedPersonaVersion=personaVersion,observedPersonaPending=pendingActions.has('personasel');
 let observedVoiceVersion=voiceVersion,observedVoicePending=pendingActions.has('vapplybtn');
 let s=await(await fetch('/api/state')).json();
@@ -432,6 +450,12 @@ let cur=s.agent_mode?((s.agent_provider==='Custom Endpoint'?'custom':s.agent_pro
 if(!Array.from(agsel.options).some(o=>o.value===cur)&&s.agent_mode){
 let o=document.createElement('option');o.value=cur;o.textContent='Cloud Agent · '+(s.agent_provider||'OpenCode')+' ('+(s.agent_model||'custom')+')';agsel.appendChild(o);}
 lastAgentVal=cur;agsel.value=cur;}
+let search=$('searchsel');
+if(search){
+if(!observedSearchPending&&observedSearchVersion===searchVersion&&!pendingActions.has('searchsel')&&
+   ['none','ddg','bing','brave'].includes(s.search_provider)){
+lastSearch=s.search_provider;search.value=lastSearch;}
+search.disabled=!s.agent_mode||pendingActions.has('searchsel');}
 let pause=$('pausesel');
 if(!observedPausePending&&observedPauseVersion===pauseVersion&&!pendingActions.has('pausesel')&&[480,800,1120].includes(s.end_silence_ms)){
 lastPause=s.end_silence_ms;pause.value=String(lastPause);}
