@@ -272,3 +272,163 @@ def test_failed_agent_request_keeps_only_recognized_input():
         assert app._agent_history == [{'role': 'user', 'content': 'What is new?'}]
     finally:
         app.close()
+
+
+def test_local_tools_time_weather_memory_and_status(monkeypatch):
+    calls_made = []
+    def open_url(req, timeout):
+        if 'geocoding-api.open-meteo.com' in req.full_url:
+            return response({'results': [{'name': 'Basel', 'country': 'Switzerland', 'latitude': 47.55, 'longitude': 7.59}]})
+        if 'api.open-meteo.com' in req.full_url:
+            return response({'timezone': 'Europe/Zurich', 'current': {
+                'time': '2026-11-02T17:15', 'temperature_2m': 8.0, 'relative_humidity_2m': 70,
+                'apparent_temperature': 5.7, 'precipitation': 0.0, 'weather_code': 3, 'wind_speed_10m': 5.1},
+                'daily': {'temperature_2m_max': [11.0], 'temperature_2m_min': [4.0]}})
+        calls_made.append(json.loads(req.data))
+        if len(calls_made) == 1:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None, 'tool_calls': [
+                {'id': 't1', 'type': 'function', 'function': {'name': 'get_time', 'arguments': '{"timezone":"UTC"}'}},
+                {'id': 't2', 'type': 'function', 'function': {'name': 'get_weather', 'arguments': '{"location":"Basel"}'}},
+                {'id': 't3', 'type': 'function', 'function': {'name': 'remember', 'arguments': '{"fact":"User likes anime","category":"pref"}'}},
+            ]}}]})
+        if len(calls_made) == 2:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None, 'tool_calls': [
+                {'id': 't4', 'type': 'function', 'function': {'name': 'recall', 'arguments': '{"query":"anime"}'}},
+                {'id': 't5', 'type': 'function', 'function': {'name': 'system_status', 'arguments': '{}'}},
+            ]}}]})
+        return response({'choices': [{'message': {'content': '**It is 8°C and overcast in Basel.**'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='ddg', local_tools=True)
+    answer, sources = client.respond('Time, weather in Basel, and status?', [], Turn())
+    assert answer == 'It is 8°C and overcast in Basel.'
+    assert any('Open-Meteo: Basel' in s['title'] for s in sources)
+    assert client.last_trace['checks']['all_passed'] is False if 'all_passed' in client.last_trace['checks'] else client.last_trace['checks']['tool_calls_succeeded']
+    assert [tc['tool'] for tc in client.last_trace['tool_calls']] == ['get_time', 'get_weather', 'remember', 'recall', 'system_status']
+
+
+def test_ddg_empty_falls_back_to_wikipedia(monkeypatch):
+    class RawResponse(io.BytesIO):
+        pass
+    def open_url(req, timeout):
+        if 'duckduckgo.com' in req.full_url:
+            return RawResponse(b'<html><body>No results</body></html>')
+        if 'en.wikipedia.org' in req.full_url:
+            return response({'query': {'search': [{'title': 'Jujutsu Kaisen', 'snippet': 'Japanese <b>manga</b> series'}]}} )
+        body = json.loads(req.data)
+        if len(body['messages']) == 2:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None, 'tool_calls': [
+                {'id': 'w1', 'type': 'function', 'function': {'name': 'web_search', 'arguments': '{"query":"Jujutsu Kaisen"}'}}
+            ]}}]})
+        return response({'choices': [{'message': {'content': 'Jujutsu Kaisen is a manga series.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='ddg')
+    answer, sources = client.respond('Tell me about Jujutsu Kaisen', [], Turn())
+    assert answer == 'Jujutsu Kaisen is a manga series.'
+    assert sources == [{'title': 'Jujutsu Kaisen (Wikipedia)', 'url': 'https://en.wikipedia.org/wiki/Jujutsu_Kaisen', 'description': 'Japanese manga series'}]
+
+
+def test_build_messages_dedupes_repeated_turns_and_closes_interrupted_ones():
+    history = [
+        {'role': 'user', 'content': 'What is the weather in Basel?'},
+        {'role': 'user', 'content': 'Can you tell me a story?'},
+        {'role': 'user', 'content': 'can you tell me a story'},
+    ]
+    messages, stats = AgentClient._build_messages('SYS', history, 'Can you tell me a story?')
+    assert stats['deduped_user_turns'] >= 2
+    assert stats['closed_unanswered_turns'] == 1
+    roles = [m['role'] for m in messages[1:]]
+    assert roles == ['user', 'assistant', 'user']
+    assert messages[-1]['content'] == 'Can you tell me a story?'
+
+
+def test_interrupted_spoken_reply_is_recorded_in_history_to_prevent_repeat_hell():
+    import threading
+    playing_started = threading.Event()
+    class SlowPlayer(FakePlayer):
+        def play_chunks(self, chunks, cancel=None, on_start=None, on_play=None, on_written=None):
+            for audio in chunks:
+                if cancel.is_set():
+                    break
+                self.playing = True
+                on_start()
+                on_play(audio)
+                if on_written:
+                    on_written(audio)
+                playing_started.set()
+                cancel.wait(2)
+                break
+            self.playing = False
+    agent = FakeAgent()
+    app = Assistant(mic=FakeMic(), player=SlowPlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert playing_started.wait(1)
+        app.interrupt('barge')
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert app._agent_history == [
+            {'role': 'user', 'content': 'What is new?'},
+            {'role': 'assistant', 'content': 'A short answer. [interrupted]'},
+        ]
+    finally:
+        app.close()
+
+
+def test_empty_reasoning_reply_retries_without_effort(monkeypatch):
+    attempts = []
+    def open_url(req, timeout):
+        body = json.loads(req.data)
+        attempts.append((body.get('reasoning_effort'), body.get('max_tokens')))
+        if len(attempts) == 1:
+            return response({'choices': [{'finish_reason': 'length', 'message': {'content': '', 'reasoning_content': 'thinking...'}}]})
+        return response({'choices': [{'finish_reason': 'stop', 'message': {'content': 'Recovered reply.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    answer, _ = AgentClient('key').respond('Hello', [], Turn())
+    assert answer == 'Recovered reply.'
+    assert attempts == [('low', 900), (None, 1200)]
+
+
+def test_traces_and_checks_are_saved_and_runtime_mode_switches(tmp_path):
+    trace_file = tmp_path / 'traces.jsonl'
+    agent = FakeAgent()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent, trace_path=trace_file)
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        state = app.state()
+        assert state['trace_count'] == 1
+        assert state['trace_file'] == 'traces.jsonl'
+        assert state['last_trace']['checks']['all_passed'] is True
+        traces = app.traces()
+        assert len(traces) == 1 and traces[0]['turn_id'] == job.id
+        saved = [json.loads(line) for line in trace_file.read_text(encoding='utf-8').splitlines()]
+        assert len(saved) == 1 and saved[0]['checks']['all_passed'] is True
+        res = app.set_agent_mode('local')
+        assert res == {'ok': True, 'agent_mode': False} and not app.state()['agent_mode']
+    finally:
+        app.close()
+
+
+def test_player_recovers_when_cached_output_device_fails(monkeypatch):
+    import sounddevice as sd
+    from audio_io import Player
+    opened_devices = []
+    class Output:
+        latency = .02
+        def __init__(self, **kwargs):
+            opened_devices.append(kwargs.get('device'))
+            if kwargs.get('device') == 99:
+                raise sd.PortAudioError('Error opening OutputStream: Insufficient memory [PaErrorCode -9992]')
+        def start(self): pass
+        def write(self, a): return False
+        def stop(self): pass
+        def close(self): pass
+    monkeypatch.setattr('audio_io.sd.OutputStream', Output)
+    monkeypatch.setattr('audio_io.preferred_device', lambda kind: 10)
+    monkeypatch.setattr('audio_io.sd.query_devices', lambda dev=None, kind=None: (
+        [{'default_samplerate': 48000, 'max_output_channels': 2}] if dev is None
+        else {'default_samplerate': 48000, 'max_output_channels': 2}))
+    player = Player(device=99)
+    player.play_chunks([np.zeros(480, np.float32)])
+    assert opened_devices == [99, 10]
+    assert player.device == 10
+

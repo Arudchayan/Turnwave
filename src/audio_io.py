@@ -357,18 +357,80 @@ class Player:
         self.device = device if device is not None else preferred_device('output')
         self.native_rate = rate
         self.native_channels = 1
-        try:
-            info = sd.query_devices(self.device, 'output')
-            self.native_rate = int(info['default_samplerate'])
-            self.native_channels = min(2, int(info['max_output_channels']))
-        except Exception:
-            pass
+        self._configure_device(self.device)
         self.stats = {}
         self._gen = 0
         self._lock = threading.Lock()
         self._stream = None
         self.playing = False
         self._target_gain = 1.0
+
+    def _configure_device(self, device):
+        try:
+            info = sd.query_devices(device, 'output')
+            self.device = device
+            self.native_rate = int(info['default_samplerate'])
+            self.native_channels = min(2, max(1, int(info['max_output_channels'])))
+            return True
+        except Exception:
+            return False
+
+    def refresh_device(self):
+        cand = preferred_device('output')
+        if cand is not None:
+            self._configure_device(cand)
+
+    def _open_stream(self):
+        try:
+            stream = sd.OutputStream(samplerate=self.native_rate, channels=self.native_channels,
+                                     dtype='float32', device=self.device,
+                                     blocksize=round(self.native_rate * .02), latency='low')
+            stream.start()
+            return stream
+        except sd.PortAudioError as primary_err:
+            candidates = []
+            pref = preferred_device('output')
+            if pref is not None:
+                candidates.append(pref)
+            try:
+                default_out = int(sd.default.device[1])
+                if default_out >= 0 and default_out not in candidates:
+                    candidates.append(default_out)
+            except Exception:
+                pass
+            try:
+                for idx, info in enumerate(sd.query_devices()):
+                    if int(info.get('max_output_channels', 0)) > 0 and idx not in candidates:
+                        candidates.append(idx)
+            except Exception:
+                pass
+            candidates.append(None)
+            for cand in candidates:
+                if cand == self.device and cand is not None:
+                    continue
+                try:
+                    info = sd.query_devices(cand, 'output')
+                    rate = int(info['default_samplerate'])
+                    channels = min(2, max(1, int(info['max_output_channels'])))
+                except Exception:
+                    rate, channels = self.rate, 1
+                stream = None
+                try:
+                    stream = sd.OutputStream(samplerate=rate, channels=channels,
+                                             dtype='float32', device=cand,
+                                             blocksize=round(rate * .02), latency='low')
+                    stream.start()
+                    self.device = cand
+                    self.native_rate = rate
+                    self.native_channels = channels
+                    return stream
+                except Exception:
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except Exception:
+                            pass
+            raise primary_err
 
     def set_gain(self, level):
         """Set the playback gain target (clamped to 0..1), effective next piece."""
@@ -416,15 +478,12 @@ class Player:
                     if obsolete or (cancel is not None and cancel.is_set()):
                         return
                     if stream is None:
-                        stream = sd.OutputStream(samplerate=self.native_rate, channels=self.native_channels,
-                                                 dtype='float32', device=self.device,
-                                                 blocksize=round(self.native_rate * .02), latency='low')
+                        stream = self._open_stream()
                         with self._lock:
                             if generation != self._gen:
                                 return
                             self._stream = stream
                             self.playing = True
-                        stream.start()
                         self.stats['latency_s'] = float(getattr(stream, 'latency', 0))
                     piece = audio[offset:offset + 480]
                     with self._lock:

@@ -193,6 +193,15 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <button id=tstbtn>test speaker</button>
 </div>
 <div class=field-row>
+<label class=ctrl-lbl for=agentsel>Processing &amp; reasoning model</label>
+<select id=agentsel aria-label="Processing mode and model">
+<option value="local">Local Direct · LFM Speech-to-Speech</option>
+<option value="opencode-go:beam-free">Cloud Agent · OpenCode Go (beam-free)</option>
+<option value="opencode-go:iceman-contributor-free">Cloud Agent · OpenCode Go (iceman-contributor-free)</option>
+<option value="opencode-go:kimi-k3">Cloud Agent · OpenCode Go (kimi-k3)</option>
+</select>
+</div>
+<div class=field-row>
 <label class=ctrl-lbl for=micsel>Input microphone</label>
 <select id=micsel aria-label="Input device"></select>
 </div>
@@ -227,6 +236,7 @@ const $=id=>document.getElementById(id);
 let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
 let lastDeviceIndex=null,deviceVersion=0;
 let lastPause=null,pauseVersion=0;
+let lastAgentVal=null,agentVersion=0;
 const pendingActions=new Set();
 function renderAlerts(){
 let s=lastState;
@@ -272,6 +282,13 @@ if(pendingActions.has('pausesel')||![480,800,1120].includes(value))return;
 pauseVersion++;
 if(await action('pausesel','/api/pause',{milliseconds:value}))lastPause=value;
 sel.value=lastPause??'';};
+if($('agentsel'))$('agentsel').onchange=async e=>{
+let sel=$('agentsel'),val=String(e.target.value);
+if(pendingActions.has('agentsel')||!val)return;
+agentVersion++;
+let body=val==='local'?{mode:'local'}:{mode:val.split(':')[0],model:val.split(':').slice(1).join(':')};
+if(await action('agentsel','/api/agent',body))lastAgentVal=val;
+sel.value=lastAgentVal??'local';};
 function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
@@ -282,14 +299,22 @@ let observedMicVersion=micVersion;
 let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
 let observedPauseVersion=pauseVersion,observedPausePending=pendingActions.has('pausesel');
+let observedAgentVersion=agentVersion,observedAgentPending=pendingActions.has('agentsel');
 let s=await(await fetch('/api/state')).json();
 lastState=s;
+let agsel=$('agentsel');
+if(agsel&&!observedAgentPending&&observedAgentVersion===agentVersion&&!pendingActions.has('agentsel')){
+let cur=s.agent_mode?((s.agent_provider==='OpenCode Zen'?'opencode-zen':'opencode-go')+':'+(s.agent_model||'beam-free')):'local';
+if(!Array.from(agsel.options).some(o=>o.value===cur)&&s.agent_mode){
+let o=document.createElement('option');o.value=cur;o.textContent='Cloud Agent · '+(s.agent_provider||'OpenCode')+' ('+(s.agent_model||'custom')+')';agsel.appendChild(o);}
+lastAgentVal=cur;agsel.value=cur;}
 let pause=$('pausesel');
 if(!observedPausePending&&observedPauseVersion===pauseVersion&&!pendingActions.has('pausesel')&&[480,800,1120].includes(s.end_silence_ms)){
 lastPause=s.end_silence_ms;pause.value=String(lastPause);}
 pause.disabled=lastPause===null||pendingActions.has('pausesel');
+let toolsInfo=Array.isArray(s.agent_tools)&&s.agent_tools.length?(' · tools ('+s.agent_tools.length+')'):'';
 let mode=$('mode');mode.textContent=s.agent_mode?
-('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+(s.agent_model?' ('+s.agent_model+')':'')+' · web search '+(s.search_enabled?('enabled'+(s.search_provider?' ('+s.search_provider+')':'')):'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
+('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+(s.agent_model?' ('+s.agent_model+')':'')+' · web search '+(s.search_enabled?('enabled'+(s.search_provider?' ('+s.search_provider+')':'')):'not configured')+toolsInfo+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
 let sources=$('sources');sources.innerHTML='';
 if(Array.isArray(s.agent_sources)&&s.agent_sources.length){
@@ -306,7 +331,12 @@ renderAlerts();
 $('m_ttft').textContent=s.last_ttft??'—';$('m_aud').textContent=s.last_audio_s??'—';
 $('m_turn').textContent=s.last_turn_s??'—';$('m_n').textContent=s.turns;
 let ad=s.audio_diagnostics||{},pb=ad.playback||{},diag=$('diag');
-if(diag)diag.textContent='gain '+(ad.input_gain??'—')+' · drops '+(ad.input_drops??0)+' · echo '+(ad.echo_score??0).toFixed?.(2)+' · residual rejections '+(ad.residual_rejections??0)+' · underflows '+(pb.underflows??0)+' · max write gap '+(pb.max_gap_ms??0)+' ms';
+if(diag){
+let line='gain '+(ad.input_gain??'—')+' · drops '+(ad.input_drops??0)+' · echo '+(ad.echo_score??0).toFixed?.(2)+' · residual rejections '+(ad.residual_rejections??0)+' · underflows '+(pb.underflows??0)+' · max write gap '+(pb.max_gap_ms??0)+' ms';
+if(s.last_trace){
+let lt=s.last_trace,ck=lt.checks||{},toolsUsed=(lt.tools_used||[]).length?lt.tools_used.join(','):'none';
+line+=' · trace #'+lt.turn_id+' ('+lt.status+', tools: '+toolsUsed+', checks: '+(ck.all_passed?'✓ pass':'⚠ check')+(s.trace_file?', saved '+s.trace_file:'')+')';}
+diag.textContent=line;}
 if(Array.isArray(s.mics)&&!observedDevicePending&&observedDeviceVersion===deviceVersion&&!pendingActions.has('micsel')){
 let sel=$('micsel'),roster=s.mics.map(([i,n])=>[String(i),String(n)]);
 if(sel.options.length!==roster.length||roster.some(([i,n],j)=>sel.options[j].value!==i||sel.options[j].textContent!==n)){
