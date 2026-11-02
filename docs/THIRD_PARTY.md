@@ -8,11 +8,14 @@ llama.cpp notice for source included in the patches is preserved in
 | Component | Role | Source / terms to review |
 | --- | --- | --- |
 | LiquidAI LFM2.5-Audio-1.5B | Direct audio input/output model | [Model card](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B/blob/main/LICENSE) |
+| LiquidAI LFM3-Omni-2B | Optional newer local audio model | [Model card](https://huggingface.co/LiquidAI/LFM3-Omni-2B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/blob/main/LICENSE) |
 | llama.cpp Liquid audio integration | External native GGUF runner; local derived patches | [PR 18641](https://github.com/ggml-org/llama.cpp/pull/18641), [upstream license at pinned source](https://github.com/ggml-org/llama.cpp/blob/ec9d1fdd9cc18643c5e161b65b8053f6f6f34a4b/LICENSE) |
+| llama.cpp b12032 or newer | Optional LFM3 realtime and speech runner | [Upstream](https://github.com/ggml-org/llama.cpp), [license](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE) |
 | pywebrtc-audio | Echo processing wrapper | [Project](https://pypi.org/project/pywebrtc-audio/) and installed distribution notices |
 | Silero VAD | Voice activity detection | [Upstream](https://github.com/snakers4/silero-vad) |
 | ONNX Runtime | CPU inference runtime | [Upstream](https://github.com/microsoft/onnxruntime) |
 | sounddevice / PortAudio, NumPy | Device I/O and arrays | [sounddevice](https://python-sounddevice.readthedocs.io/), [PortAudio](https://www.portaudio.com/), [NumPy](https://numpy.org/) |
+| websocket-client | Local LFM3 realtime transport | [Project and license](https://github.com/websocket-client/websocket-client) |
 
 Models, native binaries and vendored dependency distributions are not included.
 Obtain them separately and retain applicable notices. The native source pin is

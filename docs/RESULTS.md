@@ -114,3 +114,56 @@ False interruptions, paused-sentence behavior and reply quality remain unresolve
 Controlled real-device acceptance and a clean-machine native installation have
 not been established.
 See [evaluation boundaries and reproduction](EVALUATION.md).
+
+## LFM3 local voice feasibility check
+
+On 2 November 2026, a single Windows SAPI voice rendered “Hello, can you hear
+me clearly?” as 16 kHz mono PCM. Each backend processed that same completed
+file three times on an RTX 3050 Laptop GPU (4 GiB), with no microphone,
+endpointing, playback or room acoustics in the timing. The input SHA-256 was
+`14f325bee8c502810701f87e7683645b74031711268b180461843dc5680e1de3`.
+
+| Backend | First decoded audio, seconds | Total generation, seconds | ASR exact phrase |
+| --- | --- | --- | --- |
+| LFM2.5 Q4_0, existing native runner | 0.212, 0.139, 0.168 | 3.795, 3.773, 3.879 | 3/3 |
+| LFM3 Omni Q4_K_M, llama.cpp b12032 | 0.369, 0.420, 0.416 | 1.761, 1.736, 1.880 | 3/3 |
+
+The first-audio measurement starts before the client call and ends at its first
+decoded audio callback. It includes each client's connection setup; LFM3 used a
+fresh realtime session each trial. Both prompts requested brief answers, but the
+outputs differed: LFM2.5 generated 12.54 seconds of audio each time and LFM3
+generated 4.80–5.52 seconds. These observations do not establish a general
+speed or quality ranking. The model output text is not evidence of what the
+generated speech said; neither reply was independently transcribed for this
+check. Exact historical reruns also depend on the local SAPI voice.
+
+The newer runner and weights were separate from the existing model: llama.cpp
+b12032 (`dde879bc4`) and LiquidAI LFM3-Omni-2B-GGUF revision `3d29af2ad166f8299c2d820937e47dc0add20ffc`.
+The Q4_K_M model and projector were SHA-256 verified against the publisher.
+The LFM2.5 files came from revision `7d525f883a077e20afb782f2ff618edcae0e39e4`;
+the local baseline used the selected native-abort runner built from
+`ec9d1fdd9`, not a fresh clean build. `src/synth/voice_backend_probe.py`
+reproduces the measurements given a synthetic 16 kHz mono WAV and each server.
+
+In one separate LFM3 cancellation trial, the client stopped 16 ms after an
+abort issued after first audio, then generated a reply on a fresh session.
+One muted application speaker check wrote 80,640 source samples to the selected
+output device with zero reported underflows and a 12.87 ms maximum recorded
+write gap. These do not establish end-to-end interruption latency, audible
+quality, or reliability across real rooms and devices.
+
+An additional single app-level check fed the same completed synthetic fixture
+to each backend with the microphone muted and wrote the replies to the same
+selected output device. Submission to first device write was 0.186 s for LFM2.5
+and 0.581 s for LFM3; the player reported zero underflows in both runs and
+maximum write gaps of 12.59 ms and 12.34 ms respectively. The two generated
+different-length replies, and device writes do not verify acoustic playback.
+This is one observation per backend, not a real conversation or a statistical
+comparison of perceived smoothness.
+
+In a separate two-turn synthetic check, the input said “My name is Mira. Please
+remember it” followed by “What is my name?” in the same LFM3 realtime session.
+The model's first emitted text used “Myra” and its second answered “Your name
+is Myra.” This demonstrates that the second text reply reflected the prior
+response in this one case; it does not verify spelling, spoken audio, or memory
+after interruption.

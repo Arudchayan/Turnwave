@@ -1029,7 +1029,16 @@ def main():
                             search_key=os.getenv('BRAVE_SEARCH_API_KEY'))
     elif agent_mode:
         raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
-    assistant = Assistant(asr_client=ServerClient(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent)
+    backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()
+    if backend == 'lfm3':
+        from lfm3_client import LFM3Client
+        client_type = LFM3Client
+    elif backend == 'lfm2':
+        client_type = ServerClient
+    else:
+        raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
+    client = client_type(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+    assistant = Assistant(client=client, asr_client=client_type(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
     assistant.start()

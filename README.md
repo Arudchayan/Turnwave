@@ -80,6 +80,27 @@ Keep the required shared libraries with the runner. Stop the server before
 applying the complete five-patch set using `src/apply_runner_fixes.sh`; that
 helper patches the same existing checkout and rebuilds the server.
 
+### Optional LFM3 voice backend
+
+LFM3-Omni-2B can also be used with a recent llama.cpp server. It uses a different
+protocol, so it does not use the pinned LFM2.5 runner or its patches. Obtain the
+Q4_K_M model and projector from [LiquidAI's GGUF release](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF)
+into `models/LFM3-Omni-2B-GGUF/`, and a compatible llama.cpp build (b11960 or
+newer) separately. The default launcher looks for the b12032 CUDA build in
+`models/runner/llama-b12032-cuda/files/llama-b12032/`; set
+`LOCALVOICE_LFM3_RUNNER` inside WSL to choose another build. CUDA builds also
+need compatible runtime libraries; set `LOCALVOICE_CUDA_LIB` to their directory
+if they are not already on the library path. With those assets installed:
+
+```powershell
+wsl -d Ubuntu bash src/server_lfm3_wsl.sh
+```
+
+In a second terminal, set `$env:LOCALVOICE_BACKEND = 'lfm3'` before launching
+`python src/app.py`. The default remains `lfm2`. LFM3 uses a realtime WebSocket
+for speech conversation and transcription, and streaming PCM for synthesis.
+The tested configuration and its limits are recorded in [results](docs/RESULTS.md).
+
 From the repository root, start the backend:
 
 ```powershell
@@ -102,6 +123,34 @@ an input stream but does not submit microphone turns.
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
 The app and backend test entry points reserve exclusive context ownership;
 stop the app before running tests that use its backend, even while muted.
+
+### Optional cloud conversation and web search
+
+By default Turnwave uses the local speech-to-speech model. To use an OpenCode Zen
+chat-completions model instead, configure these environment variables before
+starting `src/app.py`:
+
+```powershell
+$env:LOCALVOICE_AGENT = 'opencode-zen'
+$env:OPENCODE_ZEN_API_KEY = '<your OpenCode Console API key>'
+$env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-completions model
+$env:BRAVE_SEARCH_API_KEY = '<your Brave Search API key>' # optional
+```
+
+The local voice server still performs transcription and speech synthesis. The
+recognized text and recent conversation are sent to OpenCode Zen; if configured,
+search queries go to Brave and search results go to the model. The interface
+shows the active mode, search availability, and links returned by search. Without
+a search key, conversation works but web search is unavailable. The model may
+choose whether to search. `LOCALVOICE_AGENT=opencode-go` selects Go and uses
+`OPENCODE_GO_API_KEY`. OpenCode describes Go as intended for coding-agent
+traffic, so general conversation may not be supported; choose Zen for general
+conversation. See [OpenCode Go model endpoints](https://opencode.ai/v2/docs/console/go/)
+and [Brave Search](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started).
+Keep keys in your process environment, never in tracked files. The cloud path
+requires network access and provider accounts; it is not covered by the local
+model's privacy guarantees. The interface reports missing configuration and
+request failures. Agent context is kept in memory and reset with the conversation.
 
 ## Tests
 
