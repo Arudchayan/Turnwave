@@ -327,6 +327,106 @@ def test_ddg_empty_falls_back_to_wikipedia(monkeypatch):
     assert sources == [{'title': 'Jujutsu Kaisen (Wikipedia)', 'url': 'https://en.wikipedia.org/wiki/Jujutsu_Kaisen', 'description': 'Japanese manga series'}]
 
 
+def test_wikipedia_fallback_is_disclosed_to_the_model(monkeypatch):
+    def open_url(req, timeout):
+        if 'duckduckgo.com' in req.full_url:
+            return io.BytesIO(b'<html>No usable search results</html>')
+        if 'en.wikipedia.org' in req.full_url:
+            return response({'query': {'search': [{'title': 'Python', 'snippet': 'A language'}]}})
+        body = json.loads(req.data)
+        if len(body['messages']) == 2:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None,
+                'tool_calls': [{'id': 'w1', 'type': 'function', 'function': {
+                    'name': 'web_search', 'arguments': '{"query":"latest Python release"}'}}]}}]})
+        result = json.loads(body['messages'][-1]['content'])
+        assert 'Wikipedia-only' in result['notice']
+        assert 'not a current web search' in result['notice']
+        assert result['results'][0]['url'].startswith('https://en.wikipedia.org/')
+        return response({'choices': [{'message': {'content': 'I could not verify the latest release.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='ddg')
+    answer, sources = client.respond('Latest Python?', [], Turn())
+    assert 'could not verify' in answer
+    assert len(sources) == 1
+    assert 'limited to Wikipedia' in client.last_trace['search_warning']
+
+
+def test_site_restriction_is_not_replaced_with_unrelated_wikipedia(monkeypatch):
+    def open_url(req, timeout):
+        if 'duckduckgo.com' in req.full_url:
+            return io.BytesIO(b'<html>No usable search results</html>')
+        pytest.fail('A site-restricted query must not fall back to Wikipedia')
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='ddg')
+    result, sources = client._run_tool('web_search', '{"query":"latest Python site:python.org"}', Turn(), None)
+    assert result['results'] == [] and sources == []
+    assert 'site restriction' in result['notice']
+
+
+def test_empty_search_and_fallback_report_no_results(monkeypatch):
+    def open_url(req, timeout):
+        if 'duckduckgo.com' in req.full_url:
+            return io.BytesIO(b'<html>No usable search results</html>')
+        return response({'query': {'search': []}})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='ddg')
+    result, sources = client._run_tool('web_search', '{"query":"latest Python"}', Turn(), None)
+    assert result['results'] == [] and sources == []
+    assert 'no usable results' in result['notice']
+
+
+def test_bing_rss_search_honors_site_restriction_and_returns_sources(monkeypatch):
+    page = b'''<rss><channel>
+      <item><title>Python Downloads</title><link>https://www.python.org/downloads/</link>
+      <description>Official releases</description></item>
+      <item><title>Wrong domain</title><link>https://evilpython.org/</link></item>
+      <item><title>Bad link</title><link>https://[bad</link></item>
+      <item><title>Unsafe</title><link>javascript:alert(1)</link></item>
+    </channel></rss>'''
+    def open_url(req, timeout):
+        if 'bing.com/search?' in req.full_url:
+            assert 'format=rss' in req.full_url
+            assert 'site%3Apython.org' in req.full_url
+            return io.BytesIO(page)
+        body = json.loads(req.data)
+        if len(body['messages']) == 2:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None,
+                'tool_calls': [{'id': 's1', 'type': 'function', 'function': {
+                    'name': 'web_search', 'arguments': '{"query":"Python site:python.org"}'}}]}}]})
+        assert 'Official releases' in body['messages'][-1]['content']
+        return response({'choices': [{'message': {'content': 'See Python downloads.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='bing')
+    answer, sources = client.respond('Find the release.', [], Turn())
+    assert answer == 'See Python downloads.'
+    assert sources == [{'title': 'Python Downloads', 'url': 'https://www.python.org/downloads/',
+                        'description': 'Official releases'}]
+
+
+def test_bing_malformed_feed_reports_a_search_error(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: io.BytesIO(b'<broken'))
+    with pytest.raises(AgentError, match='invalid response'):
+        AgentClient('key', search_provider='bing').search('python', Turn())
+
+
+def test_search_warning_is_visible_and_cleared_on_reset():
+    class WarningAgent(FakeAgent):
+        def respond(self, text, history, turn, on_search):
+            self.last_trace = {'search_warning': 'Web search returned no verified results.'}
+            return 'A short answer.', []
+
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                    client=LocalVoice(), agent=WarningAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set())
+        assert 'no verified results' in app.state()['warning']
+        app.reset()
+        assert 'no verified results' not in (app.state()['warning'] or '')
+    finally:
+        app.close()
+
+
 def test_build_messages_dedupes_repeated_turns_and_closes_interrupted_ones():
     history = [
         {'role': 'user', 'content': 'What is the weather in Basel?'},

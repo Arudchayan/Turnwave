@@ -206,18 +206,27 @@ $env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-com
 ```
 
 Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
-preferred secret manager. Set `BRAVE_SEARCH_API_KEY` there as well to enable
-Brave search, or set `LOCALVOICE_SEARCH=ddg` to enable DuckDuckGo HTML search
-without a search API key. Avoid saving any key in a script or committing it to
-the repository.
+preferred secret manager. When the cloud agent is enabled, web search defaults
+to Brave if `BRAVE_SEARCH_API_KEY` is set, and otherwise to DuckDuckGo HTML
+search without a search API key. Set `LOCALVOICE_SEARCH=bing` before starting
+the app to use Bing RSS search instead, or `LOCALVOICE_SEARCH=none` to disable
+search. Avoid saving any key in a script or committing it to the repository.
+
+```powershell
+$env:LOCALVOICE_SEARCH = 'bing' # set before launching the app
+```
+
+DuckDuckGo may block automated requests. If it returns no usable results,
+Turnwave marks its Wikipedia fallback as limited and warns that current web
+information could not be verified. Site-restricted queries do not use that
+fallback, because Wikipedia cannot honor the requested site restriction.
 
 The local voice server still performs transcription and speech synthesis. The
 recognized text and recent conversation are sent to OpenCode Zen; if configured,
-search queries go to the configured search provider (Brave or DuckDuckGo) and
-search results go to the model. The interface shows the active mode, model,
-search availability, and links returned by search. Without a search key or
-`LOCALVOICE_SEARCH=ddg`, conversation works but web search is unavailable. The
-model may choose whether to search. `LOCALVOICE_AGENT=opencode-go` selects Go
+search queries go to the configured search provider (Brave, DuckDuckGo or Bing,
+and potentially Wikipedia as a DuckDuckGo fallback) and search results go to the model. The
+interface shows the active mode, model, search availability, and links returned
+by search. The model may choose whether to search. `LOCALVOICE_AGENT=opencode-go` selects Go
 and uses `OPENCODE_GO_API_KEY`. OpenCode describes Go as intended for
 coding-agent traffic, so general conversation may not be supported; choose Zen
 for general conversation. See [OpenCode Go model endpoints](https://opencode.ai/v2/docs/console/go/)

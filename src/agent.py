@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import xml.etree.ElementTree as ET
 import zoneinfo
 
 try:
@@ -121,6 +122,15 @@ _WMO_CODES = {
 }
 
 MAX_RESPONSE = 2 * 1024 * 1024
+
+
+class SearchResults(list):
+    """Search hits plus a warning about an incomplete search, if applicable."""
+    def __init__(self, values=(), notice=None):
+        super().__init__(values)
+        self.notice = notice
+
+
 _DDG_RESULT = re.compile(
     r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>'
     r'(?:.*?class="result__snippet"[^>]*>(.*?)</(?:a|div)>)?', re.S)
@@ -172,7 +182,7 @@ class AgentClient:
             raise ValueError('Unsupported OpenCode provider')
         if search_provider is None:
             search_provider = 'brave' if search_key else 'none'
-        if search_provider not in ('brave', 'ddg', 'duckduckgo', 'none'):
+        if search_provider not in ('brave', 'ddg', 'duckduckgo', 'bing', 'none'):
             raise ValueError('Unsupported search provider')
         if persona not in PERSONAS:
             raise ValueError('Unsupported persona')
@@ -190,6 +200,7 @@ class AgentClient:
         self.reasoning_effort = None if provider == 'custom' else reasoning_effort
         self._session = uuid.uuid4().hex
         self.search_provider = ('ddg' if search_provider in ('ddg', 'duckduckgo')
+                                else 'bing' if search_provider == 'bing'
                                 else 'brave' if search_provider == 'brave' and search_key else 'none')
         self.search_enabled = self.search_provider != 'none'
         self.local_tools = self.search_enabled if local_tools is None else bool(local_tools)
@@ -563,8 +574,57 @@ class AgentClient:
                                 'description': _clean_html(match.group(3))[:1000]})
                 if len(results) >= 5:
                     break
-        if not results and not turn.cancel.is_set():
-            results = self._search_wikipedia(query, turn)
+        if results or turn.cancel.is_set():
+            return SearchResults(results)
+        # Wikipedia's search API does not implement web search operators. Sending
+        # a site-restricted query there can return unrelated pages outside the
+        # requested domain and falsely suggest that restriction was respected.
+        if re.search(r'\bsite\s*:', query, re.IGNORECASE):
+            return SearchResults(notice=(
+                'Web search did not return usable results. The requested site restriction '
+                'could not be verified. Tell the user the web search was unavailable.'
+            ))
+        fallback = self._search_wikipedia(query, turn)
+        notice = (('Web search did not return usable results; these are Wikipedia-only '
+                   'fallback results, not a current web search. Tell the user about this '
+                   'limitation and do not claim that current information was verified.')
+                  if fallback else
+                  'Web search and the Wikipedia fallback returned no usable results. '
+                  'Tell the user that current information could not be verified.')
+        return SearchResults(fallback, notice=notice)
+
+    def _search_bing(self, query, turn):
+        params = urllib.parse.urlencode({'q': query, 'format': 'rss'})
+        req = urllib.request.Request('https://www.bing.com/search?' + params,
+                                     headers={'User-Agent': 'Mozilla/5.0 (compatible; Turnwave/0.1)',
+                                              'Accept': 'application/rss+xml, application/xml'})
+        raw = self._read(req, turn, 'Web search')
+        if raw is None:
+            return []
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError:
+            raise AgentError('Web search returned an invalid response') from None
+        sites = [site.lower().strip('.') for site in re.findall(
+            r'(?<![\w.-])site:([a-zA-Z0-9.-]+)', query, re.IGNORECASE)]
+        results = []
+        for item in root.findall('./channel/item'):
+            url = (item.findtext('link') or '').strip()
+            try:
+                parsed = urllib.parse.urlsplit(url)
+                host = (parsed.hostname or '').lower().strip('.')
+            except ValueError:
+                continue
+            if (parsed.scheme not in ('http', 'https') or not host or parsed.username or parsed.password or
+                    (sites and not any(host == site or host.endswith('.' + site) for site in sites))):
+                continue
+            title = _clean_html(item.findtext('title'))[:300]
+            if not title:
+                continue
+            results.append({'title': title, 'url': url[:2048],
+                            'description': _clean_html(item.findtext('description'))[:1000]})
+            if len(results) >= 5:
+                break
         return results
 
     def search(self, query, turn):
@@ -574,6 +634,8 @@ class AgentClient:
             raise AgentError('Invalid search query')
         if self.search_provider == 'ddg':
             return self._search_ddg(query, turn)
+        if self.search_provider == 'bing':
+            return self._search_bing(query, turn)
         params = urllib.parse.urlencode({'q': query, 'count': 5})
         req = urllib.request.Request('https://api.search.brave.com/res/v1/web/search?' + params,
                                      headers={'Accept': 'application/json',
@@ -651,7 +713,10 @@ class AgentClient:
             finally:
                 if on_search:
                     on_search(False)
-            return results, results
+            notice = getattr(results, 'notice', None)
+            if not results and not notice and not turn.cancel.is_set():
+                notice = 'The web search returned no usable results. Tell the user that the search found no evidence.'
+            return ({'results': list(results), 'notice': notice} if notice else results), results
         if not self.local_tools:
             raise AgentError('The agent requested an unsupported tool')
         if name == 'get_time':
@@ -827,6 +892,11 @@ class AgentClient:
                 tool_s = round(time.perf_counter() - tool_t0, 3)
                 if turn.cancel.is_set():
                     return None
+                if name == 'web_search' and isinstance(result, dict) and result.get('notice'):
+                    trace['search_warning'] = (
+                        'Web search was unavailable; results are limited to Wikipedia.'
+                        if new_sources else 'Web search returned no verified results.'
+                    )
                 trace['tool_calls'].append({
                     'tool': name,
                     'duration_s': tool_s,

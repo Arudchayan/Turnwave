@@ -69,6 +69,7 @@ class Assistant:
         self._agent_history = []
         self._agent_sources = []
         self._agent_notes = []
+        self._agent_search_warning = None
         self._agent_phase = None
         self._voice_params = {
             'temperature': 0.7,
@@ -477,6 +478,7 @@ class Assistant:
             if self.agent:
                 self._agent_sources = []
                 self._agent_notes = []
+                self._agent_search_warning = None
             self._pending_jobs[job.id] = job
             if self.session_archive is not None:
                 self._archive_pending.add(job.id)
@@ -504,6 +506,7 @@ class Assistant:
             if self.agent:
                 self._agent_sources = []
                 self._agent_notes = []
+                self._agent_search_warning = None
             self._pending_jobs[job.id] = job
             if self.session_archive is not None:
                 self._archive_pending.add(job.id)
@@ -665,6 +668,9 @@ class Assistant:
                     finally:
                         job.agent_s = round(time.perf_counter() - agent_t0, 3)
                         job.agent_trace = getattr(self.agent, 'last_trace', None)
+                        with self._lock:
+                            if self._active is job:
+                                self._agent_search_warning = (job.agent_trace or {}).get('search_warning')
                     if result is None or turn.cancel.is_set():
                         return
                     answer, job.sources = result
@@ -849,6 +855,7 @@ class Assistant:
             self._agent_history.clear()
             self._agent_sources.clear()
             self._agent_notes.clear()
+            self._agent_search_warning = None
             if self.agent and hasattr(self.agent, 'reset'):
                 self.agent.reset()
             self.transcript_revision += 1
@@ -881,6 +888,7 @@ class Assistant:
             if mode == 'local':
                 self.agent = None
                 self._agent_sources = []
+                self._agent_search_warning = None
                 self.diagnostics.event('agent_mode_changed', agent_mode=False, provider=None, model=None)
                 return {'ok': True, 'agent_mode': False}
             provider = ('custom' if mode == 'custom'
@@ -1219,7 +1227,7 @@ class Assistant:
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
-                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, getattr(self.agent, 'configuration_error', None)] if w) or None,
+                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self._agent_search_warning, getattr(self.agent, 'configuration_error', None)] if w) or None,
                         audio_diagnostics=dict(residual_rejections=getattr(self.front, 'residual_rejections', 0), input_gain=getattr(self.mic, 'effective_gain', None), echo_score=getattr(self.front, 'echo_score', None), input_latency_s=getattr(self.mic, 'latency_s', None), input_drops=getattr(self.mic, 'dropped_blocks', 0), clipped_fraction=getattr(self.mic, 'clipped_fraction', 0), playback=getattr(self.player, 'stats', {})))
 
 
