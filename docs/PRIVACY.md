@@ -13,7 +13,9 @@ submitting microphone turns until unmuted. The browser transcript stays in memor
 
 When cloud conversation is enabled, processed microphone audio is sent to the
 configured voice server for transcription; the recognized text and recent
-completed conversation are sent to OpenCode Go or Zen. The reply is sent to the voice
+conversation are sent to OpenCode Go or Zen. An interrupted request remains
+in memory, but an unfinished assistant reply is not added to later context.
+The reply is sent to the voice
 server for synthesis. If a Brave Search key is configured and the model calls
 search, the query is sent to Brave and returned snippets are sent to OpenCode
 Go. These services have their own retention and privacy policies. The default

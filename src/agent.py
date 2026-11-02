@@ -76,7 +76,11 @@ class AgentClient:
                 if turn._response is response:
                     turn._response = None
             if response is not None:
-                response.close()
+                try:
+                    response.close()
+                except Exception:
+                    # Cleanup cannot replace a completed reply or cancellation.
+                    pass
 
     def search(self, query, turn):
         if not self._search_key:
