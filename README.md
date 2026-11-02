@@ -117,9 +117,28 @@ bash src/server_lfm3_wsl.sh
 Use a projector validated against that specific model. Restart the backend without
 these variables to return to the standard model. This selects weights at server
 startup; it is not a live toggle. The research files must be prepared separately:
-Heretic compatibility with LFM3 Omni, export to GGUF, and speech quality have not
-yet been verified. The existing GGUF alone does not establish that Heretic can
-process this model. Model modifications may change behavior and quality.
+one small CPU compatibility probe was exported to GGUF and produced audio and a
+correct synthetic transcription, but did not improve the two refusal examples
+used in that probe. Speech quality and broader behavior have not been validated.
+This selection affects the local voice model, not the remote agent model.
+
+For experiments, obtain the original full-precision LFM3 Omni checkpoint and
+install `heretic-llm==2.0.0` in a separate Python environment. Inspect the
+checkpoint's custom Python code before allowing it to execute. The experimental
+adapter gives Heretic access to text logits and hidden states while preserving
+the speech model's saved architecture:
+
+```powershell
+.venv-heretic\Scripts\python scripts/heretic_lfm3.py --model-dir models/LFM3-Omni-2B-HF --trust-model-code -- --device-map cpu --batch-size 1 --study-checkpoint-dir outputs/maintenance/heretic-checkpoints
+```
+
+Pass additional Heretic 2.0 options after `--`. Its default optimization can be
+slow on a CPU. Save to a separate directory, convert the saved checkpoint and
+its projector with a compatible llama.cpp converter, quantize the main model,
+and test both files before using the research launcher. The adapter normalizes
+inactive text sampling values to satisfy Transformers' save validation; verify
+generation and speech after conversion. The model's license and Heretic's
+license apply separately. Model modifications can change behavior and quality.
 
 The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference and acoustic sampling optimizations
 tuned for 4 GiB GPU memory limits:

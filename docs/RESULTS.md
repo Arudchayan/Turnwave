@@ -291,3 +291,24 @@ at punctuation boundaries with a 120-character cap on the opening sentence and ~
 immediately to the TTS engine, allowing audio playback to begin in 50–90 ms while subsequent
 sentences continue to stream. In synthetic unit tests, pipelining reduced initial
 playback wait while preserving single-stream audio ordering across sentence boundaries.
+
+### Exploratory LFM3 model modification
+
+An isolated CPU compatibility probe used Heretic 2.0.0 with the LiquidAI
+LFM3-Omni-2B checkpoint at revision `5797d07c125503bd4f4c0e7f915ae2d3d703e8de`
+(model SHA-256 `76c0ec2c3e27832fb19f886d5eb0afe37f03c5c32c4a796a7ce08cef119d2763`).
+The research adapter uses Transformers' text generation for the analysis and
+normalizes inactive sampling parameters so the model can be saved. The probe used
+three examples in each direction, two examples per score, rank 1 and one trial;
+the refusal score was 2/2 before and after, with reported KL divergence 0.0004.
+These figures are too small to establish an effect or model quality.
+
+The merged checkpoint had identical tensor names and 24 changed tensors, all in
+the language backbone; all other model tensors matched the original exactly.
+The result converted with llama.cpp b12032, was quantized to Q4_K_M, and was
+served on a separate CPU server using the original projector. Turnwave's client
+produced 53,760 speech samples in one TTS call; a separate synthesized sentence
+was transcribed correctly. This checks basic functionality only: no human
+listening assessment, broad behavior evaluation, or runtime mode switch was tested.
+See [Heretic](https://github.com/p-e-w/heretic) and the
+[original model](https://huggingface.co/LiquidAI/LFM3-Omni-2B) for their terms.
