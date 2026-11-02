@@ -327,4 +327,11 @@ The selected candidate was converted and quantized to Q4_K_M (SHA-256
 llama.cpp b12032 CPU server, using the original projector, a synthetic voice
 turn produced the transcription “What is two plus two?” and the spoken reply
 “Two plus two equals four.” This does not replace a human listening assessment,
-an independent behavior evaluation, or tests of the remote agent.
+a broader independent behavior evaluation, or tests of the remote agent.
+
+An additional held-out text-only comparison used the next 10 prompts from the
+same dataset's test split, with a 32-token limit and deterministic sampling on
+the Q4_K_M llama.cpp CPU server. Heretic's keyword heuristic matched 10/10
+responses from the original and 9/10 from the research candidate. This small
+heuristic check is not a manual assessment and does not measure general model
+quality or speech behavior. The two Q4 files were quantized separately.
