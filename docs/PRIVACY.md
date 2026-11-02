@@ -9,6 +9,23 @@ requests there instead.
 The microphone stream opens at startup. `LOCALVOICE_START_MUTED=1` prevents
 submitting microphone turns until unmuted. The browser transcript stays in memory.
 
+## Optional cloud conversation
+
+When cloud conversation is enabled, processed microphone audio is sent to the
+configured voice server for transcription; the recognized text and recent
+completed conversation are sent to OpenCode Go or Zen. The reply is sent to the voice
+server for synthesis. If a Brave Search key is configured and the model calls
+search, the query is sent to Brave and returned snippets are sent to OpenCode
+Go. These services have their own retention and privacy policies. The default
+mode does not make these cloud requests. If the configured voice server is
+remote, audio and synthesis requests go to that server in either mode.
+
+API keys are read from the application process environment, not delivered to the
+browser or included in diagnostics. Opt-in session archives contain the input
+WAV, generated audio, result text and the local synthesis request for agent
+turns; they do not capture the cloud request or search results as exact request
+records. Treat the resulting transcript and audio as sensitive.
+
 ## Saved data
 
 Diagnostics under `outputs/logs/` contain timings, device/state information and

@@ -95,6 +95,7 @@ class Turn:
         self.t_req = 0.0
         self.ttft = None  # first decoded audio, not first text
         self.first_event = None
+        self.first_text = None
         self.queue_s = 0.0
         self.headers_s = None
         self.text_parts = []
@@ -211,6 +212,8 @@ class ServerClient:
                     turn.finish_reason = choices[0]['finish_reason']
                 delta = choices[0].get('delta') or {}
                 if delta.get('content'):
+                    if turn.first_text is None:
+                        turn.first_text = elapsed
                     turn.text_parts.append(delta['content'])
                     if turn.degenerate:
                         raise RuntimeError('The reply became repetitive. Please try again.')
@@ -240,9 +243,12 @@ class ServerClient:
                     self.request_lock.release()
                 turn.done.set()
 
-    def asr_text(self, wav_bytes, max_tokens=128):
+    def asr_text(self, wav_bytes, max_tokens=128, turn=None):
         # Use on a separate server instance: this resets its context.
-        turn = Turn()
+        # Agent turns can supply their own handle so interruption cancels a
+        # transcription in flight, rather than allowing stale speech to reach
+        # a subsequent stage. Existing background transcription remains valid.
+        turn = turn if turn is not None else Turn()
         self._stream(self._payload(ASR_SYS, self._audio_input(wav_bytes), True, max_tokens, audio=False), turn)
         if turn.error:
             raise RuntimeError(turn.error)

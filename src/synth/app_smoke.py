@@ -32,6 +32,7 @@ class SyntheticMic:
 class PacedSpeaker:
     def __init__(self): self.playing = False
     def stop(self): self.playing = False
+    def set_gain(self, level): pass
     def play_chunks(self, chunks, cancel, on_start, on_play):
         started = False
         try:

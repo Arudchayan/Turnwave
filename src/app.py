@@ -41,19 +41,26 @@ class Job:
     archive: object = None
     generation_closed: threading.Event = field(default_factory=threading.Event)
     playback_closed: threading.Event = field(default_factory=threading.Event)
+    agent_input: str = ''
+    sources: list = field(default_factory=list)
 
 
 class Assistant:
     """No import-time devices or threads; dependencies can be simulated in tests."""
-    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None):
+    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None):
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
+        self.pre_roll_ms = pre_roll_ms
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
         self.front = front if front is not None else DuplexFrontend()
         self.client = client if client is not None else ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
         self.asr_client = asr_client
+        self.agent = agent
+        self._agent_history = []
+        self._agent_sources = []
+        self._agent_phase = None
         if asr_client is not None and asr_client.base.rstrip('/') == self.client.base.rstrip('/'):
             raise ValueError('Transcription needs a separate server context')
         self.diagnostics = diagnostics if diagnostics is not None else Diagnostics()
@@ -86,6 +93,9 @@ class Assistant:
         self.turns = 0
         self._latencies = collections.deque(maxlen=12)
         self._server_ok = False
+        self._barge = None
+        self._warmup = None
+        self._audio_warmup = None
         self._mics = []
         self._mic_devices = []
         self._mic_identity = None
@@ -115,6 +125,27 @@ class Assistant:
             self._spawn(self._asr_worker)
         self._spawn(self._startup)
 
+    def _warm_audio_input(self):
+        """Exercise the audio-input chat path without playing or transcribing it."""
+        samples = int(.6 * 16000)
+        t = np.arange(samples, dtype=np.float32) / 16000
+        voice = (.03 * np.sin(2 * np.pi * 170 * t)
+                 + .012 * np.sin(2 * np.pi * 340 * t))
+        envelope = .65 + .35 * np.sin(2 * np.pi * 3 * t)
+        noise = np.random.default_rng(20261029).normal(0, .002, samples).astype(np.float32)
+        audio = np.clip(voice * envelope + noise, -1, 1).astype(np.float32)
+        turn = Turn()
+        with self._lock:
+            self._audio_warmup = turn
+        try:
+            self.client.chat_turn(wav16k_bytes(audio), turn, True,
+                                  max_tokens=8, require_audio=False)
+        finally:
+            with self._lock:
+                if self._audio_warmup is turn:
+                    self._audio_warmup = None
+        return turn
+
     def _startup(self):
         try:
             self.diagnostics.event('startup', source_files_sha256=source_fingerprint(), residual_floor=getattr(self.front, 'residual_floor', None))
@@ -127,6 +158,24 @@ class Assistant:
                 with self._lock:
                     self._warmup = warm
                 self.client.tts('OK', warm, max_tokens=64)
+                # The first real audio turn pays a cold audio-input path. Warm
+                # that path too, discarding the reply, while no conversation
+                # exists yet. Failure here must never block the microphone.
+                if not self._stop.is_set():
+                    started = time.perf_counter()
+                    try:
+                        audio_warm = self._warm_audio_input()
+                        self.diagnostics.event(
+                            'audio_warmup', ok=not audio_warm.error,
+                            error=audio_warm.error,
+                            first_audio_s=audio_warm.ttft,
+                            first_text_s=audio_warm.first_text,
+                            duration_s=round(time.perf_counter() - started, 3),
+                            max_tokens=8)
+                    except Exception as exc:
+                        self.diagnostics.event('audio_warmup_error', error=str(exc))
+                        if self.warning is None:
+                            self.warning = 'Audio warmup skipped: ' + str(exc)
             while not self._stop.is_set():
                 try:
                     self._apply_device_requests()
@@ -151,8 +200,11 @@ class Assistant:
         self._stop.set()
         with self._lock:
             warm = getattr(self, '_warmup', None)
+            audio_warm = self._audio_warmup
         if warm is not None:
             warm.abort()
+        if audio_warm is not None:
+            audio_warm.abort()
         self.interrupt('shutdown')
         try:
             self.mic.stop()
@@ -160,6 +212,8 @@ class Assistant:
             for thread in list(self._threads):
                 if thread is not threading.current_thread():
                     thread.join(timeout=1)
+            if hasattr(self.client, 'close'):
+                self.client.close()
             self.diagnostics.event('shutdown')
             self.diagnostics.close()
 
@@ -232,6 +286,13 @@ class Assistant:
                     self.front.reset()
                     if self.status == 'recording':
                         self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
+                    candidate = self._drop_barge()
+                    if candidate is not None:
+                        job = candidate.get('job')
+                        self.diagnostics.event(
+                            'barge_restore', turn_id=job.id if job is not None else None,
+                            duck_level=1.0, reason='capture reset',
+                            barge_played_s=round(candidate.get('played_s', 0), 3))
                 if not self.mic_on:
                     continue
             try:
@@ -259,8 +320,28 @@ class Assistant:
                         if not self.mic_on or self._capture_reset.is_set():
                             continue
                         self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(float(np.sqrt(np.mean(clean ** 2))), 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
-                        if self._active is not None:
-                            self.interrupt('barge-in')
+                        job = self._active
+                        if job is not None:
+                            playing = bool(getattr(self.player, 'playing', False))
+                            if playing or job.played_samples > 0:
+                                # Duck and wait for the normal submit gate. A
+                                # cough or an echo false positive must not
+                                # destroy a reply that is already speaking.
+                                self._barge = dict(job=job, at=time.time(),
+                                                   played_s=job.played_samples / 24000)
+                                if hasattr(self.front, 'use_barge_endpoint'):
+                                    # Research capture rigs extend the endpoint
+                                    # for a turn that interrupted playback.
+                                    self.front.use_barge_endpoint()
+                                self.player.set_gain(.2)
+                                self.diagnostics.event(
+                                    'barge_candidate', turn_id=job.id,
+                                    duck_level=.2,
+                                    barge_played_s=round(job.played_samples / 24000, 3))
+                            else:
+                                # No audio has reached the device yet: there is
+                                # nothing to duck, so cancel immediately.
+                                self.interrupt('barge-in')
                         recording = True
                         rec = list(pre)
                         rec_samples = sum(map(len, rec))
@@ -270,7 +351,7 @@ class Assistant:
                 rec_samples += len(clean)
             if recording and (ended or rec_samples >= 20 * 16000):
                 audio = np.concatenate(rec)
-                self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended)
+                self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended, end_silence_ms=getattr(self.front, 'end_chunks', 0) * 32, pre_roll_ms=self.pre_roll_ms)
                 recording = False
                 rec = []
                 rec_samples = 0
@@ -281,9 +362,26 @@ class Assistant:
                     # block. Do not submit a stale automatic turn after mute.
                     with self._lock:
                         if self.mic_on and not self._capture_reset.is_set():
+                            self._confirm_barge()
                             self.submit_audio(audio)
+                        else:
+                            # Mute/reset during endpointing: discard the stale
+                            # turn and make sure playback is not left ducked.
+                            self._drop_barge()
                 else:
-                    self.status = 'listening'
+                    with self._lock:
+                        candidate = self._drop_barge()
+                        if candidate is not None:
+                            job = candidate.get('job')
+                            self.diagnostics.event(
+                                'barge_restore', turn_id=job.id if job is not None else None,
+                                duck_level=1.0, reason='short utterance',
+                                barge_played_s=round(candidate.get('played_s', 0), 3))
+                            self.status = ('speaking' if job is self._active
+                                           and getattr(self.player, 'playing', False)
+                                           else 'listening')
+                        else:
+                            self.status = 'listening'
 
     def submit_audio(self, audio):
         wav = wav16k_bytes(audio)
@@ -293,6 +391,8 @@ class Assistant:
             self.error = None
             self._job_id += 1
             job = Job(epoch=self._epoch, first=self.first, wav=wav, id=self._job_id)
+            if self.agent:
+                self._agent_sources = []
             self._pending_jobs[job.id] = job
             if self.session_archive is not None:
                 self._archive_pending.add(job.id)
@@ -306,6 +406,26 @@ class Assistant:
             self.interrupt_candidate = False
             self._spawn(self._run_job, job)
             return job
+
+    def _drop_barge(self):
+        """Restore full playback gain and forget the candidate. Caller holds lock."""
+        candidate = self._barge
+        self._barge = None
+        if candidate is not None:
+            self.player.set_gain(1.0)
+        return candidate
+
+    def _confirm_barge(self):
+        """Announce a confirmed candidate before submit cancels the old reply."""
+        candidate = self._barge
+        self._barge = None
+        if candidate is None:
+            return
+        job = candidate.get('job')
+        if job is self._active:
+            self.diagnostics.event(
+                'barge_confirm', turn_id=job.id, duck_level=.2,
+                barge_played_s=round(candidate.get('played_s', 0), 3))
 
     def _archive_call(self, job, method, *args, **kwargs):
         if job.archive is None:
@@ -334,7 +454,7 @@ class Assistant:
                 self._archive_faults.add(job.id)
                 self.archive_error = 'Recording could not be started: ' + str(exc)
                 self.diagnostics.event('archive_error', turn_id=job.id, error=str(exc))
-        turn.request_observer = lambda payload: self._archive_call(job, 'record_request', payload)
+        turn.request_observer = None if self.agent and not job.test else lambda payload: self._archive_call(job, 'record_request', payload)
         def produce():
             try:
                 with self._lock:
@@ -353,12 +473,54 @@ class Assistant:
                                 continue
                 if job.test:
                     self.client.tts('Speaker check. One, two, three.', turn, on_audio=receive)
+                elif self.agent:
+                    with self._lock:
+                        if self._active is job:
+                            self._agent_phase = 'transcribing'
+                        history = list(self._agent_history)
+                    # ASR and TTS are serialized on the same local context.
+                    # Both reset it, while cloud history is maintained separately.
+                    try:
+                        text = self.client.asr_text(job.wav, turn=turn)
+                    finally:
+                        # ASR uses the turn for cancellation, but its partial
+                        # text must never appear as an assistant reply.
+                        turn.text_parts.clear()
+                    if turn.cancel.is_set():
+                        return
+                    job.agent_input = text
+                    turn.done.clear()
+                    turn.first_event = turn.first_text = turn.ttft = None
+                    turn.finish_reason = None
+                    with self._lock:
+                        if self._active is job:
+                            self._replace(job.user_id, 'user: ' + text)
+                            self._agent_phase = 'thinking'
+                    def searching(active):
+                        with self._lock:
+                            if self._active is job:
+                                self._agent_phase = 'searching' if active else 'thinking'
+                    result = self.agent.respond(text, history, turn, on_search=searching)
+                    if result is None or turn.cancel.is_set():
+                        return
+                    answer, job.sources = result
+                    with self._lock:
+                        if self._active is job:
+                            self._agent_phase = 'voicing'
+                    turn.text_parts.append(answer)
+                    turn.request_observer = lambda payload: self._archive_call(job, 'record_request', payload)
+                    self.client.tts(answer, turn, max_tokens=512, on_audio=receive)
+                    if not turn.error and not turn.cancel.is_set() and not turn.audio_samples:
+                        turn.error = 'Speech synthesis returned no audio.'
+                    elif not turn.error and not turn.cancel.is_set() and turn.truncated:
+                        turn.error = 'Speech synthesis reached its length limit; the spoken reply may be incomplete.'
                 else:
                     self.client.chat_turn(job.wav, turn, job.first, on_audio=receive)
             except Exception as exc:
-                turn.error = str(exc)
+                if not turn.cancel.is_set():
+                    turn.error = str(exc)
             finally:
-                self.diagnostics.event('generation_end', turn_id=job.id, cancelled=turn.cancel.is_set(), error=turn.error, finish_reason=turn.finish_reason, text_chars=len(turn.text), audio_s=round(turn.audio_samples/24000, 3), first_audio_s=turn.ttft, request_queue_s=turn.queue_s, headers_s=turn.headers_s)
+                self.diagnostics.event('generation_end', turn_id=job.id, cancelled=turn.cancel.is_set(), error=turn.error, finish_reason=turn.finish_reason, text_chars=len(turn.text), audio_s=round(turn.audio_samples/24000, 3), first_audio_s=turn.ttft, first_text_s=turn.first_text, first_event_s=turn.first_event, request_queue_s=turn.queue_s, headers_s=turn.headers_s)
                 self._archive_call(job, 'finish_generation', turn)
                 self._close_job_half(job, generation=True)
                 job.produced.set()
@@ -423,8 +585,14 @@ class Assistant:
                 self._archive_call(job, 'finish_playback', job.played_samples, turn.cancel.is_set(), error=turn.error)
                 self._close_job_half(job)
                 with self._lock:
+                    if (self.agent and not job.test and self._active is job and job.epoch == self._epoch
+                            and not turn.cancel.is_set() and not turn.error and job.played_samples):
+                        self._agent_history.extend([{'role': 'user', 'content': job.agent_input},
+                                                    {'role': 'assistant', 'content': turn.text.strip()}])
+                        self._agent_history = self._agent_history[-20:]
+                        self._agent_sources = job.sources
                     if job.epoch == self._epoch:
-                        text = turn.text.strip()
+                        text = (turn.text.strip() if not self.agent or job.test or job.agent_input else '')
                         # A playback failure also aborts generation. That
                         # transport cancellation is not a user interruption.
                         suffix = ((' [reply incomplete]' if text else '') if turn.error else
@@ -433,6 +601,13 @@ class Assistant:
                                   '')
                         self._replace(job.reply_id, 'assistant: ' + (text or turn.error or ('[speaker check complete]' if job.test and job.played_samples else '[voice reply]' if job.played_samples else '[no reply]')) + suffix)
                     if self._active is job:
+                        self._agent_phase = None
+                        if self._barge is not None and self._barge.get('job') is job:
+                            candidate = self._drop_barge()
+                            self.diagnostics.event(
+                                'barge_restore', turn_id=job.id, duck_level=1.0,
+                                reason='playback ended',
+                                barge_played_s=round(candidate.get('played_s', 0), 3))
                         self._active = None
                         self.first = bool(turn.error or turn.cancel.is_set() or job.test)
                         self.error = turn.error
@@ -445,7 +620,7 @@ class Assistant:
                         if self.status != 'recording':
                             self.status = 'listening'
                         self.front.clear_playback()
-                if self.asr_client is not None and job.wav:
+                if self.asr_client is not None and job.wav and not self.agent:
                     try:
                         self._asr_q.put_nowait((job.user_id, job.wav))
                     except queue.Full:
@@ -460,6 +635,8 @@ class Assistant:
                 self._active = None
                 # Backend cannot truncate its KV to the played prefix.
                 self.first = True
+            self._agent_phase = None
+            self._drop_barge()
             self.player.stop()
             self.front.clear_playback()
             self.interrupt_candidate = False
@@ -476,6 +653,10 @@ class Assistant:
             self._epoch += 1
             self.first = True
             self._messages.clear()
+            self._agent_history.clear()
+            self._agent_sources.clear()
+            if self.agent and hasattr(self.agent, 'reset'):
+                self.agent.reset()
             self.transcript_revision += 1
             self._capture_reset.set()
             self.mic.drain()
@@ -533,8 +714,16 @@ class Assistant:
             self.mic_on = enabled
             self._capture_reset.set()
             self.mic.drain()
-            if not self.mic_on and self.status == 'recording':
-                self.status = 'listening'
+            if not self.mic_on:
+                candidate = self._drop_barge()
+                if candidate is not None:
+                    job = candidate.get('job')
+                    self.diagnostics.event(
+                        'barge_restore', turn_id=job.id if job is not None else None,
+                        duck_level=1.0, reason='microphone disabled',
+                        barge_played_s=round(candidate.get('played_s', 0), 3))
+                if self.status == 'recording':
+                    self.status = 'listening'
 
     @staticmethod
     def _read_mic_catalog():
@@ -673,7 +862,8 @@ class Assistant:
         with self._lock:
             now = time.time()
             budget = float(np.median(self._latencies)) if self._latencies else .8
-            partial = self._active.turn.text[-1500:] if self._active is not None else ''
+            partial = (self._active.turn.text[-1500:] if self._active is not None and
+                       (not self.agent or self._active.test or self._active.agent_input) else '')
             eta = None
             if self._active is not None and self.heard_at:
                 eta = 0 if self.first_audio_at else max(0, round((budget - (now - self.heard_at)) * 1000))
@@ -682,6 +872,10 @@ class Assistant:
             if self.interrupted_at and now - self.interrupted_at < .6:
                 phase = 'interrupted'
             return dict(status=self.status, phase=phase, mic_on=self.mic_on,
+                        agent_mode=bool(self.agent), agent_phase=self._agent_phase,
+                        agent_provider=getattr(self.agent, 'label', None),
+                        search_enabled=bool(self.agent and self.agent.search_enabled),
+                        agent_sources=list(self._agent_sources),
                         active_turn=self._active is not None,
                         pending_turns=len(self._pending_jobs),
                         playback_active=playing,
@@ -702,7 +896,7 @@ class Assistant:
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
-                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error] if w) or None,
+                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, getattr(self.agent, 'configuration_error', None)] if w) or None,
                         audio_diagnostics=dict(residual_rejections=getattr(self.front, 'residual_rejections', 0), input_gain=getattr(self.mic, 'effective_gain', None), echo_score=getattr(self.front, 'echo_score', None), input_latency_s=getattr(self.mic, 'latency_s', None), input_drops=getattr(self.mic, 'dropped_blocks', 0), clipped_fraction=getattr(self.mic, 'clipped_fraction', 0), playback=getattr(self.player, 'stats', {})))
 
 
@@ -824,7 +1018,18 @@ def main():
             json.dump(dict(source_files_sha256=source_fingerprint(),
                            backend=os.getenv('LOCALVOICE_SERVER', 'http://127.0.0.1:8080'),
                            scope='App source and endpoint; native build/model identity must come from the experiment protocol.'), stream, indent=2)
-    assistant = Assistant(asr_client=ServerClient(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive)
+    agent = None
+    agent_mode = os.getenv('LOCALVOICE_AGENT', '').strip().lower()
+    if agent_mode in ('opencode', 'opencode-go', 'opencode-zen'):
+        from agent import AgentClient
+        provider = 'zen' if agent_mode == 'opencode-zen' else 'go'
+        key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
+        agent = AgentClient(os.getenv(key_name), provider=provider,
+                            model=os.getenv('LOCALVOICE_AGENT_MODEL', 'kimi-k3'),
+                            search_key=os.getenv('BRAVE_SEARCH_API_KEY'))
+    elif agent_mode:
+        raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
+    assistant = Assistant(asr_client=ServerClient(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
     assistant.start()
