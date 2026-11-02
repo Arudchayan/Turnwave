@@ -347,6 +347,10 @@ class Player:
     boundaries never introduce padding. on_play supplies the echo reference
     before each write; on_written reports source samples after a successful
     device write. Neither callback proves that buffered samples became audible.
+
+    Gain targets are thread-safe and applied to each 20 ms piece before the
+    echo-reference callback and before device resampling, so the reference
+    always matches what is actually sent to the speaker.
     """
     def __init__(self, rate=PLAY_RATE, device=None):
         self.rate = rate
@@ -364,12 +368,24 @@ class Player:
         self._lock = threading.Lock()
         self._stream = None
         self.playing = False
+        self._target_gain = 1.0
+
+    def set_gain(self, level):
+        """Set the playback gain target (clamped to 0..1), effective next piece."""
+        level = float(level)
+        if not math.isfinite(level):
+            return self._target_gain
+        level = max(0.0, min(1.0, level))
+        with self._lock:
+            self._target_gain = level
+            return self._target_gain
 
     def stop(self):
         with self._lock:
             self._gen += 1
             stream = self._stream
             self.playing = False
+            self._target_gain = 1.0
         if stream is not None:
             try:
                 stream.abort()
@@ -382,8 +398,12 @@ class Player:
         with self._lock:
             self._gen += 1
             generation = self._gen
+            # A new reply always begins at full gain; stale ducking from a
+            # previous candidate must not leak into it.
+            self._target_gain = 1.0
         stream = None
         started = False
+        applied_gain = 1.0
         self.stats = dict(underflows=0, source_samples=0, device_samples=0, max_gap_ms=0.0, latency_s=None)
         previous_write = None
         previous_duration = 0.0
@@ -407,6 +427,17 @@ class Player:
                         stream.start()
                         self.stats['latency_s'] = float(getattr(stream, 'latency', 0))
                     piece = audio[offset:offset + 480]
+                    with self._lock:
+                        target_gain = self._target_gain
+                    if applied_gain != 1.0 or target_gain != 1.0:
+                        if target_gain != applied_gain:
+                            fade = np.linspace(applied_gain, target_gain,
+                                               len(piece), endpoint=False,
+                                               dtype=np.float32)
+                        else:
+                            fade = np.full(len(piece), target_gain, np.float32)
+                        piece = piece * fade
+                    applied_gain = target_gain
                     if not started:
                         started = True
                         if on_start is not None:
