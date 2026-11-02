@@ -183,3 +183,34 @@ The inserted silence is not the entire VAD-measured silence because the clips
 also contain quiet audio. This is one synthetic voice and does not establish
 word retention, false-interruption rates or a generally safe setting. The
 default remains 480 ms and the setting changes only between utterances.
+
+## Synthetic interruption with device playback
+
+A separate LFM3 test played generated speech through the selected Windows
+output device while injecting a 16 kHz SAPI-rendered interruption into the
+application's capture queue. The microphone itself was simulated; the test
+did not measure sound from the room. Two runs used the same interruption,
+“Wait, please explain that differently,” but independently generated replies.
+
+| Silence wait | Duck after first nonquiet input | Cancellation after onset | Captured interruption |
+| --- | --- | --- | --- |
+| 480 ms | 0.162 s | 0.874 s | Split into two submitted turns |
+| 1,120 ms | 0.129 s | 3.588 s | One submitted turn |
+
+The last input sample above the test's 0.02 amplitude threshold occurred at
+2.307 s. A separate ASR request to the same LFM3 backend transcribed the
+480 ms captures as “Wait.” and “Please explain that differently.” For the
+1,120 ms run it transcribed the complete phrase in one capture. Those are
+machine transcripts, not independent human verification. An earlier 480 ms
+trial also split the input; another retained it as one turn. This small,
+variable experiment supports offering the longer pause as a choice, not
+claiming it prevents fragmentation in real conversations. The smoke tool
+checks for extra submitted turns and premature cancellation as well as timing.
+
+An additional app-level agent check used a synthetic “Find an update about the
+moon” WAV, LFM3 for local transcription and synthesis, and a real Windows
+output device. The model and search HTTP responses were simulated: the agent
+issued a mock search request and received a mock source, which appeared in app
+state, and the player accepted 46,080 synthesized samples. This checks the
+local integration path only; it does not establish a live OpenCode or Brave
+request, an accurate current answer, or acoustic audibility.
