@@ -335,3 +335,14 @@ the Q4_K_M llama.cpp CPU server. Heretic's keyword heuristic matched 10/10
 responses from the original and 9/10 from the research candidate. This small
 heuristic check is not a manual assessment and does not measure general model
 quality or speech behavior. The two Q4 files were quantized separately.
+
+### Search-provider check
+
+In a local, text-only check, DuckDuckGo returned an automated-request challenge
+instead of usable web results. The previous Wikipedia fallback returned unrelated
+pages for a site-restricted query. The agent now reports the fallback limitation
+and avoids that substitution when a site restriction is present. A separate
+test of the optional Bing RSS provider returned four `python.org` sources for
+“Python latest version site:python.org”; a differently worded query returned no
+matching sources. These spot checks do not establish search reliability or a
+complete live voice-to-search-to-speech flow.
