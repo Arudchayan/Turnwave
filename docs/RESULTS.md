@@ -312,3 +312,19 @@ was transcribed correctly. This checks basic functionality only: no human
 listening assessment, broad behavior evaluation, or runtime mode switch was tested.
 See [Heretic](https://github.com/p-e-w/heretic) and the
 [original model](https://huggingface.co/LiquidAI/LFM3-Omni-2B) for their terms.
+
+A second exploratory CPU study used 20 training prompts per direction, 10
+evaluation prompts per score, rank 4, five trials, seed 42, and at most 32
+generated tokens. The baseline refusal score was 9/10; the selected candidate
+scored 7/10 with reported KL divergence 0.2227. The other four trials each
+scored 9/10. These are in-sample optimization scores, not an independent test;
+the small sample and short generation limit preclude a broad effectiveness or
+quality claim. The saved model had 44 changed tensors, all in the language
+backbone, and unchanged tensor names and remaining tensor values.
+
+The selected candidate was converted and quantized to Q4_K_M (SHA-256
+`55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`). On a separate
+llama.cpp b12032 CPU server, using the original projector, a synthetic voice
+turn produced the transcription “What is two plus two?” and the spoken reply
+“Two plus two equals four.” This does not replace a human listening assessment,
+an independent behavior evaluation, or tests of the remote agent.
