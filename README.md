@@ -89,8 +89,9 @@ into `models/LFM3-Omni-2B-GGUF/`, and a compatible llama.cpp build (b11960 or
 newer) separately. The default launcher looks for the b12032 CUDA build in
 `models/runner/llama-b12032-cuda/files/llama-b12032/`; set
 `LOCALVOICE_LFM3_RUNNER` inside WSL to choose another build. CUDA builds also
-need compatible runtime libraries; set `LOCALVOICE_CUDA_LIB` to their directory
-if they are not already on the library path. With those assets installed:
+need compatible runtime libraries. The launcher checks the matching b12032
+CUDA 13.4 runtime under `models/runner/llama-b12032-cuda/runtime/`; alternatively
+set `LOCALVOICE_CUDA_LIB` inside WSL to their directory. With those assets installed:
 
 ```powershell
 wsl -d Ubuntu bash src/server_lfm3_wsl.sh
