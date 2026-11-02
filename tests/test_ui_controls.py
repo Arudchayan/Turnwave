@@ -26,7 +26,7 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
  }
  requests.push({path,body:options.body?JSON.parse(options.body):null});
  if(input.scenario==='retry'&&requests.length===1)return {ok:false,status:409,json:async()=>({error:'First attempt failed'})};
- if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause')return {ok:true,status:200,json:async()=>({ok:true})};
+ if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes')return {ok:true,status:200,json:async()=>({ok:true})};
  if(path==='/api/interrupt')return {ok:true,status:200,json:async()=>({ok:true})};
  if(input.scenario==='http_error')return {ok:false,status:409,json:async()=>({error:'Microphone unavailable'})};
  if(input.scenario==='network_error')throw Error('connection lost');
@@ -39,6 +39,30 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
  if(input.scenario==='pause'){
   await nodes.pausesel.onchange({target:{value:'800'}});
   process.stdout.write(JSON.stringify({requests,value:nodes.pausesel.value}));
+ }else if(input.scenario==='prompt'){
+  const inp=context.document.getElementById('promptin');
+  inp.value='   Explain quantum computing   ';
+  await nodes.promptform.onsubmit({preventDefault(){}});
+  process.stdout.write(JSON.stringify({requests,inputAfter:inp.value}));
+ }else if(input.scenario==='agent_persona_notes'){
+  await context.tick();
+  const personaDisabledInitially=nodes.personasel.disabled;
+  await nodes.agentsel.onchange({target:{value:'opencode-go:kimi-k3'}});
+  Object.assign(state,{
+   agent_mode:true,agent_provider:'OpenCode Go',agent_model:'kimi-k3',agent_persona:'jarvis',
+   agent_notes:[{model:'kimi-k3',task:'Architecture',analysis:'FlashAttention-2 SRAM tiling'}]
+  });
+  await context.tick();
+  const personaDisabledAfter=nodes.personasel.disabled;
+  const personaVal=nodes.personasel.value;
+  await nodes.personasel.onchange({target:{value:'concise'}});
+  const notesHdr=nodes.notes.children[0]?.textContent;
+  const cardHdr=nodes.notes.children[1]?.children[0]?.textContent;
+  const cardBody=nodes.notes.children[1]?.children[1]?.textContent;
+  process.stdout.write(JSON.stringify({
+   requests,personaDisabledInitially,personaDisabledAfter,personaVal,
+   finalPersona:nodes.personasel.value,notes:{notesHdr,cardHdr,cardBody}
+  }));
  }else if(input.scenario==='agent_privacy'){
   Object.assign(state,{agent_mode:true,agent_provider:'OpenCode Go',agent_model:'beam-free',search_enabled:true,search_provider:'ddg',agent_phase:'searching',agent_sources:[{title:'Valid Source',url:'https://example.org/item'},{title:'Bad',url:'javascript:alert(1)'}],audio_diagnostics:{input_gain:1,input_drops:0,echo_score:0.12,residual_rejections:2,playback:{underflows:0,max_gap_ms:4.5}}});
   await context.tick();
@@ -81,7 +105,7 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
 
 def run_browser(scenario):
     script=PAGE.split('<script>',1)[1].split('</script>',1)[0]
-    result=subprocess.run(['node','-e',HARNESS],input=json.dumps({'script':script,'scenario':scenario}),text=True,capture_output=True,timeout=10,check=True)
+    result=subprocess.run(['node','-e',HARNESS],input=json.dumps({'script':script,'scenario':scenario}),text=True,encoding='utf-8',capture_output=True,timeout=10,check=True)
     return json.loads(result.stdout)
 
 
@@ -143,3 +167,25 @@ def test_agent_mode_sources_and_diagnostics_render_safely():
     assert 'enabled (ddg)' in result['mode'] and 'searching' in result['mode']
     assert result['links']==[{'href':'https://example.org/item','text':'Valid Source'}]
     assert 'underflows 0' in result['diag'] and 'residual rejections 2' in result['diag']
+
+
+def test_prompt_submission_trims_text_dispatches_api_and_clears_input():
+    result=run_browser('prompt')
+    assert result['requests']==[{'path':'/api/prompt','body':{'text':'Explain quantum computing'}}]
+    assert result['inputAfter']==''
+
+
+def test_agent_mode_controls_persona_dropdown_and_renders_notes():
+    result=run_browser('agent_persona_notes')
+    assert result['personaDisabledInitially'] is True
+    assert result['personaDisabledAfter'] is False
+    assert result['personaVal']=='jarvis'
+    assert result['finalPersona']=='concise'
+    assert result['requests']==[
+        {'path':'/api/agent','body':{'mode':'opencode-go','model':'kimi-k3'}},
+        {'path':'/api/persona','body':{'persona':'concise'}}
+    ]
+    assert result['notes']['notesHdr']=='Expert Deep-Dive Brief'
+    assert result['notes']['cardHdr']=='kimi-k3 · Architecture'
+    assert 'FlashAttention-2 SRAM tiling' in result['notes']['cardBody']
+

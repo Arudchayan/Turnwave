@@ -432,3 +432,112 @@ def test_player_recovers_when_cached_output_device_fails(monkeypatch):
     assert opened_devices == [99, 10]
     assert player.device == 10
 
+
+def test_consult_expert_delegates_to_expert_model_and_saves_notes(monkeypatch):
+    calls = []
+    def open_url(req, timeout):
+        body = json.loads(req.data)
+        calls.append(body)
+        if len(calls) == 1:
+            return response({'choices': [{'message': {'content': '', 'tool_calls': [{
+                'id': 'exp-1',
+                'function': {'name': 'consult_expert', 'arguments': json.dumps({'question': 'Explain FlashAttention-2 memory complexity'})},
+            }]}}]})
+        if len(calls) == 2:
+            assert body['model'] == 'kimi-k3'
+            return response({'choices': [{'message': {'content': 'FlashAttention-2 tiles Q, K, V in SRAM to reduce HBM accesses from O(N^2) to O(N).' * 4}}]})
+        return response({'choices': [{'message': {'content': 'I consulted the reasoning engine: FlashAttention-2 keeps attention tiles in fast on-chip SRAM so memory traffic scales linearly instead of quadratically.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', model='beam-free', expert_model='kimi-k3', local_tools=True)
+    answer, _ = client.respond('How does FlashAttention-2 save memory?', [], Turn())
+    assert 'FlashAttention-2' in answer
+    assert len(client.last_notes) == 1
+    assert client.last_notes[0]['model'] == 'kimi-k3'
+    assert 'SRAM' in client.last_notes[0]['analysis']
+
+
+def test_persistent_memory_and_persona_switching(monkeypatch, tmp_path):
+    mem_file = tmp_path / 'agent_memory.json'
+    client1 = AgentClient('key', local_tools=True, memory_path=mem_file, persona='jarvis')
+    client1.remember('User runs on RTX 3050 4GB Laptop GPU', 'hardware')
+    assert client1.set_persona('concise')['persona'] == 'concise'
+    client2 = AgentClient('key', local_tools=True, memory_path=mem_file)
+    assert client2.recall('RTX')['matches'][0]['fact'] == 'User runs on RTX 3050 4GB Laptop GPU'
+    sent_system = []
+    def open_url(req, timeout):
+        body = json.loads(req.data)
+        sent_system.append(body['messages'][0]['content'])
+        return response({'choices': [{'message': {'content': 'All systems nominal.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client2.respond('Check status', [], Turn())
+    assert 'RTX 3050 4GB' in sent_system[0]
+
+
+def test_submit_text_and_sentence_pipelined_tts():
+    class TrackingVoice(LocalVoice):
+        def __init__(self):
+            self.asr_calls = []
+            self.tts_calls = []
+        def asr_text(self, wav, turn):
+            self.asr_calls.append(wav)
+            return super().asr_text(wav, turn)
+        def tts(self, text, turn, max_tokens=128, on_audio=None):
+            self.tts_calls.append(text)
+            turn.audio_samples += 480
+            turn.ttft = .01
+            on_audio(np.ones(480, np.float32) * .1)
+            turn.done.set()
+
+    class LongReplyAgent(FakeAgent):
+        def respond(self, text, history, turn, on_search):
+            return (
+                'First sentence explains the core architecture clearly and concisely for immediate playback. '
+                'Second sentence adds details about the symmetric eight-bit KV cache quantization on laptop GPUs. '
+                'Third sentence summarizes how the voice intermediary coordinates with deep reasoning models.'
+            ), []
+
+    voice = TrackingVoice()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=voice, agent=LongReplyAgent())
+    try:
+        job = app.submit_text('Explain the architecture in detail.')
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert voice.asr_calls == []
+        assert len(voice.tts_calls) >= 2
+        assert 'user: Explain the architecture in detail.' in app.state()['transcript']
+    finally:
+        app.close()
+
+
+def test_assistant_persona_switching_text_prompt_and_notes_lifecycle():
+    class NotesAgent(FakeAgent):
+        persona = 'jarvis'
+        last_trace = {'expert_notes': [{'model': 'kimi-k3', 'task': 'Deep Analysis', 'analysis': 'Kernel tiling in on-chip SRAM'}]}
+        def set_persona(self, persona):
+            self.persona = persona
+            return persona
+
+    local = LocalVoice()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=local, agent=None)
+    try:
+        with pytest.raises(ValueError, match='requires an active cloud agent'):
+            app.set_persona('concise')
+
+        app.agent = NotesAgent()
+        assert app.set_persona('concise')['persona'] == 'concise'
+        assert app.state()['agent_persona'] == 'concise'
+
+        job = app.submit_text('Analyze attention kernels')
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        state = app.state()
+        assert 'user: Analyze attention kernels' in state['transcript']
+        assert len(state['agent_notes']) == 1
+        assert state['agent_notes'][0]['model'] == 'kimi-k3'
+        assert 'SRAM' in state['agent_notes'][0]['analysis']
+
+        app.reset()
+        assert app.state()['agent_notes'] == []
+    finally:
+        app.close()
+
+
+

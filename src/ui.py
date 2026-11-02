@@ -15,7 +15,7 @@ margin:0;color:var(--txt);background:radial-gradient(1100px 520px at 50% -140px,
 font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif;line-height:1.5;-webkit-font-smoothing:antialiased
 }
 main{max-width:1040px;margin:0 auto;padding:clamp(18px,3.6vw,44px) clamp(16px,4vw,40px) 36px}
-#srvlbl,#lvl,button,select,#stages,#banner,#cards,footer,summary,#mode,#sources,#diag,.chip,.sect-hdr,.ctrl-lbl{
+#srvlbl,#lvl,button,select,input,#stages,#banner,#cards,footer,summary,#mode,#sources,#notes,#diag,.chip,.sect-hdr,.ctrl-lbl{
 font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif
 }
 header{
@@ -156,6 +156,24 @@ display:inline-block;color:var(--green);text-decoration:none;background:var(--bg
 border:1px solid var(--line);border-radius:6px;padding:3px 9px;overflow-wrap:anywhere;transition:border-color .15s,background .15s
 }
 #sources a:hover{border-color:var(--green);background:var(--green-soft)}
+#notes{
+font:.83rem "Segoe UI",sans-serif;line-height:1.5;margin-top:12px;padding:10px 12px;
+background:var(--bg-elev);border:1px solid var(--line);border-radius:10px
+}
+#notes:empty{display:none}
+#notes strong{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);margin-bottom:6px}
+.note-card{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.note-card:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.note-hdr{font-weight:600;color:var(--txt);font-size:.8rem;margin-bottom:4px}
+.note-body{white-space:pre-wrap;font-family:Consolas,"SFMono-Regular",monospace;font-size:.77rem;color:var(--dim);max-height:220px;overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px}
+#promptform{
+display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)
+}
+#promptin{
+flex:1;border-radius:8px;border:1px solid var(--line-strong);background:var(--bg-elev);color:var(--txt);
+padding:.62em .9em;font-size:.86rem
+}
+#promptin:focus-visible{outline:2.5px solid #b47439;outline-offset:2px}
 footer{
 display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
 border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76rem;color:var(--dim)
@@ -202,6 +220,15 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 </select>
 </div>
 <div class=field-row>
+<label class=ctrl-lbl for=personasel>Voice persona &amp; intermediary style</label>
+<select id=personasel aria-label="Voice persona">
+<option value="jarvis">Jarvis · Warm Executive Intermediary</option>
+<option value="natural">Natural · Empathetic Companion</option>
+<option value="concise">Concise · Direct Tactical Briefing</option>
+<option value="storyteller">Storyteller · Expressive Narrative</option>
+</select>
+</div>
+<div class=field-row>
 <label class=ctrl-lbl for=micsel>Input microphone</label>
 <select id=micsel aria-label="Input device"></select>
 </div>
@@ -222,7 +249,12 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <div class=sect-hdr><h2>conversation</h2><span class=chip>live transcript</span></div>
 <div id=log role=log aria-live=polite></div>
 <div id=draft class="msg a draft" style=display:none></div>
+<div id=notes></div>
 <div id=sources></div>
+<form id=promptform autocomplete=off>
+<input id=promptin type=text maxlength=2000 placeholder="Speak into your mic, or type a prompt to Turnwave…" aria-label="Type a prompt">
+<button id=sendbtn type=submit class=big>send</button>
+</form>
 </section>
 </div>
 <footer><span>Voice uses your configured server · headphones improve interruption handling</span><span>Local audio capture &amp; synthesis</span></footer>
@@ -237,6 +269,7 @@ let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
 let lastDeviceIndex=null,deviceVersion=0;
 let lastPause=null,pauseVersion=0;
 let lastAgentVal=null,agentVersion=0;
+let lastPersona=null,personaVersion=0;
 const pendingActions=new Set();
 function renderAlerts(){
 let s=lastState;
@@ -289,6 +322,17 @@ agentVersion++;
 let body=val==='local'?{mode:'local'}:{mode:val.split(':')[0],model:val.split(':').slice(1).join(':')};
 if(await action('agentsel','/api/agent',body))lastAgentVal=val;
 sel.value=lastAgentVal??'local';};
+if($('personasel'))$('personasel').onchange=async e=>{
+let sel=$('personasel'),val=String(e.target.value);
+if(pendingActions.has('personasel')||!val)return;
+personaVersion++;
+if(await action('personasel','/api/persona',{persona:val}))lastPersona=val;
+sel.value=lastPersona??'jarvis';};
+if($('promptform'))$('promptform').onsubmit=async e=>{
+e.preventDefault();
+let inp=$('promptin'),txt=(inp.value||'').trim();
+if(!txt||pendingActions.has('sendbtn'))return;
+if(await action('sendbtn','/api/prompt',{text:txt}))inp.value='';};
 function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
@@ -300,8 +344,14 @@ let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
 let observedPauseVersion=pauseVersion,observedPausePending=pendingActions.has('pausesel');
 let observedAgentVersion=agentVersion,observedAgentPending=pendingActions.has('agentsel');
+let observedPersonaVersion=personaVersion,observedPersonaPending=pendingActions.has('personasel');
 let s=await(await fetch('/api/state')).json();
 lastState=s;
+let psel=$('personasel');
+if(psel){
+if(!observedPersonaPending&&observedPersonaVersion===personaVersion&&!pendingActions.has('personasel')&&s.agent_persona){
+lastPersona=s.agent_persona;psel.value=lastPersona;}
+psel.disabled=!s.agent_mode||pendingActions.has('personasel');}
 let agsel=$('agentsel');
 if(agsel&&!observedAgentPending&&observedAgentVersion===agentVersion&&!pendingActions.has('agentsel')){
 let cur=s.agent_mode?((s.agent_provider==='OpenCode Zen'?'opencode-zen':'opencode-go')+':'+(s.agent_model||'beam-free')):'local';
@@ -316,6 +366,14 @@ let toolsInfo=Array.isArray(s.agent_tools)&&s.agent_tools.length?(' · tools ('+
 let mode=$('mode');mode.textContent=s.agent_mode?
 ('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+(s.agent_model?' ('+s.agent_model+')':'')+' · web search '+(s.search_enabled?('enabled'+(s.search_provider?' ('+s.search_provider+')':'')):'not configured')+toolsInfo+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
+let notes=$('notes');
+if(notes){notes.innerHTML='';
+if(Array.isArray(s.agent_notes)&&s.agent_notes.length){
+let label=document.createElement('strong');label.textContent='Expert Deep-Dive Brief';notes.appendChild(label);
+s.agent_notes.forEach(n=>{if(!n||typeof n!=='object')return;let card=document.createElement('div');card.className='note-card';
+let hdr=document.createElement('div');hdr.className='note-hdr';hdr.textContent=(n.model||'Expert LLM')+' · '+(n.task||'Analysis');
+let body=document.createElement('div');body.className='note-body';body.textContent=n.analysis||'';
+card.appendChild(hdr);card.appendChild(body);notes.appendChild(card);});}}
 let sources=$('sources');sources.innerHTML='';
 if(Array.isArray(s.agent_sources)&&s.agent_sources.length){
 let label=document.createElement('strong');label.textContent='Sources';sources.appendChild(label);

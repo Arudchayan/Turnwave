@@ -31,6 +31,8 @@ flowchart LR
 | Selective opening capture | Six paired cases produced identical captured bytes | Not adopted |
 | Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
 | Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
+| LFM3 inference optimization | `--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 -np 1`: speaker TTFT 0.596 s → 0.102 s at 3,451 MiB VRAM | Configured in `src/server_lfm3_wsl.sh` |
+| Jarvis intermediary & tools | `get_time`, `get_weather`, `system_status`, `remember`/`recall`, `consult_expert`, `/api/prompt`, pipelined TTS | Integrated and tested |
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.
 
@@ -102,6 +104,17 @@ In a second terminal, set `$env:LOCALVOICE_BACKEND = 'lfm3'` before launching
 for speech conversation and transcription, and streaming PCM for synthesis.
 The tested configuration and its limits are recorded in [results](docs/RESULTS.md).
 
+The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference optimizations
+tuned for 4 GiB GPU memory limits:
+- FlashAttention (`--flash-attn on`)
+- Symmetric 8-bit quantized KV caching (`--cache-type-k q8_0 --cache-type-v q8_0`)
+- Single parallel sequence slot (`-np 1`)
+
+On an NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB), this configuration keeps peak VRAM
+at 3,451 MiB and reduces speaker-check time-to-first-audio (`last_ttft`) from 0.596 s
+to 0.102 s compared with unoptimized defaults. Environment overrides are
+`LOCALVOICE_FLASH_ATTN`, `LOCALVOICE_KV_TYPE`, and `LOCALVOICE_PARALLEL`.
+
 From the repository root, start the backend:
 
 ```powershell
@@ -161,6 +174,22 @@ Keep keys in your process environment, never in tracked files. The cloud path
 requires network access and provider accounts; it is not covered by the local
 model's privacy guarantees. The interface reports missing configuration and
 request failures. Agent context is kept in memory and reset with the conversation.
+
+### Jarvis voice intermediary and local capabilities
+
+When an OpenCode agent backend is active (`LOCALVOICE_AGENT=opencode-go` or `opencode-zen`),
+Turnwave operates as a voice intermediary ("Jarvis" persona) bridging the user with
+local tools, expert reasoning delegation, and search:
+
+- **Built-in local tools**:
+  - `get_time`: Queries local clock, date, weekday, and optional IANA timezones.
+  - `get_weather`: Live conditions and forecasts via Open-Meteo.
+  - `system_status`: Queries GPU model, VRAM utilization, temperature, and disk space via `nvidia-smi` and system utilities.
+  - `remember` / `recall`: Retains session and persistent user preferences or facts across turns.
+- **Expert delegation (`consult_expert`)**: For complex programming, mathematical, or architectural questions, the intermediary delegates to a deep reasoning model (e.g. `kimi-k3`). The full structured technical brief is rendered in the web studio's Expert Notes cards, while the assistant speaks a concise 2–3 sentence takeaway.
+- **Persona switching (`set_persona`)**: Dynamically switches voice style between `jarvis` (composed intermediary), `natural`, `concise`, and `storyteller`.
+- **Hybrid text prompt (`/api/prompt`)**: Endpoint (`POST /api/prompt`) allowing users to type prompts directly from the studio interface while receiving spoken voice output and preserving conversation history.
+- **Sentence-pipelined TTS**: Multi-sentence replies (>240 characters) are chunked into sentence segments (~220 characters) and pipelined sequentially to the TTS runner, delivering initial spoken audio without waiting for the complete multi-sentence paragraph to synthesize.
 
 ## Tests
 

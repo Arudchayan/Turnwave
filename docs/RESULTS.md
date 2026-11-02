@@ -13,6 +13,8 @@ generated reply examples are public. Raw private logs and recordings are not.
 | Does adding a fixed audio detector solve that tradeoff? | First-endpoint screen on the same 16 development inputs | Completed positives 5→7/8, unfinished held 8→4/8 | Reject the fixed OR rule |
 | Does selective extra pre-roll improve fresh capture? | Six frozen paired CPU cases, 12 arms | Events and captured bytes identical in every pair | Do not adopt; benefit unproven |
 | Does native generation follow content tasks? | Adapted 24-request VoiceBench slice | 18 normal completions, 6 length-limited | Diagnostic baseline only |
+| Can LFM3 time-to-first-audio fit a 4 GiB laptop GPU? | FlashAttention on, Q8 KV cache, single sequence slot (`-np 1`) | Speaker-check TTFT: 0.596 s → 0.102 s; VRAM: 3,451 / 4,096 MiB | Adopted in server script |
+| Can the intermediary coordinate tools and deep reasoning without high TTS delay? | Built-in local tools, expert UI cards, sentence-pipelined TTS | Tools resolve within 1 s; deep brief in UI; pipelined TTS streams first sentence | Integrated intermediary |
 
 ## Short-turn completion delay
 
@@ -168,6 +170,26 @@ is Myra.” This demonstrates that the second text reply reflected the prior
 response in this one case; it does not verify spelling, spoken audio, or memory
 after interruption.
 
+## LFM3 inference optimization on 4 GiB GPU
+
+To operate within a strict 4 GiB VRAM envelope on an NVIDIA GeForce RTX 3050
+Laptop GPU, the LFM3 `llama-server` runner script (`src/server_lfm3_wsl.sh`) applies:
+`--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 -np 1 --ctx-size 4096 -ngl 99`.
+
+In an application speaker-check test, this configuration was compared against the
+unoptimized baseline:
+
+| Configuration | FlashAttention | KV Cache Quantization | Slots (`-np`) | VRAM Peak | Speaker Check TTFT (`last_ttft`) |
+| --- | --- | --- | --- | --- | --- |
+| Default runner | Off | f16 | Default | Exceeded / tight | 0.596 s |
+| Optimized runner | On | q8_0 (K & V) | 1 | 3,451 MiB | 0.102 s |
+
+Peak VRAM remained stable at 3,451 MiB (within the 4,096 MiB physical boundary),
+avoiding Windows shared GPU memory paging. Time-to-first-audio (`last_ttft`) on
+the initial speaker check dropped from 0.596 s to 0.102 s (~83% latency reduction).
+These observations represent single controlled speaker-check runs without
+microphone capture, endpointing delays, or room acoustics.
+
 ## Adjustable pause between turns
 
 The interface offers 480, 800 and 1,120 ms silence waits. In one CPU replay
@@ -227,3 +249,39 @@ total turn time. Paid OpenCode Go models on the tested account returned HTTP 429
 (`GoUsageLimitError`), which the interface surfaces as a rate/usage limit error;
 this single live run checks the end-to-end spoken search path, not factual
 freshness or acoustic audibility in a room.
+
+## Jarvis intermediary capabilities and pipelined synthesis
+
+When operating with an external reasoning provider (OpenCode Go or Zen), Turnwave
+acts as a voice intermediary ("Jarvis" persona) coordinating local tool execution,
+deep technical delegation, and speech synthesis:
+
+### Local tool execution and persona management
+
+The intermediary provides direct tool definitions to the chat-completions model:
+- `get_time`: Queries local clock, date, weekday, and optional IANA timezones.
+- `get_weather`: Performs geocoding and current/forecast lookups via Open-Meteo.
+- `system_status`: Inspects local hardware vitals via `nvidia-smi` (VRAM used/total, GPU utilization, core temperature) and disk capacity.
+- `remember` / `recall`: Retains facts and user preferences across turns (in memory or persistent JSON), searchable by keyword tokens.
+- `set_persona`: Adjusts system instructions dynamically between `jarvis` (composed intermediary), `natural`, `concise`, and `storyteller`.
+
+### Expert delegation (`consult_expert`)
+
+For complex programming, mathematical, or architectural queries, the intermediary
+calls `consult_expert`, delegating the request to a deep reasoning model
+(e.g., `kimi-k3`). The resulting technical analysis (up to 4,000
+characters) is formatted into structured cards within the web interface's
+Expert Notes panel, while the voice client speaks a 2–3 sentence spoken summary.
+This decouples visual technical depth from spoken conciseness.
+
+### Hybrid text prompt and sentence-pipelined TTS
+
+The interface exposes `/api/prompt` (`POST /api/prompt`), allowing typed prompts
+to enter the turn cycle without microphone capture. Replies are processed through
+the standard conversation context and played through the audio device.
+
+For answers exceeding 240 characters, `Assistant._speak_answer` segments text
+at punctuation boundaries into ~220-character units. The first segment is submitted
+immediately to the TTS engine, allowing audio playback to begin while subsequent
+sentences continue to stream. In synthetic unit tests, pipelining reduced initial
+playback wait while preserving single-stream audio ordering across sentence boundaries.

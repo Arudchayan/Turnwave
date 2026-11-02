@@ -12,5 +12,7 @@ for file in "$MODEL" "$PROJECTOR" "$RUNNER_DIR/llama-server"; do
 done
 export LD_LIBRARY_PATH="$RUNNER_DIR:$RUNTIME_DIR:/usr/lib/wsl/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$RUNNER_DIR/llama-server" -m "$MODEL" -mm "$PROJECTOR" \
-  --reasoning off --temp 0 -ngl "${NGL:-99}" --ctx-size "${LOCALVOICE_CONTEXT_SIZE:-4096}" \
+  --reasoning off --temp 0 -ngl "${NGL:-99}" -np "${LOCALVOICE_PARALLEL:-1}" \
+  --flash-attn "${LOCALVOICE_FLASH_ATTN:-on}" --cache-type-k "${LOCALVOICE_KV_TYPE:-q8_0}" --cache-type-v "${LOCALVOICE_KV_TYPE:-q8_0}" \
+  --ctx-size "${LOCALVOICE_CONTEXT_SIZE:-4096}" \
   --host 127.0.0.1 --port "${LOCALVOICE_LFM3_PORT:-8080}" "$@"
