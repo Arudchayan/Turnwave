@@ -114,6 +114,21 @@ LOCALVOICE_LFM3_RESEARCH_PROJECTOR=/path/to/matching-projector.gguf \
 bash src/server_lfm3_wsl.sh
 ```
 
+On Windows, the optional CPU build of llama.cpp b12032 can be placed in
+`models/runner/llama-b12032-win-cpu/`. The local research study stores its
+candidate under `models/LFM3-Omni-2B-research-study/research-q4.gguf`. With
+those files installed, select either variant when starting the backend:
+
+```powershell
+./src/server_lfm3_windows.ps1 -Variant standard
+# Or, after stopping the standard backend:
+./src/server_lfm3_windows.ps1 -Variant research
+```
+
+The CPU build does not use GPU acceleration. A separately installed compatible
+runner can be selected with `-Runner`; custom research weights require both
+`-Model` and `-Projector` so their compatibility is explicit.
+
 Use a projector validated against that specific model. Restart the backend without
 these variables to return to the standard model. This selects weights at server
 startup; it is not a live toggle. The research files must be prepared separately:
