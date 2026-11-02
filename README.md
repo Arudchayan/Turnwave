@@ -132,10 +132,12 @@ starting `src/app.py`:
 
 ```powershell
 $env:LOCALVOICE_AGENT = 'opencode-zen'
-$env:OPENCODE_ZEN_API_KEY = '<your OpenCode Console API key>'
 $env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-completions model
-$env:BRAVE_SEARCH_API_KEY = '<your Brave Search API key>' # optional
 ```
+
+Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
+preferred secret manager. Set `BRAVE_SEARCH_API_KEY` there as well to enable
+search. Avoid saving either key in a script or committing it to the repository.
 
 The local voice server still performs transcription and speech synthesis. The
 recognized text and recent conversation are sent to OpenCode Zen; if configured,
