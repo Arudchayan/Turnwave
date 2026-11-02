@@ -487,6 +487,12 @@ class Assistant:
         with self._lock:
             self.set_mic_enabled(not self.mic_on)
 
+    def set_end_silence(self, milliseconds):
+        with self._lock:
+            if self.status == 'recording':
+                raise RuntimeError('Finish speaking before changing the pause')
+            return self.front.set_end_silence(milliseconds)
+
     def _archive_sealed(self):
         return self._recording_sealed or bool(getattr(self.session_archive, 'sealed', False))
 
@@ -682,6 +688,7 @@ class Assistant:
             if self.interrupted_at and now - self.interrupted_at < .6:
                 phase = 'interrupted'
             return dict(status=self.status, phase=phase, mic_on=self.mic_on,
+                        end_silence_ms=getattr(self.front, 'end_chunks', 0) * 32 or None,
                         active_turn=self._active is not None,
                         pending_turns=len(self._pending_jobs),
                         playback_active=playing,
@@ -787,6 +794,17 @@ class Handler(BaseHTTPRequestHandler):
                     assistant.toggle_mic()
             elif self.path == '/api/interrupt':
                 assistant.interrupt()
+            elif self.path == '/api/pause':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'milliseconds'}:
+                    raise ValueError('Expected pause setting')
+                try:
+                    actual = assistant.set_end_silence(desired['milliseconds'])
+                except RuntimeError as exc:
+                    self._send(json.dumps({'error': str(exc)}), 409)
+                    return
+                self._send(json.dumps({'ok': True, 'milliseconds': actual}))
+                return
             elif self.path == '/api/reset':
                 assistant.reset()
             elif self.path == '/api/micdev':
