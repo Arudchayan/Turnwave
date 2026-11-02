@@ -409,6 +409,37 @@ def test_bing_malformed_feed_reports_a_search_error(monkeypatch):
         AgentClient('key', search_provider='bing').search('python', Turn())
 
 
+@pytest.mark.parametrize('claimed,expected_blocked', [('3.13.7', True), ('3.15.2', False)])
+def test_version_claim_requires_support_from_search_snippets(monkeypatch, claimed, expected_blocked):
+    def open_url(req, timeout):
+        if 'api.search.brave.com' in req.full_url:
+            return response({'web': {'results': [
+                {'url': 'https://www.python.org/', 'title': 'Python 3.15.2', 'description': 'Official docs'}]}})
+        body = json.loads(req.data)
+        if len(body['messages']) == 2:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None,
+                'tool_calls': [{'id': 's1', 'type': 'function', 'function': {
+                    'name': 'web_search', 'arguments': '{"query":"latest Python"}'}}]}}]})
+        return response({'choices': [{'message': {'content': f'The latest version is {claimed}.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_key='search-key')
+    answer, sources = client.respond('Latest Python?', [], Turn())
+    assert client.last_trace['checks']['unsupported_version_blocked'] is expected_blocked
+    assert len(sources) == 1
+    if expected_blocked:
+        assert claimed not in answer and 'could not verify' in answer
+        assert 'not supported' in client.last_trace['search_warning']
+    else:
+        assert claimed in answer
+
+
+def test_version_claim_without_web_search_is_not_rewritten(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
+        'choices': [{'message': {'content': 'The configured version is 3.13.7.'}}]}))
+    answer, _ = AgentClient('key').respond('Which version is configured?', [], Turn())
+    assert answer == 'The configured version is 3.13.7.'
+
+
 def test_search_warning_is_visible_and_cleared_on_reset():
     class WarningAgent(FakeAgent):
         def respond(self, text, history, turn, on_search):

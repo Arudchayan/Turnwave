@@ -140,6 +140,7 @@ _BRACKET_META = re.compile(r'\[(?:Interrupted|interrupted|reply incomplete|reply
 _MD_CODE = re.compile(r'```[\s\S]*?```|`([^`\n]+)`')
 _MD_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
 _MD_BOLD = re.compile(r'(\*\*|__)(.*?)\1')
+_VERSION = re.compile(r'(?<![\w.])\d+\.\d+(?:\.\d+){0,2}(?!\w|\.\d)')
 
 
 def _clean_html(text):
@@ -790,6 +791,7 @@ class AgentClient:
                       ' Web search is unavailable in this session; do not claim to have searched.')
         messages, history_stats = self._build_messages(system, history, user_text)
         sources = []
+        web_evidence = []
         session = self._session
         effort = self.reasoning_effort
         trace = {
@@ -866,6 +868,16 @@ class AgentClient:
                     }
                     raise AgentError('OpenCode Go returned an empty reply')
                 answer = _clean_spoken_text(raw_answer) or raw_answer.strip()
+                searched_web = any(tc.get('tool') == 'web_search' for tc in trace['tool_calls'])
+                claims = set(_VERSION.findall(answer)) if searched_web else set()
+                evidence = ' '.join(str(source.get(field) or '') for source in web_evidence
+                                    for field in ('title', 'description'))
+                unsupported = claims - set(_VERSION.findall(evidence))
+                if unsupported:
+                    answer = ('I found some sources, but I could not verify the version from '
+                              'their search snippets. Please check the sources shown.') if web_evidence else (
+                              'I could not verify that version because the web search returned no usable sources.')
+                    trace['search_warning'] = 'A version in the reply was not supported by the search snippets.'
                 trace['raw_answer_chars'] = len(raw_answer.strip())
                 trace['spoken_answer_chars'] = len(answer)
                 trace['sources_count'] = len(sources)
@@ -875,6 +887,7 @@ class AgentClient:
                     'history_clean': True,
                     'tool_calls_succeeded': all(tc.get('ok', False) for tc in trace['tool_calls']),
                     'reply_non_empty': bool(answer),
+                    'unsupported_version_blocked': bool(unsupported),
                 }
                 return answer, sources
             if iteration >= 3 or not tools or len(calls) > 3:
@@ -897,6 +910,8 @@ class AgentClient:
                         'Web search was unavailable; results are limited to Wikipedia.'
                         if new_sources else 'Web search returned no verified results.'
                     )
+                if name == 'web_search':
+                    web_evidence.extend(new_sources)
                 trace['tool_calls'].append({
                     'tool': name,
                     'duration_s': tool_s,

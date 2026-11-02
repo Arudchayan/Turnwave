@@ -346,3 +346,16 @@ test of the optional Bing RSS provider returned four `python.org` sources for
 “Python latest version site:python.org”; a differently worded query returned no
 matching sources. These spot checks do not establish search reliability or a
 complete live voice-to-search-to-speech flow.
+
+A later isolated synthetic-speech probe used local LFM3 speech, OpenCode Go's
+`iceman-contributor-free` model and Bing RSS. It completed transcription, live
+tool calls, source collection and speech synthesis, but initially gave an
+outdated Python version while citing the [official downloads page](https://www.python.org/downloads/),
+which listed 3.15.2 at the time of the check. The agent now
+blocks a dotted version number in a searched answer when that number does not
+appear in the returned search titles or snippets. In a repeat of the probe it
+spoke an uncertainty message instead. This limited string check can reject
+valid claims and does not establish factual correctness or relevance of other
+claims. The `beam-free` model produced empty final replies during two probes,
+and `kimi-k3` returned a usage-limit error. No human microphone or speaker
+assessment was performed in these checks.
