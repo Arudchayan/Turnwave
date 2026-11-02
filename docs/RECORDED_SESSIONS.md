@@ -15,7 +15,7 @@ experiment's `audio` directory. Per-turn archives contain:
 | File | Meaning |
 | --- | --- |
 | input.wav | Exact 16 kHz request WAV submitted by the app, including its capture processing |
-| request.json | Exact request field values, including reset flag and modalities; JSON serialization is not the original HTTP byte stream |
+| request.json | Backend request information. LFM2.5 chat records request fields; LFM3 realtime records a summary with the input WAV and reset flag, not the exact WebSocket frames. Agent turns record the local synthesis request, not cloud or transcription requests. |
 | generated.f32 | Authoritative decoded mono float32 samples, little endian, 24 kHz |
 | generated.wav | PCM16 preview; native PCM16 samples round-trip correctly |
 | generation.json | Reported text, error/cancellation, finish reason and timings |
