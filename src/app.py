@@ -70,6 +70,14 @@ class Assistant:
         self._agent_sources = []
         self._agent_notes = []
         self._agent_phase = None
+        self._voice_params = {
+            'temperature': 0.7,
+            'top_k': 40,
+            'top_p': 0.9,
+            'min_p': 0.05,
+            'repeat_penalty': 1.05,
+            'voice': os.getenv('LOCALVOICE_VOICE', '').strip(),
+        }
         if asr_client is not None and asr_client.base.rstrip('/') == self.client.base.rstrip('/'):
             raise ValueError('Transcription needs a separate server context')
         self.diagnostics = diagnostics if diagnostics is not None else Diagnostics()
@@ -544,6 +552,7 @@ class Assistant:
             if idx > 0:
                 turn.done.clear()
                 turn.finish_reason = None
+                turn.request_observer = None
             self.client.tts(segment, turn, max_tokens=512, on_audio=receive)
             if first_ttft is None and turn.ttft is not None:
                 first_ttft = turn.ttft
@@ -910,6 +919,50 @@ class Assistant:
             self.diagnostics.event('persona_changed', persona=selected)
             return {'ok': True, 'persona': selected}
 
+    def set_voice_params(self, params):
+        if not isinstance(params, dict) or not params:
+            raise ValueError('Expected voice parameters')
+        allowed = {'temperature', 'top_k', 'top_p', 'min_p', 'repeat_penalty', 'voice'}
+        if not set(params) <= allowed:
+            raise ValueError('Unsupported voice parameter')
+        updated = dict(self._voice_params)
+        if 'temperature' in params:
+            val = float(params['temperature'])
+            if isinstance(params['temperature'], bool) or not math.isfinite(val) or not 0.0 <= val <= 2.0:
+                raise ValueError('Temperature must be between 0.0 and 2.0')
+            updated['temperature'] = round(val, 3)
+        if 'top_k' in params:
+            val = params['top_k']
+            if isinstance(val, bool) or not isinstance(val, int) or not 1 <= val <= 200:
+                raise ValueError('top_k must be an integer between 1 and 200')
+            updated['top_k'] = val
+        if 'top_p' in params:
+            val = float(params['top_p'])
+            if isinstance(params['top_p'], bool) or not math.isfinite(val) or not 0.05 <= val <= 1.0:
+                raise ValueError('top_p must be between 0.05 and 1.0')
+            updated['top_p'] = round(val, 3)
+        if 'min_p' in params:
+            val = float(params['min_p'])
+            if isinstance(params['min_p'], bool) or not math.isfinite(val) or not 0.0 <= val <= 1.0:
+                raise ValueError('min_p must be between 0.0 and 1.0')
+            updated['min_p'] = round(val, 3)
+        if 'repeat_penalty' in params:
+            val = float(params['repeat_penalty'])
+            if isinstance(params['repeat_penalty'], bool) or not math.isfinite(val) or not 0.8 <= val <= 2.0:
+                raise ValueError('repeat_penalty must be between 0.8 and 2.0')
+            updated['repeat_penalty'] = round(val, 3)
+        if 'voice' in params:
+            val = params['voice']
+            if not isinstance(val, str) or len(val.strip()) > 64 or any(ord(c) < 32 for c in val):
+                raise ValueError('Invalid voice identifier')
+            updated['voice'] = val.strip()
+        with self._lock:
+            self._voice_params = updated
+            if hasattr(self.client, 'set_voice_params'):
+                self.client.set_voice_params(**updated)
+            self.diagnostics.event('voice_params_changed', **updated)
+            return {'ok': True, 'voice_params': dict(self._voice_params)}
+
     def _archive_sealed(self):
         return self._recording_sealed or bool(getattr(self.session_archive, 'sealed', False))
 
@@ -1138,6 +1191,7 @@ class Assistant:
                         agent_model=getattr(self.agent, 'model', None),
                         agent_persona=getattr(self.agent, 'persona', None),
                         agent_tools=tools,
+                        voice_params=dict(self._voice_params),
                         search_enabled=bool(self.agent and self.agent.search_enabled),
                         search_provider=getattr(self.agent, 'search_provider', None),
                         agent_sources=list(self._agent_sources),
@@ -1275,6 +1329,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(desired, dict) or set(desired) != {'persona'}:
                     raise ValueError('Expected persona setting')
                 result = assistant.set_persona(desired['persona'])
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/voice':
+                desired = json.loads(raw or b'{}')
+                result = assistant.set_voice_params(desired)
                 self._send(json.dumps(result))
                 return
             elif self.path == '/api/prompt':

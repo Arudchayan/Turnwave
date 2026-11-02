@@ -106,3 +106,28 @@ def test_tts_close_failure_does_not_mask_result_or_leak_lock(monkeypatch):
     assert turn.done.is_set() and turn.error is None and turn.audio_samples == 1
     assert client.request_lock.acquire(blocking=False)
     client.request_lock.release()
+
+
+def test_set_voice_params_passes_sampling_and_voice_to_tts(monkeypatch):
+    captured = {}
+    class Response:
+        headers = {'Content-Type': 'audio/pcm;rate=24000;encoding=float;bits=32'}
+        def __init__(self): self.data = iter([np.array([.1], '<f4').tobytes(), b''])
+        def read1(self, n): return next(self.data)
+        def close(self): pass
+    def fake_urlopen(req, timeout=None):
+        captured['payload'] = json.loads(req.data.decode('utf-8'))
+        return Response()
+    monkeypatch.setattr('lfm3_client.urllib.request.urlopen', fake_urlopen)
+    client = LFM3Client()
+    client.set_voice_params(temperature=0.55, top_k=30, top_p=0.88, min_p=0.06, repeat_penalty=1.08, voice='jarvis')
+    turn = Turn()
+    client.tts('Hello', turn)
+    assert turn.error is None
+    assert captured['payload']['temperature'] == 0.55
+    assert captured['payload']['top_k'] == 30
+    assert captured['payload']['top_p'] == 0.88
+    assert captured['payload']['min_p'] == 0.06
+    assert captured['payload']['repeat_penalty'] == 1.08
+    assert captured['payload']['voice'] == 'jarvis'
+

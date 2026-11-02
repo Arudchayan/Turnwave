@@ -99,11 +99,18 @@ font-size:.78rem;color:var(--dim)
 }
 #controls select{width:100%;max-width:100%;background:var(--card)}
 #pause-control select{width:auto;min-width:165px}
-details#metrics{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
-details#metrics summary{
+details#metrics,details#voicetune{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+details#metrics summary,details#voicetune summary{
 cursor:pointer;color:var(--dim);font-size:.78rem;font-weight:600;text-transform:uppercase;
 letter-spacing:.06em;user-select:none
 }
+.vgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
+.vfield{display:flex;flex-direction:column;gap:3px;font-size:.73rem;color:var(--dim)}
+.vfield input{
+font:inherit;font-size:.82rem;border-radius:7px;border:1px solid var(--line-strong);
+background:var(--bg-elev);color:var(--txt);padding:.42em .65em;font-variant-numeric:tabular-nums
+}
+#vstatus{font-size:.72rem;color:var(--green);margin-top:6px;font-variant-numeric:tabular-nums}
 #cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
 .card{
 background:var(--bg-elev);border:1px solid var(--line);border-radius:8px;text-align:left;padding:9px 11px
@@ -239,6 +246,30 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <select id=pausesel><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
 </div>
 </div>
+<details id=voicetune open><summary>voice &amp; sampling tuning</summary>
+<div class=field-row style="border-top:0;margin-top:8px">
+<label class=ctrl-lbl for=vpreset>Acoustic preset</label>
+<select id=vpreset aria-label="Acoustic preset">
+<option value="natural">Natural RVQ · temp 0.70 / k=40 / p=0.90</option>
+<option value="crisp">Crisp Studio · temp 0.45 / k=25 / p=0.85</option>
+<option value="expressive">Warm Expressive · temp 0.85 / k=60 / p=0.94</option>
+<option value="deterministic">Deterministic · temp 0.00 / k=1 / p=1.00</option>
+<option value="custom">Custom Values</option>
+</select>
+</div>
+<div class=vgrid>
+<label class=vfield for=v_temp>Temperature (0–2)<input id=v_temp type=number step=0.05 min=0 max=2 value=0.7></label>
+<label class=vfield for=v_topk>Top-K (1–200)<input id=v_topk type=number step=1 min=1 max=200 value=40></label>
+<label class=vfield for=v_topp>Top-P (0.05–1)<input id=v_topp type=number step=0.01 min=0.05 max=1 value=0.9></label>
+<label class=vfield for=v_minp>Min-P (0–1)<input id=v_minp type=number step=0.01 min=0 max=1 value=0.05></label>
+<label class=vfield for=v_rep>Repeat penalty<input id=v_rep type=number step=0.01 min=0.8 max=2 value=1.05></label>
+<label class=vfield for=v_voice>Voice ID (optional)<input id=v_voice type=text maxlength=64 placeholder="default"></label>
+</div>
+<div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+<button id=vapplybtn type=button>apply tuning</button>
+<span id=vstatus>temp 0.7 · k=40 · p=0.9 · min_p=0.05 · rep=1.05</span>
+</div>
+</details>
 <details id=metrics><summary>diagnostics &amp; metrics</summary>
 <div id=cards>
 <div class=card><b id=m_ttft>—</b><span>time to first audio</span></div>
@@ -272,6 +303,13 @@ let lastDeviceIndex=null,deviceVersion=0;
 let lastPause=null,pauseVersion=0;
 let lastAgentVal=null,agentVersion=0;
 let lastPersona=null,personaVersion=0;
+let voiceVersion=0,voiceDirty=false;
+const VPRESETS={
+natural:{temperature:0.7,top_k:40,top_p:0.9,min_p:0.05,repeat_penalty:1.05},
+crisp:{temperature:0.45,top_k:25,top_p:0.85,min_p:0.08,repeat_penalty:1.08},
+expressive:{temperature:0.85,top_k:60,top_p:0.94,min_p:0.03,repeat_penalty:1.05},
+deterministic:{temperature:0.0,top_k:1,top_p:1.0,min_p:0.0,repeat_penalty:1.0}
+};
 const pendingActions=new Set();
 function renderAlerts(){
 let s=lastState;
@@ -330,6 +368,37 @@ if(pendingActions.has('personasel')||!val)return;
 personaVersion++;
 if(await action('personasel','/api/persona',{persona:val}))lastPersona=val;
 sel.value=lastPersona??'jarvis';};
+function readVoiceInputs(){
+return {
+temperature:Number($('v_temp')?.value??0.7),
+top_k:Math.round(Number($('v_topk')?.value??40)),
+top_p:Number($('v_topp')?.value??0.9),
+min_p:Number($('v_minp')?.value??0.05),
+repeat_penalty:Number($('v_rep')?.value??1.05),
+voice:String($('v_voice')?.value??'').trim()
+};}
+function writeVoiceInputs(vp){
+if(!vp)return;
+if($('v_temp'))$('v_temp').value=vp.temperature??0.7;
+if($('v_topk'))$('v_topk').value=vp.top_k??40;
+if($('v_topp'))$('v_topp').value=vp.top_p??0.9;
+if($('v_minp'))$('v_minp').value=vp.min_p??0.05;
+if($('v_rep'))$('v_rep').value=vp.repeat_penalty??1.05;
+if($('v_voice'))$('v_voice').value=vp.voice??'';
+if($('vstatus'))$('vstatus').textContent='temp '+(vp.temperature??0.7)+' · k='+(vp.top_k??40)+' · p='+(vp.top_p??0.9)+' · min_p='+(vp.min_p??0.05)+' · rep='+(vp.repeat_penalty??1.05)+(vp.voice?(' · voice='+vp.voice):'');}
+['v_temp','v_topk','v_topp','v_minp','v_rep','v_voice'].forEach(id=>{
+if($(id))$(id).oninput=()=>{voiceDirty=true;if($('vpreset'))$('vpreset').value='custom';};});
+if($('vpreset'))$('vpreset').onchange=async e=>{
+let p=VPRESETS[e.target.value];
+if(!p||pendingActions.has('vapplybtn'))return;
+writeVoiceInputs({...p,voice:$('v_voice')?.value||''});
+voiceVersion++;voiceDirty=false;
+await action('vapplybtn','/api/voice',readVoiceInputs());};
+if($('vapplybtn'))$('vapplybtn').onclick=async()=>{
+if(pendingActions.has('vapplybtn'))return;
+let body=readVoiceInputs();
+voiceVersion++;
+if(await action('vapplybtn','/api/voice',body)){voiceDirty=false;writeVoiceInputs(body);}};
 if($('promptform'))$('promptform').onsubmit=async e=>{
 e.preventDefault();
 let inp=$('promptin'),txt=(inp.value||'').trim();
@@ -347,8 +416,11 @@ let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has
 let observedPauseVersion=pauseVersion,observedPausePending=pendingActions.has('pausesel');
 let observedAgentVersion=agentVersion,observedAgentPending=pendingActions.has('agentsel');
 let observedPersonaVersion=personaVersion,observedPersonaPending=pendingActions.has('personasel');
+let observedVoiceVersion=voiceVersion,observedVoicePending=pendingActions.has('vapplybtn');
 let s=await(await fetch('/api/state')).json();
 lastState=s;
+if(s.voice_params&&!voiceDirty&&!observedVoicePending&&observedVoiceVersion===voiceVersion&&!pendingActions.has('vapplybtn')){
+writeVoiceInputs(s.voice_params);}
 let psel=$('personasel');
 if(psel){
 if(!observedPersonaPending&&observedPersonaVersion===personaVersion&&!pendingActions.has('personasel')&&s.agent_persona){

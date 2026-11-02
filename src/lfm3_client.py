@@ -23,6 +23,27 @@ class LFM3Client:
         self.request_lock = threading.Lock()
         self._chat = None
         self._out_rate = 24000
+        self.voice_params = {
+            'temperature': 0.7,
+            'top_k': 40,
+            'top_p': 0.9,
+            'min_p': 0.05,
+            'repeat_penalty': 1.05,
+            'voice': os.getenv('LOCALVOICE_VOICE', '').strip(),
+        }
+        self._custom_voice_params = False
+
+    def set_voice_params(self, **params):
+        for key in ('temperature', 'top_k', 'top_p', 'min_p', 'repeat_penalty', 'voice'):
+            if key in params and params[key] is not None:
+                self.voice_params[key] = params[key]
+        self._custom_voice_params = True
+        if self.request_lock.acquire(timeout=.1):
+            try:
+                self._close_chat()
+            finally:
+                self.request_lock.release()
+        return dict(self.voice_params)
 
     def health(self):
         try:
@@ -80,6 +101,8 @@ class LFM3Client:
             settings = {'type': 'transcription'} if transcription else {
                 'type': 'realtime', 'instructions': 'Respond in interleaved text and audio. Answer briefly and directly.',
                 'output_modalities': ['text', 'audio']}
+            if not transcription and self._custom_voice_params:
+                settings['temperature'] = self.voice_params['temperature']
             sock.send(json.dumps({'type': 'session.update', 'session': settings}))
             event = self._receive(sock, turn)
             if event is None:
@@ -236,12 +259,18 @@ class LFM3Client:
                 return
             self._close_chat()
             payload = {'input': text, 'response_format': 'pcm', 'stream': True, 'n_predict': max_tokens}
-            voice = os.getenv('LOCALVOICE_VOICE', '').strip()
+            voice = (self.voice_params.get('voice') or os.getenv('LOCALVOICE_VOICE', '')).strip()
             speaker_ref = os.getenv('LOCALVOICE_SPEAKER_REF', '').strip()
             if voice:
                 payload['voice'] = voice
             if speaker_ref:
                 payload['speaker_ref'] = speaker_ref
+            if self._custom_voice_params:
+                payload['temperature'] = self.voice_params['temperature']
+                payload['top_k'] = self.voice_params['top_k']
+                payload['top_p'] = self.voice_params['top_p']
+                payload['min_p'] = self.voice_params['min_p']
+                payload['repeat_penalty'] = self.voice_params['repeat_penalty']
             if turn.request_observer:
                 turn.request_observer(payload)
             if turn.cancel.is_set():

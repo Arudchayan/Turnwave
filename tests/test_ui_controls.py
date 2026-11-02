@@ -26,7 +26,7 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
  }
  requests.push({path,body:options.body?JSON.parse(options.body):null});
  if(input.scenario==='retry'&&requests.length===1)return {ok:false,status:409,json:async()=>({error:'First attempt failed'})};
- if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes')return {ok:true,status:200,json:async()=>({ok:true})};
+ if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes'||input.scenario==='voice_tuning')return {ok:true,status:200,json:async()=>({ok:true})};
  if(path==='/api/interrupt')return {ok:true,status:200,json:async()=>({ok:true})};
  if(input.scenario==='http_error')return {ok:false,status:409,json:async()=>({error:'Microphone unavailable'})};
  if(input.scenario==='network_error')throw Error('connection lost');
@@ -63,6 +63,12 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
    requests,personaDisabledInitially,personaDisabledAfter,personaVal,
    finalPersona:nodes.personasel.value,notes:{notesHdr,cardHdr,cardBody}
   }));
+ }else if(input.scenario==='voice_tuning'){
+  await nodes.vpreset.onchange({target:{value:'crisp'}});
+  nodes.v_temp.value='0.65';
+  nodes.v_voice.value='alloy';
+  await nodes.vapplybtn.onclick();
+  process.stdout.write(JSON.stringify({requests,status:nodes.vstatus.textContent}));
  }else if(input.scenario==='agent_privacy'){
   Object.assign(state,{agent_mode:true,agent_provider:'OpenCode Go',agent_model:'beam-free',search_enabled:true,search_provider:'ddg',agent_phase:'searching',agent_sources:[{title:'Valid Source',url:'https://example.org/item'},{title:'Bad',url:'javascript:alert(1)'}],audio_diagnostics:{input_gain:1,input_drops:0,echo_score:0.12,residual_rejections:2,playback:{underflows:0,max_gap_ms:4.5}}});
   await context.tick();
@@ -188,4 +194,19 @@ def test_agent_mode_controls_persona_dropdown_and_renders_notes():
     assert result['notes']['notesHdr']=='Expert Deep-Dive Brief'
     assert result['notes']['cardHdr']=='kimi-k3 · Architecture'
     assert 'FlashAttention-2 SRAM tiling' in result['notes']['cardBody']
+
+
+def test_voice_tuning_preset_and_manual_apply_dispatch_api():
+    result=run_browser('voice_tuning')
+    assert len(result['requests'])==2
+    assert result['requests'][0]=={
+        'path':'/api/voice',
+        'body':{'temperature':0.45,'top_k':25,'top_p':0.85,'min_p':0.08,'repeat_penalty':1.08,'voice':''}
+    }
+    assert result['requests'][1]=={
+        'path':'/api/voice',
+        'body':{'temperature':0.65,'top_k':25,'top_p':0.85,'min_p':0.08,'repeat_penalty':1.08,'voice':'alloy'}
+    }
+    assert 'temp 0.65' in result['status'] and 'voice=alloy' in result['status']
+
 
