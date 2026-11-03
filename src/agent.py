@@ -141,6 +141,7 @@ _MD_CODE = re.compile(r'```[\s\S]*?```|`([^`\n]+)`')
 _MD_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
 _MD_BOLD = re.compile(r'(\*\*|__)(.*?)\1')
 _VERSION = re.compile(r'(?<![\w.])\d+\.\d+(?:\.\d+){0,2}(?!\w|\.\d)')
+_TEXT_TOOL_CALL = re.compile(r'<\s*tool_call(?:\s[^>]*)?>', re.IGNORECASE)
 
 
 def _clean_html(text):
@@ -176,6 +177,8 @@ class AgentClient:
     Conversation history belongs to the coordinator, which commits turns
     whose audio played or was interrupted. No credential is included in state.
     """
+    supports_input_modality = True
+
     def __init__(self, key, model='kimi-k3', search_key=None, timeout=30, provider='go',
                  search_provider=None, reasoning_effort='low', local_tools=None,
                  persona='jarvis', expert_model=None, memory_path=None, custom_endpoint=None):
@@ -758,11 +761,13 @@ class AgentClient:
             return self.set_persona(p), []
         raise AgentError('The agent requested an unsupported tool')
 
-    def respond(self, user_text, history, turn, on_search=None):
+    def respond(self, user_text, history, turn, on_search=None, input_modality=None):
         if self.configuration_error:
             raise AgentError(self.configuration_error)
         if not user_text.strip():
             raise AgentError('No speech was recognized. Please try again.')
+        if input_modality not in (None, 'voice', 'text'):
+            raise ValueError('Unsupported input modality')
         tools = self.available_tools()
         self.last_notes = []
         now_info = self.get_time()
@@ -789,6 +794,13 @@ class AgentClient:
         else:
             system = (SYSTEM + persona_hint + clock_context + tool_hint + memory_hint +
                       ' Web search is unavailable in this session; do not claim to have searched.')
+        if input_modality == 'voice':
+            system += (' The current user message was spoken and transcribed locally. '
+                       'You receive its transcript, not the raw audio; do not infer vocal '
+                       'characteristics. If asked whether you can hear, acknowledge that '
+                       'you received their words through transcription.')
+        elif input_modality == 'text':
+            system += ' The current user message was typed, not spoken.'
         messages, history_stats = self._build_messages(system, history, user_text)
         sources = []
         web_evidence = []
@@ -867,6 +879,9 @@ class AgentClient:
                         'reply_non_empty': False,
                     }
                     raise AgentError('OpenCode Go returned an empty reply')
+                if _TEXT_TOOL_CALL.search(raw_answer):
+                    raise AgentError('The model returned a tool request as text, so it was not executed. '
+                                     'Please retry or choose another model.')
                 answer = _clean_spoken_text(raw_answer) or raw_answer.strip()
                 searched_web = any(tc.get('tool') == 'web_search' for tc in trace['tool_calls'])
                 claims = set(_VERSION.findall(answer)) if searched_web else set()

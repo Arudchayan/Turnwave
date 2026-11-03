@@ -61,6 +61,21 @@ def test_agent_without_search_does_not_offer_tool(monkeypatch):
     assert AgentClient('key').respond('Hi', [], Turn()) == ('Hello.', [])
 
 
+@pytest.mark.parametrize('modality,expected', [
+    ('voice', 'spoken and transcribed locally'),
+    ('text', 'typed, not spoken'),
+])
+def test_agent_receives_accurate_input_modality(monkeypatch, modality, expected):
+    def open_url(req, timeout):
+        messages = json.loads(req.data)['messages']
+        assert expected in messages[0]['content']
+        if modality == 'voice':
+            assert 'not the raw audio' in messages[0]['content']
+        return response({'choices': [{'message': {'content': 'Hello.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    assert AgentClient('key').respond('Hello', [], Turn(), input_modality=modality) == ('Hello.', [])
+
+
 def test_zen_uses_its_endpoint_and_resets_conversation_session(monkeypatch):
     requests = []
     def open_url(req, timeout):
@@ -205,6 +220,26 @@ def test_voice_agent_transcribes_speaks_remembers_and_resets():
                                       {'role': 'assistant', 'content': 'A short answer.'}]
         app.reset()
         assert app.state()['agent_sources'] == [] and app._agent_history == []
+    finally:
+        app.close()
+
+
+def test_app_distinguishes_transcribed_and_typed_turns():
+    class ModalityAgent(FakeAgent):
+        supports_input_modality = True
+        def __init__(self): self.modalities = []
+        def respond(self, text, history, turn, on_search, input_modality=None):
+            self.modalities.append(input_modality)
+            return 'A short answer.', []
+
+    agent = ModalityAgent()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        voice = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: voice.playback_closed.is_set() and app._active is None)
+        typed = app.submit_text('Hello')
+        wait_for(lambda: typed.playback_closed.is_set() and app._active is None)
+        assert agent.modalities == ['voice', 'text']
     finally:
         app.close()
 
@@ -438,6 +473,17 @@ def test_version_claim_without_web_search_is_not_rewritten(monkeypatch):
         'choices': [{'message': {'content': 'The configured version is 3.13.7.'}}]}))
     answer, _ = AgentClient('key').respond('Which version is configured?', [], Turn())
     assert answer == 'The configured version is 3.13.7.'
+
+
+@pytest.mark.parametrize('body', [
+    '<tool_call>{"name":"web_search","arguments":{"query":"news"}}</tool_call>',
+    'Searching now. <TOOL_CALL>{"name":"web_search"}',
+])
+def test_textual_tool_request_is_not_spoken_as_a_reply(monkeypatch, body):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
+        'choices': [{'message': {'content': body}}]}))
+    with pytest.raises(AgentError, match='tool request as text'):
+        AgentClient('key', search_provider='bing').respond('Find news', [], Turn())
 
 
 def test_search_warning_is_visible_and_cleared_on_reset():

@@ -664,7 +664,11 @@ class Assistant:
                                 self._agent_phase = 'searching' if active else 'thinking'
                     agent_t0 = time.perf_counter()
                     try:
-                        result = self.agent.respond(text, history, turn, on_search=searching)
+                        if getattr(self.agent, 'supports_input_modality', False):
+                            result = self.agent.respond(text, history, turn, on_search=searching,
+                                                        input_modality='voice' if job.wav else 'text')
+                        else:
+                            result = self.agent.respond(text, history, turn, on_search=searching)
                     finally:
                         job.agent_s = round(time.perf_counter() - agent_t0, 3)
                         job.agent_trace = getattr(self.agent, 'last_trace', None)

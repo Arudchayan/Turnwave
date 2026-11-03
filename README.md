@@ -227,7 +227,9 @@ titles and snippets is replaced by an uncertainty message. This narrow check
 does not verify other claims, and search snippets can be incomplete or stale.
 
 The local voice server still performs transcription and speech synthesis. The
-recognized text and recent conversation are sent to OpenCode Zen; if configured,
+recognized text and recent conversation are sent to OpenCode Zen; the model is
+told whether the current input was transcribed speech or typed text, but does
+not receive the raw audio. If configured,
 search queries go to the configured search provider (Brave, DuckDuckGo or Bing,
 and potentially Wikipedia as a DuckDuckGo fallback) and search results go to the model. The
 interface shows the active mode, model, search availability, and links returned

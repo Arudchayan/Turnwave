@@ -359,3 +359,10 @@ valid claims and does not establish factual correctness or relevance of other
 claims. The `beam-free` model produced empty final replies during two probes,
 and `kimi-k3` returned a usage-limit error. No human microphone or speaker
 assessment was performed in these checks.
+
+The later review of the local LFM3 agent logs found two applicable failure
+modes: models mistaking a speech transcript for typed input, and tool requests
+arriving as spoken text. Turnwave now marks the current input modality in the
+cloud prompt and rejects textual tool-call markup rather than presenting it as
+an executed tool. Unit tests cover both paths; a fresh live Go check was not
+completed because the provider request failed.
