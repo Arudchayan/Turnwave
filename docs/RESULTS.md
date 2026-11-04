@@ -32,6 +32,43 @@ fixture hashes and per-case capture and gain events. No microphone or backend is
 opened. The public near clip is fetched from an unpinned dataset revision, so
 compare its recorded hash when reproducing.
 
+### Synthetic acknowledgments and short commands
+
+A follow-up used Windows SAPI David Desktop and Zira Desktop to synthesize four
+fixed utterances each: “mm hmm” and “yes” as intended acknowledgments, and
+“stop” and “wait a moment” as intended commands. After trimming low-energy
+frames and normalizing each utterance, the current main capture loop replayed
+each at full and half gain: 16 trials total. Full gain canceled 3/4 intended
+acknowledgments and 3/4 intended commands; half gain canceled 1/4 intended
+acknowledgments and 0/4 intended commands. The actual trimmed utterances were
+420–780 ms long. “Yes” can signal different intent in conversation; its label
+here reflects this synthetic protocol, not acoustic proof of a backchannel.
+
+These data use generated speech and one simulated far-end/echo path, without a
+microphone or real speaker. The gains are relative to fixture normalization, not
+calibrated speech sound levels. They are not a natural conversation accuracy
+estimate. A single rerun of David's “mm hmm” reproduced both outcomes.
+
+The draft reversible policy, tested at `a0d75d3` on the same 16 fixtures,
+made the same cancel/no-cancel decisions in every case. For the three full-gain
+commands it did cancel, cancellation occurred at 1,900–2,200 ms on the audio
+clock instead of 3,020–3,080 ms for the current policy; near speech started at
+1,500 ms. It also canceled the same three full-gain acknowledgments sooner.
+The revisions differ beyond the floor policy, so this is not an isolated
+causal comparison. No candidate is promoted on these results.
+
+On Windows with the named voices installed, generate fixtures into a new folder
+and replay each file, for example:
+
+```powershell
+./src/synth/generate_interrupt_fixtures.ps1 -OutDir outputs/interrupt-fixtures
+python -m src.synth.duplex_barge_probe --near outputs/interrupt-fixtures/david-ack.wav --trim-silence --utterance --out outputs/david-ack.json
+```
+
+Windows voice versions can differ; retain generated fixture hashes and the
+report's normalized audio hashes when comparing runs. Do not publish recordings
+without reviewing their origin and privacy.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance
