@@ -6,6 +6,10 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added optional cloud conversation with local speech processing, web search,
+  source links, and preserved questions after interruptions. Live provider and
+  real-device spoken-search validation remain outstanding.
+
 - Added optional LFM3 Omni local voice-backend support with a separate WSL
   launcher; the existing LFM2.5 backend remains the default.
 - Refined the conversation interface with responsive controls and clearer
@@ -18,10 +22,9 @@ released default. No version numbers are assigned here without a release tag.
 ## In development
 
 The [voice and agent development pull request](https://github.com/Arudchayan/Turnwave/pull/1)
-contains work on local voice, optional cloud conversation and search, the
-interface, and research tooling. These changes are **not yet on the default
-branch**. Some features are experimental or opt-in and still need real-device
-validation. See [EXPERIMENTS.md](EXPERIMENTS.md) for measured outcomes and
+contains additional work on local voice, agent behavior, the interface, and
+research tooling. Some of that draft work is **not yet on the default branch**.
+Features remain experimental or opt-in and still need real-device validation. See [EXPERIMENTS.md](EXPERIMENTS.md) for measured outcomes and
 [known limitations](docs/KNOWN_LIMITATIONS.md) for the current baseline.
 
 ## Baseline
