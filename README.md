@@ -3,14 +3,16 @@
 [![Tests](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml/badge.svg)](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml)
 
 An experimental local speech-to-speech assistant for Windows and WSL2, built
-around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner.
+around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner. An
+optional **LFM3-Audio-2B** path uses llama.cpp's `/v1/realtime` WebSocket for
+interleaved text and 24 kHz speech; the LFM2.5 path remains the default.
 
 The app listens while the model replies and can cancel playback when you speak.
 It adds interruption handling around a turn-based audio model. This is a research
 prototype: natural pauses, speaker echo and response quality remain limitations.
 
 [Architecture](docs/ARCHITECTURE.md) · [Results and lessons](docs/RESULTS.md) ·
-[Example audio](research/examples/README.md) ·
+[Real-device testing](docs/TESTING.md) · [Example audio](research/examples/README.md) ·
 [Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
 ```mermaid
@@ -33,6 +35,13 @@ flowchart LR
 | Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
 | LFM3 inference optimization | `--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 -np 1`: speaker TTFT 0.596 s → 0.102 s at 3,451 MiB VRAM | Configured in `src/server_lfm3_wsl.sh` |
 | Jarvis intermediary & tools | `get_time`, `get_weather`, `system_status`, `remember`/`recall`, `consult_expert`, `/api/prompt`, pipelined TTS | Integrated and tested |
+| Reversible floor replay | Authored: 3 non-limitation false cancels with hard vs 0 with duck/backchannel; 3/3 backchannels preserved. Acoustic stress: 220 ms backchannel produced ~316 ms VAD evidence and was committed | Opt-in; real-device A/B pending |
+| Public-pause EOT diagnostic | Conversation-grouped held-out: fixed 480 ms 63.92% per-pause false cut-off; 0.9/0.7 re-query + 1 s default 31.37% with 100% recall (2 s: 19.22%) | Opt-in Smart Turn sidecar; one deterministic English split |
+| Cross-lingual EOT | English 0.9/0.7 schedule: German 45.40% false cut-offs (fixed 62.95%); Spanish 59.22% (fixed 67.25%), 100% recall | Weak transfer; per-language calibration needed |
+| Smart Turn CPU latency | 55.47 ms mean, 47.76 ms median, 81.93 ms p90 per 8 s query | 300 ms schedule feasible on this CPU |
+| LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
+| LFM3 ASR check | 20 LibriSpeech dummy clips, Q4_K_M CPU: 5.74% corpus WER, 65% sentence error | Clean read-speech diagnostic |
+
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.
 
@@ -191,6 +200,17 @@ default when the app restarts.
 `LOCALVOICE_SERVER` changes the backend URL (default local port 8080).
 `LOCALVOICE_CHAT_SYSTEM` changes the chat instruction. Optional transcription
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
+`LOCALVOICE_FLOOR_MODE=reversible` enables the experimental duck/backchannel
+path: a short vocalisation during a reply no longer has to cancel it. The
+existing deferred interruption behavior remains the default; set `hard` explicitly
+to compare immediate cancellation.
+`LOCALVOICE_EOT_MODEL=smart-turn` enables the optional Smart Turn completion
+sidecar and extends the silence wait to `LOCALVOICE_EOT_TIMEOUT_MS` (default
+1000; 2000 lowers false cut-offs further at a longer worst-case wait).
+`LOCALVOICE_EOT_FIRST_THRESHOLD` defaults to 0.9 and
+`LOCALVOICE_EOT_THRESHOLD` (later queries) to 0.7. Install
+`requirements-eot.txt` first. See [architecture](docs/ARCHITECTURE.md)
+and the offline replay in [evaluation](docs/EVALUATION.md).
 The app and backend test entry points reserve exclusive context ownership;
 stop the app before running tests that use its backend, even while muted.
 
@@ -258,6 +278,46 @@ local tools, expert reasoning delegation, and search:
 - **Persona switching (`set_persona`)**: Dynamically switches voice style between `jarvis` (composed intermediary), `direct` (zero-fluff operator), `natural`, `concise`, and `storyteller`.
 - **Hybrid text prompt (`/api/prompt`)**: Endpoint (`POST /api/prompt`) allowing users to type prompts directly from the studio interface while receiving spoken voice output and preserving conversation history.
 - **Sentence-pipelined TTS**: Multi-sentence replies (>110 characters) are chunked into sentence segments (first sentence capped at 120 characters, subsequent segments ~220 characters) and pipelined sequentially to the TTS runner, delivering initial spoken audio in 50–90 ms without waiting for the complete multi-sentence paragraph to synthesize.
+
+## Optional LFM3-Audio-2B realtime path
+
+LFM3-Audio-2B is a newer 2B local audio model with 32K context, 18 speech
+languages, tool calling, and native streaming through llama.cpp's
+OpenAI-compatible `/v1/realtime` WebSocket. It needs llama.cpp **b11960 or
+newer**; the pinned LFM2.5 runner is not used for this path.
+
+Place these files in `models/LFM3-Audio-2B-GGUF/`:
+
+- `LFM3-Audio-2B-Q4_K_M.gguf`
+- `mmproj-LFM3-Audio-2B-Q8_0.gguf`
+
+Obtain a b11960+ `llama-server` and start it from WSL:
+
+```powershell
+wsl -d Ubuntu bash -c 'LOCALVOICE_MODEL_DIR="$PWD/models/LFM3-Audio-2B-GGUF" LM=LFM3-Audio-2B-Q4_K_M.gguf MM=mmproj-LFM3-Audio-2B-Q8_0.gguf bash src/server_lfm3_wsl.sh'
+```
+
+Then run the app with the realtime transport:
+
+```powershell
+python -m pip install -r requirements-realtime.txt
+$env:LOCALVOICE_TRANSPORT = "realtime"
+$env:LOCALVOICE_REALTIME = "ws://127.0.0.1:8080/v1/realtime"
+python src/app.py
+```
+
+Set `LOCALVOICE_LFM3_RUNNER` in WSL if the default runner is unavailable. This
+experimental transport supports local conversation only; cloud agents and a
+separate ASR server require the HTTP transport. Clear `LOCALVOICE_AGENT` and
+`LOCALVOICE_ASR_SERVER` before using the realtime path.
+
+The realtime client keeps one conversation socket between turns and opens a
+fresh one when the app resets context after an interruption. A local smoke test
+validated audio-in, interleaved text/audio-out, and `response.cancel`; controlled
+latency, long-session and real-device acceptance remain to be measured. LFM3
+model assets are not distributed here; review
+[their terms](docs/THIRD_PARTY.md).
+
 
 ## Tests
 

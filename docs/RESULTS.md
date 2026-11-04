@@ -110,11 +110,34 @@ The [two synthetic reply examples](../research/examples/README.md) similarly sho
 one text-rubric pass and one ownership failure. They are selected illustrations,
 not a two-case accuracy estimate or evidence that a particular voice caused failure.
 
+## Current policy diagnostics
+
+These are newer offline diagnostics, separate from the frozen historical
+snapshots above. Methods and limits are in [evaluation](EVALUATION.md).
+
+| Question | Evidence | Result |
+| --- | --- | --- |
+| Does reversible floor control preserve short backchannels? | Seven authored barge-in shapes; plus a real-frontend acoustic stress replay | Authored: hard 3 non-limitation false cancels, 0/3 backchannels preserved; reversible 0 false cancels, 3/3 preserved, 0 missed, median commit 140 ms. Acoustic stress: a 220 ms backchannel produced ~316 ms of VAD evidence and was committed by both modes. |
+| Does Smart Turn improve the public-pause trade-off? | 400 English turns from `livekit/eot-bench-data`; conversation-grouped split, 466 held-out pauses | Fixed 480 ms: 63.92% false cut-offs, 100% recall. Two-threshold 0.9/0.7 re-query + 1 s default: 31.37% false cut-offs, 100% recall, p90 1 s; 2 s: 19.22%, p90 2 s. |
+| Does the English EOT schedule transfer cross-lingually? | 400 German and 400 Spanish turns, English thresholds fixed | German: fixed 62.95% false cut-offs vs 45.40% (1 s) / 39.55% (2 s), 100% recall. Spanish: 67.25% vs 59.22% / 52.93%. Transfer is weak; per-language calibration needed. |
+| Is Smart Turn fast enough on this CPU? | 19 warm 8 s queries | 55.47 ms mean, 47.76 ms median, 81.93 ms p90. |
+| Does the LFM3 realtime transport work? | One public example WAV through `/v1/realtime` | Interleaved text and 24 kHz speech; 0.68 s first audio and 5.04 s reply on one warm local run. |
+| Is LFM3 ASR usable? | 20 LibriSpeech dummy clips, Q4_K_M CPU | 5.74% corpus WER, 65% sentence error; clean read speech, small subset. |
+
+The floor figures are policy/timing diagnostics. The EOT figures are
+per-pause observations on public English conversational audio, not per-turn or
+real-device acceptance. The LFM3 figure is a single smoke test, not a latency
+benchmark. The mid-turn-pause false cancel is reduced but not eliminated; the
+optional sidecar and floor mode remain opt-in.
+
 ## What remains open
 
 False interruptions, paused-sentence behavior and reply quality remain unresolved.
 Controlled real-device acceptance and a clean-machine native installation have
-not been established.
+not been established. The EOT held-out check is one deterministic English split;
+multi-seed, multilingual and live-microphone validation remain open. Streaming
+microphone append, heard-prefix memory across realtime reconnects, LFM3 tool calling,
+and controlled long-session latency remain unexplored.
 See [evaluation boundaries and reproduction](EVALUATION.md).
 
 ## LFM3 local voice feasibility check

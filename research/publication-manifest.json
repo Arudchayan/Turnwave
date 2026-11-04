@@ -90,6 +90,42 @@
       "source_type": "curated_historical_research_observations",
       "contains_human_recording": false,
       "whole_reply": false
+    },
+    {
+      "path": "research/floor_replay_summary.json",
+      "sha256": "820b5a69049aa3d65777bd4544ff1a5848db76ecea47cef5580927b17f80d9f7",
+      "bytes": 1609,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/eot_bench_summary.json",
+      "sha256": "0105403478d53147cbfecbadae19554ff4acbbef8c9a5c995a1b4ac64c637bba",
+      "bytes": 19366,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/floor_acoustic_summary.json",
+      "sha256": "53ee72cd8928aa6491902f9d5514bc0d2bc12d9c8560e126df6ce3d05c2479d3",
+      "bytes": 4324,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
+    },
+    {
+      "path": "research/lfm3_asr_summary.json",
+      "sha256": "237fa71b07356797002a22f244fc8f19c83bb507528202997a56245d0c743cc2",
+      "bytes": 763,
+      "kind": "evidence_json",
+      "source_type": "curated_public_research_aggregate",
+      "contains_human_recording": false,
+      "whole_reply": false
     }
   ]
 }

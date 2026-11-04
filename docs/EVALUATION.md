@@ -69,6 +69,165 @@ Inference is available through the Python API `infer_injected(...)`, with a
 caller-supplied client and provenance. A real `ServerClient` reserves exclusive
 backend ownership. Unit tests use injected fake clients and neutral generated fixtures. Those tests prove input, output, cancellation, hashing and denominator contracts, not model quality. `requirements-eval.txt` adds the pinned local ASR evaluation dependencies; it does not supply a dataset, a model, or permission to contact a judge.
 
+## Floor replay
+
+`src/synth/floor_replay.py` is an offline policy/timing diagnostic for the
+experimental reversible floor. It feeds authored barge-in shapes (short
+backchannels, a cough, a short command, sustained speech, a mid-turn pause and
+echo-only) to the same `FloorPolicy` the app uses, for both hard and reversible
+modes. It writes per-case decisions and a small A/B summary:
+
+```powershell
+python -m src.synth.floor_replay --out outputs/floor_replay.json
+```
+
+The frozen cases are authored shapes, not human conversation. The mid-pause case
+is a known end-of-turn limitation and is counted separately. Commit latency is
+measured from the confirmed onset and excludes device, model and playback
+latency. Passing this replay is a prerequisite for a real-device A/B, not
+evidence that reversible mode improves live conversation.
+
+## LFM3 realtime smoke test
+
+`src/synth/lfm3_smoke.py` sends one public example WAV through the LFM3
+`/v1/realtime` client and saves the returned 24 kHz audio. On one warm local GPU
+run, the reply text was “Got it, you mentioned buying a blue lamp. What would
+you like to know about it?”, first audio arrived at 0.679 s, and the reply was
+5.04 s long with `finish_reason=stop`. Re-running LFM3 ASR over the saved reply
+returned the same sentence. This is a transport and intelligibility smoke test,
+not a latency benchmark: it is one clip, one machine, and the ASR is the same
+model family rather than an independent judge.
+
+```powershell
+python -m src.synth.lfm3_smoke --wav research/examples/pass-reply.wav \
+  --url ws://127.0.0.1:8080/v1/realtime --out outputs/lfm3-reply.wav
+```
+
+A small public ASR check used the first 20 clips of the LibriSpeech dummy
+fixture through LFM3-Audio-2B Q4_K_M on CPU. Corpus WER was 5.74% and sentence
+error rate 65%; per-clip latency ranged from 0.9 s to 9.0 s. This is clean read
+speech from a small speaker subset, not a full LibriSpeech or noisy-speech
+benchmark.
+
+```powershell
+python scripts/lfm3_asr_bench.py --limit 20 --url http://127.0.0.1:8091
+```
+
+## Acoustic floor stress replay
+
+`src/synth/floor_acoustic.py` drives the real `DuplexFrontend` (Silero VAD,
+WebRTC AEC and echo correlation) with a public human LibriSpeech near-end and a
+generated far-end, plus a delayed attenuated echo. It is a stress test, not a
+room study.
+
+On four cases at 20 ms steps, both hard and reversible modes started on 3/4
+(echo-only did not start) and committed 3/3. The 220 ms backchannel produced
+about 316 ms of VAD evidence in this synthetic double-talk, so it crossed the
+300 ms commit threshold instead of resuming. This is a negative transfer result:
+the authored 3/3 backchannel preservation in the policy replay did not survive
+the real frontend and echo. The reversible path still ducked first and delayed
+the commit by about 220 ms, but it did not preserve the turn.
+
+The acoustic result is the reason the default remains hard and the feature
+remains opt-in. Backchannel preservation needs either better double-talk
+evidence, a different duration/energy policy, or real-device tuning.
+
+## Public-pause EOT diagnostic
+
+`src/synth/eot_bench.py` scores the English validation split of
+`livekit/eot-bench-data` with Smart Turn v3.2. It treats every pause long enough
+to reach a decision time as a case: a mid-turn pause that crosses the threshold
+is a false cut-off, and a trailing pause that crosses it is an end-of-turn
+detection. The 300 ms budget produced 864 pause cases (464 mid-turn, 400 final).
+
+All rows below use the **same 864 pauses of at least 300 ms** (464 mid-turn, 400
+final). An earlier draft mixed pause sets and is superseded.
+
+| Policy | False cut-off | EOT recall | p90 final latency |
+| --- | ---: | ---: | ---: |
+| Fixed 480 ms endpoint | 61.64% | 100% | 480 ms |
+| One Smart Turn query at 300 ms | 23.28% | 76% | 300 ms |
+| Re-query every 200 ms, no timeout | 26.29% | 83% | 900 ms |
+| Re-query + 1 s timeout, 0.9/0.7 schedule | 27.37% | 100% | 1000 ms |
+| Re-query + 2 s timeout, 0.9/0.7 schedule | 16.59% | 100% | 2000 ms |
+
+Wilson 95% intervals for the false cut-off rate were 57.13–65.95% for the fixed
+endpoint, 23.51–31.60% for the 1 s schedule and 13.49–20.25% for the 2 s
+schedule. The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at
+800 ms. The 1 s schedule is the default behind `LOCALVOICE_EOT_MODEL=smart-turn`;
+the 2 s timeout is the lower-false-cut-off option. Most final turns commit at
+the 300 ms query, while uncertain turns are bounded by the timeout. The single
+300 ms query has the lowest false cut-off but misses 24% of final pauses; the
+timeout recovers those turns. Re-querying without a timeout increases false
+cut-offs relative to one query (26.29% vs 23.28%) because a mid-turn pause gets
+more chances to cross the threshold.
+
+The 0.9-first / 0.7-later schedule was selected by sweeping the saved scores on
+the same 864 pauses. To check that selection without leaking a conversation
+across halves, conversations were split deterministically by even/odd group:
+thresholds were chosen on 48 conversations and scored once on the other 48
+(466 pauses, 255 mid-turn).
+
+| Held-out policy | False cut-off (95% CI) | EOT recall | p90 latency |
+| --- | ---: | ---: | ---: |
+| Fixed 480 ms | 63.92% (57.86–69.57) | 100% | 480 ms |
+| One 300 ms query at 0.5 | 23.14% (18.38–28.69) | 72.51% | 300 ms |
+| 0.9/0.7 + 1 s timeout | 31.37% (25.99–37.31) | 100% | 1000 ms |
+| 0.9/0.7 + 2 s timeout | 19.22% (14.85–24.49) | 100% | 2000 ms |
+
+This is the less biased estimate and the one used for the headline claim. It is
+still one deterministic English conversation split, not multi-seed or live
+acceptance. The earlier row-level split was superseded because it could place
+turns from the same conversation on both sides.
+
+### Zero-shot cross-lingual check
+
+The English thresholds were applied unchanged to German (`de`) and Spanish
+(`es`) from the same public dataset, 400 turns each and the same pause
+eligibility rule. Cells are false cut-off / EOT recall.
+
+| Language | Fixed 480 ms | 0.9/0.7 + 1 s | 0.9/0.7 + 2 s |
+| --- | ---: | ---: | ---: |
+| German | 62.95% / 95.64% | 45.40% / 100% | 39.55% / 100% |
+| Spanish | 67.25% / 97.72% | 59.22% / 100% | 52.93% / 100% |
+
+The schedule still beats the fixed endpoint, but transfer is weak: German false
+cut-off is about double the English held-out estimate, and Spanish improves only
+modestly. A stricter first query avoids many premature commits but misses more
+finals; the later 0.7 query then admits many mid-pauses in both languages. These
+results support per-language calibration rather than assuming English thresholds
+are universal. This is a negative transfer result, not a multilingual win.
+Other public turn-taking sets were not run: `Krisp-AI/turn-taking-test-v1` and
+`vapi-ai/eotd-multilingual` are gated, and `mundo-ai/turn-benchmark-*` shards
+are multi-gigabyte.
+
+### Query latency
+
+On this CPU (ONNX Runtime, one inter-op thread), Smart Turn v3.2 on 8 s clips
+measured a 55.47 ms mean, 47.76 ms median and 81.93 ms p90 over 19 warm calls.
+The 300 ms first-query schedule has enough headroom for this hardware; the
+measurement is one local run, not a hardware-independent benchmark.
+
+As a descriptive per-turn check, restrict to the 165 turns that contain a
+mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
+(75.8%) of those turns; one Smart Turn query at 300 ms cut off 77/165 (46.7%).
+This is a different denominator from the per-pause table and is not used for
+the policy decision.
+
+These are per-pause observations on public English conversational audio, not
+per-turn or real-device results. The labels are derived from the dataset's
+silence timing, not human adjudication of intent. Smart Turn is scored offline
+with Whisper features; the diagnostic excludes the app's microphone, AEC,
+playback and model latency. It is evidence for a bounded policy, not a claim of
+universal endpointing accuracy.
+
+Run it with:
+
+```powershell
+python -m pip install -r requirements-eot.txt
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+```
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
@@ -78,6 +237,16 @@ optional plotting dependencies for charts. These commands do not run neural infe
 python -m pip install -r requirements-dev.txt
 python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
+python -m src.synth.floor_replay --out outputs/floor_replay.json
+python -m src.synth.floor_acoustic --out outputs/floor_acoustic.json
+python scripts/eot_latency.py
+python scripts/eot_crosslingual.py --languages de es
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+python scripts/eot_recompute.py
+python scripts/eot_schedule_sweep.py
+python scripts/eot_holdout.py
+python scripts/eot_per_turn.py
+python scripts/export_research_summaries.py
 python scripts/verify_research.py
 python scripts/check_publication.py --worktree
 python scripts/build_research_figures.py

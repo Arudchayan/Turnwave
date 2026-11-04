@@ -23,7 +23,7 @@ from xml.etree import ElementTree
 PUBLIC_DOCS = {
     'ARCHITECTURE.md', 'KNOWN_LIMITATIONS.md', 'PRIVACY.md',
     'PUBLICATION.md', 'RECORDED_SESSIONS.md', 'RESULTS.md',
-    'EVALUATION.md', 'THIRD_PARTY.md',
+    'EVALUATION.md', 'THIRD_PARTY.md', 'TESTING.md',
 }
 PUBLIC_RESEARCH_DOCS = {
     'research/README.md', 'research/examples/README.md',
@@ -37,6 +37,10 @@ PUBLIC_RESEARCH_ASSETS = {
     'research/results.json',
     'research/short-turn-cases.json',
     'research/candidate-screen-cases.json',
+    'research/floor_replay_summary.json',
+    'research/floor_acoustic_summary.json',
+    'research/eot_bench_summary.json',
+    'research/lfm3_asr_summary.json',
     'research/examples/examples.json',
     'research/examples/pass-reply.wav',
     'research/examples/failure-reply.wav',

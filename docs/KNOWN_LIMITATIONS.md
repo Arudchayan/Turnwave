@@ -5,9 +5,18 @@ This is a research prototype, not a claim of universally reliable conversation.
 - A natural pause can end a turn too early. Current silence endpointing defaults
   to 480 ms (adjustable to 800 or 1,120 ms between utterances), with a 20-second
   capture cap and pre-roll. Longer waits add reply latency and still cannot
-  guarantee that an unfinished sentence stays together.
+  guarantee that an unfinished sentence stays together. The experimental
+  reversible floor addresses backchannels, but does not solve mid-turn pauses;
+  it remains opt-in pending real-device evaluation.
 - Speaker echo, quiet speech, room acoustics and device routing affect genuine
   and false interruption detection. Headphones are more predictable.
+- The optional Smart Turn sidecar changes silence timing and was evaluated on
+  public English pauses, not this app's microphone or room. The 2 s timeout is
+  a measured trade-off, not a guarantee that a pause was understood.
+- The optional LFM3-Audio-2B realtime path has only a single local smoke test.
+  Controlled latency, long-session context growth and real-device behavior are
+  unverified. Reconnecting after an interruption resets the realtime
+  conversation context.
 - A clean output queue does not guarantee intelligible speech. Generated text
   can disagree with generated audio, and correct content is a separate question.
 - Exact instructions, attribution and conversation memory can fail. Interruptions

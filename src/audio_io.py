@@ -364,6 +364,9 @@ class Player:
         self._stream = None
         self.playing = False
         self._target_gain = 1.0
+        self._gain = 1.0
+        self._gain_target = 1.0
+        self._gain_step = 0.0
 
     def _configure_device(self, device):
         try:
@@ -432,22 +435,45 @@ class Player:
                             pass
             raise primary_err
 
-    def set_gain(self, level):
-        """Set the playback gain target (clamped to 0..1), effective next piece."""
-        level = float(level)
-        if not math.isfinite(level):
-            return self._target_gain
-        level = max(0.0, min(1.0, level))
+    def set_gain(self, gain, ramp_ms=20):
+        """Ramp output gain without clicks; return the clamped target."""
+        gain = float(gain)
+        ramp_ms = float(ramp_ms)
+        if not math.isfinite(gain) or not math.isfinite(ramp_ms):
+            return self._gain_target
+        gain = max(0.0, min(1.0, gain))
         with self._lock:
-            self._target_gain = level
-            return self._target_gain
+            self._gain_target = self._target_gain = gain
+            samples = max(1, round(self.rate * max(0.0, ramp_ms) / 1000))
+            if samples == 1:
+                self._gain, self._gain_step = gain, 0.0
+            else:
+                self._gain_step = (gain - self._gain) / (samples - 1)
+        return gain
+
+    def _render_gain(self, samples):
+        """Apply the gain envelope to the signal sent to playback and AEC."""
+        if not len(samples):
+            return samples
+        with self._lock:
+            gain, target, step = self._gain, self._gain_target, self._gain_step
+            if gain == target:
+                return samples if gain == 1.0 else samples * gain
+            envelope = gain + step * np.arange(len(samples), dtype=np.float32)
+            envelope = np.minimum(envelope, target) if step > 0 else np.maximum(envelope, target)
+            self._gain = float(envelope[-1])
+            if abs(self._gain - target) < 1e-6:
+                self._gain, self._gain_step = target, 0.0
+        return samples * envelope.astype(np.float32)
+
 
     def stop(self):
         with self._lock:
             self._gen += 1
             stream = self._stream
             self.playing = False
-            self._target_gain = 1.0
+            self._target_gain = self._gain_target = self._gain = 1.0
+            self._gain_step = 0.0
         if stream is not None:
             try:
                 stream.abort()
@@ -460,12 +486,13 @@ class Player:
         with self._lock:
             self._gen += 1
             generation = self._gen
-            # A new reply always begins at full gain; stale ducking from a
-            # previous candidate must not leak into it.
             self._target_gain = 1.0
+            self._gain = 1.0
+            self._gain_target = 1.0
+            self._gain_step = 0.0
+
         stream = None
         started = False
-        applied_gain = 1.0
         self.stats = dict(underflows=0, source_samples=0, device_samples=0, max_gap_ms=0.0, latency_s=None)
         previous_write = None
         previous_duration = 0.0
@@ -485,18 +512,9 @@ class Player:
                             self._stream = stream
                             self.playing = True
                         self.stats['latency_s'] = float(getattr(stream, 'latency', 0))
-                    piece = audio[offset:offset + 480]
-                    with self._lock:
-                        target_gain = self._target_gain
-                    if applied_gain != 1.0 or target_gain != 1.0:
-                        if target_gain != applied_gain:
-                            fade = np.linspace(applied_gain, target_gain,
-                                               len(piece), endpoint=False,
-                                               dtype=np.float32)
-                        else:
-                            fade = np.full(len(piece), target_gain, np.float32)
-                        piece = piece * fade
-                    applied_gain = target_gain
+                    source = audio[offset:offset + 480]
+                    piece = self._render_gain(source)
+
                     if not started:
                         started = True
                         if on_start is not None:
@@ -521,10 +539,10 @@ class Player:
                             self.stats['underflows'] += 1
                         previous_write = now
                         previous_duration = len(piece) / self.rate
-                        self.stats['source_samples'] += len(piece)
+                        self.stats['source_samples'] += len(source)
                         self.stats['device_samples'] += len(device_audio)
                         if on_written is not None:
-                            on_written(piece)
+                            on_written(source)
                     except sd.PortAudioError:
                         with self._lock:
                             interrupted = generation != self._gen

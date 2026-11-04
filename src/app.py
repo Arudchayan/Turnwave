@@ -8,6 +8,7 @@ import re
 import socket
 import threading
 import time
+from urllib.parse import urlsplit
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +19,7 @@ from audio_io import Mic, Player, list_input_devices, audio_thread
 from client import ServerClient, Turn, wav16k_bytes
 from duplex import DuplexFrontend
 from diagnostics import Diagnostics, HistoryFileHandler, source_fingerprint
+from floor import FloorPolicy
 from ui import PAGE
 from session_archive import ArchiveSealedError
 import logging
@@ -54,15 +56,38 @@ class Job:
 
 class Assistant:
     """No import-time devices or threads; dependencies can be simulated in tests."""
-    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None, trace_path=None):
+    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None, trace_path=None, floor_mode=None, eot=None):
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
         self.pre_roll_ms = pre_roll_ms
+        self._use_floor_policy = bool(floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE') or eot is not None or os.getenv('LOCALVOICE_EOT_MODEL'))
+        self.floor = FloorPolicy(mode=floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE', 'hard'))
+        self.floor_mode = self.floor.mode if self._use_floor_policy else 'deferred'
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
         self.front = front if front is not None else DuplexFrontend()
-        self.client = client if client is not None else ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+        self.eot = eot
+        self.eot_error = None
+        if self.eot is None and os.getenv('LOCALVOICE_EOT_MODEL'):
+            from eot import CompletionPolicy, SmartTurnScorer
+            spec = os.getenv('LOCALVOICE_EOT_MODEL')
+            scorer = SmartTurnScorer(None if spec in ('1', 'smart-turn') else spec)
+            timeout = int(os.getenv('LOCALVOICE_EOT_TIMEOUT_MS', '1000'))
+            threshold = float(os.getenv('LOCALVOICE_EOT_THRESHOLD', '0.7'))
+            first_threshold = float(os.getenv('LOCALVOICE_EOT_FIRST_THRESHOLD', '0.9'))
+            self.eot = CompletionPolicy(scorer, threshold=threshold,
+                                        first_threshold=first_threshold,
+                                        timeout_ms=timeout)
+        if self.eot is not None and hasattr(self.front, 'end_chunks'):
+            self.front.end_chunks = max(1, round(getattr(self.eot, 'timeout_ms', 2000) / 32))
+        if client is None:
+            if os.getenv('LOCALVOICE_TRANSPORT', 'http').lower() == 'realtime':
+                from realtime_client import RealtimeClient
+                client = RealtimeClient()
+            else:
+                client = ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+        self.client = client
         self.asr_client = asr_client
         self.agent = agent
         self._saved_agent = agent
@@ -237,8 +262,12 @@ class Assistant:
             for thread in list(self._threads):
                 if thread is not threading.current_thread():
                     thread.join(timeout=1)
-            if hasattr(self.client, 'close'):
-                self.client.close()
+            close_client = getattr(self.client, 'close', None)
+            if close_client is not None:
+                try:
+                    close_client()
+                except Exception:
+                    pass
             self.diagnostics.event('shutdown')
             self.diagnostics.close()
             with self._lock:
@@ -344,7 +373,36 @@ class Assistant:
             except Exception as exc:
                 self.warning = 'Transcription unavailable: ' + str(exc)
 
+    def _apply_floor(self, action):
+        """Apply a floor decision. Injected players may not expose gain."""
+        if action.duck:
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(self.floor.duck_gain, 30)
+            self.diagnostics.event('floor_duck', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1))
+        if action.resume:
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(1.0, 100)
+            self.diagnostics.event('floor_resume', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1))
+        if action.cancel:
+            self.diagnostics.event('floor_commit', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1),
+                                   wall_ms=round(action.wall_ms, 1))
+            self.interrupt('barge-in')
+        if action.promote:
+            self.diagnostics.event('floor_promote', state=action.state,
+                                   reason=action.reason)
+
     def _loop(self):
+        if self._use_floor_policy:
+            return self._loop_floor()
+        return self._loop_legacy()
+
+    def _loop_legacy(self):
         pre = collections.deque()
         rec = []
         rec_samples = 0
@@ -466,6 +524,167 @@ class Assistant:
                                            if job is self._active else 'listening')
                         else:
                             self.status = 'listening'
+
+    def _loop_floor(self):
+        pre = collections.deque()
+        rec = []
+        rec_samples = 0
+        recording = False
+        candidate = False
+        while not self._stop.is_set():
+            self._apply_device_requests()
+            capture_queue = self.mic.q
+            read = getattr(capture_queue, 'get_with_generation', None)
+            try:
+                if read is None:
+                    generation, block = None, capture_queue.get(timeout=.05)
+                else:
+                    generation, block = read(timeout=.05)
+            except queue.Empty:
+                continue
+            with self._lock:
+                # Reset/mute may happen after dequeue, or while a callback is
+                # still preparing this block. Keep the first genuinely fresh
+                # block even when reset happened during a blocking read.
+                if (capture_queue is not self.mic.q
+                        or generation is not None and generation != capture_queue.generation):
+                    continue
+                if self._capture_reset.is_set():
+                    self._capture_reset.clear()
+                    pre.clear()
+                    rec = []
+                    rec_samples = 0
+                    recording = False
+                    candidate = False
+                    self.front.reset()
+                    self.floor.reset()
+                    if self.eot is not None:
+                        self.eot.reset()
+                    if self.status == 'recording':
+                        self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
+                if not self.mic_on:
+                    continue
+            try:
+                speaking, started, ended, clean = self.front.update(block)
+                self.warning = getattr(self.front, 'aec_error', None)
+            except Exception as exc:
+                with self._lock:
+                    # Reset/mute can invalidate this block while detection is
+                    # running, just as they can invalidate a detected onset.
+                    if not self.mic_on or self._capture_reset.is_set():
+                        continue
+                    self.error = 'Speech detection failed: ' + str(exc)
+                    self.status = 'error'
+                self._stop.wait(.1)
+                continue
+            if not len(clean):
+                continue
+            with self._lock:
+                # Mute/reset may arrive while the frontend is processing this
+                # block. Do not let a stale onset duck, cancel or submit.
+                if not self.mic_on or self._capture_reset.is_set():
+                    continue
+            rms = float(np.sqrt(np.mean(clean ** 2)))
+            eot_commit = False
+            if self.eot is not None and recording:
+                if getattr(self.front, 'hot', False):
+                    self.eot.reset()
+                elif not ended:
+                    quiet_ms = getattr(self.front, 'quiet_ms', 0)
+                    decision = None
+                    try:
+                        due = getattr(self.eot, 'due', None)
+                        if due is None or due(quiet_ms):
+                            decision = self.eot.update(
+                                np.concatenate(rec) if rec else clean, quiet_ms)
+                    except Exception as exc:
+                        self.eot_error = 'End-of-turn detection failed: ' + str(exc)
+                        self.eot = None
+                        if hasattr(self.front, 'end_chunks'):
+                            self.front.end_chunks = max(1, round(.48 * 1000 / 32))
+                        decision = None
+                    if decision == 'commit':
+                        eot_commit = True
+            # `speaking` is the frontend's segment state and stays true through
+            # the silence endpoint. The policy needs this block's speech
+            # evidence, not the segment state, or trailing silence would count
+            # as speech and turn every backchannel into a floor take.
+            policy_speaking = bool(getattr(self.front, 'hot', speaking))
+            action = self.floor.update(
+                now=time.perf_counter(), speaking=policy_speaking, started=started,
+                ended=ended, rms=rms, assistant_active=self._active is not None,
+                audible=bool(getattr(self.player, 'playing', False)),
+                block_s=len(clean) / 16000,
+                onset_ms=getattr(self.front, 'onset_speech_ms', None))
+            if not recording:
+                pre.append(clean)
+                # Retain speech before confirmation without delaying onset.
+                while len(pre) > 1 and sum(map(len, pre)) > self.pre_roll_samples:
+                    pre.popleft()
+                if started:
+                    with self._lock:
+                        if not self.mic_on or self._capture_reset.is_set():
+                            continue
+                        self._apply_floor(action)
+                        self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(rms, 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
+                        recording = True
+                        rec = list(pre)
+                        rec_samples = sum(map(len, rec))
+                        candidate = bool(self._active is not None and (action.duck or action.cancel))
+                        if action.cancel:
+                            self.status = 'recording'
+                        elif candidate:
+                            # The reply is still audible but ducked. Keep the
+                            # candidate private until the policy commits or
+                            # classifies it as a backchannel.
+                            self.status = 'speaking'
+                        else:
+                            self.status = 'recording'
+            else:
+                rec.append(clean)
+                rec_samples += len(clean)
+                with self._lock:
+                    if not self.mic_on or self._capture_reset.is_set():
+                        continue
+                self._apply_floor(action)
+                if candidate and action.resume:
+                    # Short vocalisation: discard the candidate and let the
+                    # existing reply continue. No context reset, no submit.
+                    recording = False
+                    candidate = False
+                    rec = []
+                    rec_samples = 0
+                    pre.clear()
+                    with self._lock:
+                        self.status = ('speaking' if self._active is not None
+                                       else 'listening')
+                    continue
+                if candidate and action.cancel:
+                    candidate = False
+                    self.status = 'recording'
+                elif candidate and action.promote:
+                    candidate = False
+                    self.status = 'recording'
+            if recording and (ended or eot_commit or rec_samples >= 20 * 16000):
+                audio = np.concatenate(rec)
+                self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended, eot_commit=eot_commit, eot_score=getattr(self.eot, 'last_score', None) if self.eot is not None else None)
+                recording = False
+                candidate = False
+                rec = []
+                rec_samples = 0
+                pre.clear()
+                self.front.reset()
+                self.floor.reset()
+                if self.eot is not None:
+                    self.eot.reset()
+                if len(audio) >= 3200 and float(np.sqrt(np.mean(audio ** 2))) >= .006:
+                    # Mute/reset may arrive while the frontend processes this
+                    # block. Do not submit a stale automatic turn after mute.
+                    with self._lock:
+                        if self.mic_on and not self._capture_reset.is_set():
+                            self.submit_audio(audio)
+                else:
+                    self.status = 'listening'
 
     def submit_audio(self, audio):
         wav = wav16k_bytes(audio)
@@ -841,7 +1060,12 @@ class Assistant:
             self._agent_phase = None
             self._drop_barge()
             self.player.stop()
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(1.0)
             self.front.clear_playback()
+            self.floor.reset()
+            if self.eot is not None:
+                self.eot.reset()
             self.interrupt_candidate = False
             if announce:
                 self.interrupted_at = time.time()
@@ -887,6 +1111,8 @@ class Assistant:
             raise ValueError('Unsupported agent mode')
         if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 100):
             raise ValueError('Invalid model name')
+        if mode != 'local' and not callable(getattr(self.client, 'asr_text', None)):
+            raise ValueError('This voice transport supports local conversation only; restart with HTTP transport to use a cloud agent')
         with self._lock:
             self.interrupt('mode change', announce=False)
             if mode == 'local':
@@ -1249,9 +1475,12 @@ class Assistant:
                         gen_start=self.gen_start, first_audio_at=self.first_audio_at,
                         eta_first_audio_ms=eta, eta_budget_ms=round(budget * 1000),
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
+                        floor_state=self.floor.state, floor_mode=self.floor_mode,
+                        eot_enabled=self.eot is not None, eot_error=self.eot_error,
+                        eot=self.eot.snapshot() if self.eot is not None else None,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
-                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self._agent_search_warning, getattr(self.agent, 'configuration_error', None)] if w) or None,
+                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self.eot_error, self._agent_search_warning, getattr(self.agent, 'configuration_error', None)] if w) or None,
                         audio_diagnostics=dict(residual_rejections=getattr(self.front, 'residual_rejections', 0), input_gain=getattr(self.mic, 'effective_gain', None), echo_score=getattr(self.front, 'echo_score', None), input_latency_s=getattr(self.mic, 'latency_s', None), input_drops=getattr(self.mic, 'dropped_blocks', 0), clipped_fraction=getattr(self.mic, 'clipped_fraction', 0), playback=getattr(self.player, 'stats', {})))
 
 
@@ -1406,6 +1635,36 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def create_voice_clients(backend, transport, asr_url=None, agent_enabled=False):
+    """Select the explicitly requested voice transport without opening devices."""
+    if backend not in ('lfm2', 'lfm3'):
+        raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
+    if transport == 'realtime':
+        if agent_enabled or asr_url:
+            raise ValueError('The experimental realtime transport supports local conversation only; '
+                             'use LOCALVOICE_BACKEND=lfm3 for agent or separate ASR mode')
+        from realtime_client import RealtimeClient
+        return RealtimeClient(), None
+    if transport != 'http':
+        raise ValueError('LOCALVOICE_TRANSPORT must be http or realtime')
+    if backend == 'lfm3':
+        from lfm3_client import LFM3Client
+        client_type = LFM3Client
+    else:
+        client_type = ServerClient
+    return client_type(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080')), client_type(asr_url) if asr_url else None
+
+
+def voice_context_endpoint():
+    """Identify the HTTP server whose context the chosen transport owns."""
+    if os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower() != 'realtime':
+        return os.getenv('LOCALVOICE_SERVER', 'http://127.0.0.1:8080')
+    parsed = urlsplit(os.getenv('LOCALVOICE_REALTIME', 'ws://127.0.0.1:8080/v1/realtime'))
+    if parsed.scheme not in ('ws', 'wss') or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError('LOCALVOICE_REALTIME must be a WebSocket URL without credentials')
+    return ('https://' if parsed.scheme == 'wss' else 'http://') + parsed.netloc
+
+
 def main():
     asr_url = os.getenv('LOCALVOICE_ASR_SERVER')
     from pathlib import Path
@@ -1437,15 +1696,9 @@ def main():
     elif agent_mode:
         raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
     backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()
-    if backend == 'lfm3':
-        from lfm3_client import LFM3Client
-        client_type = LFM3Client
-    elif backend == 'lfm2':
-        client_type = ServerClient
-    else:
-        raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
-    client = client_type(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
-    assistant = Assistant(client=client, asr_client=client_type(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent, trace_path=trace_path)
+    transport = os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower()
+    client, asr_client = create_voice_clients(backend, transport, asr_url, agent is not None)
+    assistant = Assistant(client=client, asr_client=asr_client, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent, trace_path=trace_path)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
     assistant.start()
@@ -1462,7 +1715,7 @@ def main():
 if __name__ == '__main__':
     from contextlib import ExitStack
     from backend_session import backend_session, canonical_base
-    endpoints = {canonical_base(os.getenv('LOCALVOICE_SERVER', 'http://127.0.0.1:8080'))}
+    endpoints = {canonical_base(voice_context_endpoint())}
     if os.getenv('LOCALVOICE_ASR_SERVER'):
         endpoints.add(canonical_base(os.environ['LOCALVOICE_ASR_SERVER']))
     with ExitStack() as sessions:
