@@ -234,3 +234,46 @@ def test_failed_agent_request_keeps_only_recognized_input():
         assert app._agent_history == [{'role': 'user', 'content': 'What is new?'}]
     finally:
         app.close()
+
+
+def test_voice_pipeline_searches_and_speaks_with_mocked_provider(monkeypatch):
+    requests = []
+    def open_url(req, timeout):
+        requests.append(req)
+        if 'api.search.brave.com' in req.full_url:
+            return response({'web': {'results': [{'url': 'https://example.org/article',
+                             'title': 'Article', 'description': 'Evidence'}]}})
+        if sum('opencode.ai' in item.full_url for item in requests) == 1:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None,
+                'tool_calls': [{'id': 'search-1', 'type': 'function', 'function': {
+                    'name': 'web_search', 'arguments': '{"query":"recent news"}'}}]}}]})
+        assert 'Evidence' in json.loads(req.data)['messages'][-1]['content']
+        return response({'choices': [{'message': {'content': 'A short answer.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    agent = AgentClient('private-key', search_key='search-key', local_tools=False)
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set())
+        state = app.state()
+        assert state['agent_sources'][0]['url'] == 'https://example.org/article'
+        assert state['search_provider'] == 'brave'
+        assert 'assistant: A short answer.' in state['transcript']
+        assert job.played_samples > 0
+        assert 'private-key' not in json.dumps(state)
+    finally:
+        app.close()
+
+
+def test_search_warning_is_visible_and_reset():
+    class WarningAgent(FakeAgent):
+        last_trace = {'search_warning': 'Web search returned no verified results.'}
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=WarningAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set())
+        assert 'no verified results' in app.state()['warning']
+        app.reset()
+        assert app.state()['warning'] is None
+    finally:
+        app.close()
