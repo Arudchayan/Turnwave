@@ -7,6 +7,7 @@ llama.cpp notice for source included in the patches is preserved in
 
 | Component | Role | Source / terms to review |
 | --- | --- | --- |
+| Heretic | Optional model-modification research tool | [Upstream project and license](https://github.com/p-e-w/heretic) |
 | LiquidAI LFM2.5-Audio-1.5B | Direct audio input/output model | [Model card](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B/blob/main/LICENSE) |
 | LiquidAI LFM3-Omni-2B | Optional newer local audio model | [Model card](https://huggingface.co/LiquidAI/LFM3-Omni-2B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/blob/main/LICENSE) |
 | LiquidAI LFM3-Audio-2B | Optional realtime audio model | [Model card](https://huggingface.co/LiquidAI/LFM3-Audio-2B), [license](https://huggingface.co/LiquidAI/LFM3-Audio-2B/blob/main/LICENSE) |

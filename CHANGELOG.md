@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added an optional LFM3 model-modification research adapter and explicit
+  standard/research backend launch selection; weights remain separate.
 - Added an optional local Whisper comparison to the interruption research probe;
   no additional recognizer is enabled in the app.
 - Report cloud replies that reach their length limit instead of speaking an

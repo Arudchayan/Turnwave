@@ -17,13 +17,13 @@ if (-not $Runner) {
 }
 if (-not $Model) {
     if ($Variant -eq 'research') {
-        $Model = Join-Path $root 'models/LFM3-Omni-2B-research-study/research-q4.gguf'
+        throw 'Specify -Model explicitly when using a research model.'
     } else {
         $Model = Join-Path $root 'models/LFM3-Omni-2B-GGUF/LFM3-Omni-2B-Q4_K_M.gguf'
     }
 }
 if (-not $Projector) {
-    if ($Variant -eq 'research' -and $PSBoundParameters.ContainsKey('Model')) {
+    if ($Variant -eq 'research') {
         throw 'Specify -Projector explicitly when using a custom research model.'
     }
     $Projector = Join-Path $root 'models/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-Q4_K_M.gguf'
