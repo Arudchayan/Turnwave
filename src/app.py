@@ -345,11 +345,28 @@ class Assistant:
                     return True
             return False
 
+    @staticmethod
+    def _safe_agent_sources(sources):
+        safe = []
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            url = source.get('url')
+            if not isinstance(url, str) or len(url) > 2048:
+                continue
+            try:
+                parsed = urlsplit(url)
+                if (parsed.scheme not in ('http', 'https') or not parsed.hostname or
+                        parsed.username is not None or parsed.password is not None):
+                    continue
+            except ValueError:
+                continue
+            safe.append({'title': str(source.get('title') or '')[:300], 'url': url})
+        return safe
+
     def _attach_sources(self, message_id, sources):
-        """Attach public source labels to the matching reply, if it still exists."""
-        safe = [{'title': str(source.get('title') or '')[:300], 'url': source['url']}
-                for source in sources if isinstance(source, dict)
-                and isinstance(source.get('url'), str) and len(source['url']) <= 2048]
+        """Attach validated sources to their matching reply."""
+        safe = self._safe_agent_sources(sources)
         with self._lock:
             for message in self._messages:
                 if message['id'] == message_id:
@@ -934,6 +951,7 @@ class Assistant:
                     if result is None or turn.cancel.is_set():
                         return
                     answer, job.sources = result
+                    job.sources = self._safe_agent_sources(job.sources)
                     notes = list((job.agent_trace or {}).get('expert_notes') or [])
                     tools_called = [tc.get('tool') for tc in (job.agent_trace or {}).get('tool_calls', [])]
                     self.diagnostics.event('agent_turn', turn_id=job.id, duration_s=job.agent_s,
@@ -1535,7 +1553,7 @@ class Assistant:
                         voice_params=dict(self._voice_params),
                         search_enabled=bool(self.agent and self.agent.search_enabled),
                         search_provider=getattr(self.agent, 'search_provider', None),
-                        agent_sources=list(self._agent_sources),
+                        agent_sources=[dict(source) for source in self._agent_sources],
                         agent_notes=list(self._agent_notes),
                         trace_count=len(self._traces),
                         trace_file=self.trace_path.name if self.trace_path is not None else None,

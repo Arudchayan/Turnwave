@@ -278,3 +278,27 @@ def test_voice_tuning_preset_and_manual_apply_dispatch_api():
     assert 'temp 0.65' in result['status'] and 'voice=alloy' in result['status']
 
 
+
+
+def test_reply_sources_render_with_safe_links():
+    code = PAGE.split('function bubble(t,sourceItems=[])', 1)[1].split('async function tick()', 1)[0]
+    script = 'function bubble(t,sourceItems=[])' + code
+    harness = r'''
+const vm=require('node:vm'), fs=require('node:fs');
+const source=fs.readFileSync(0,'utf8');
+function element(){return {children:[],appendChild(x){this.children.push(x);}};}
+const ctx={URL,document:{createElement:element}};
+vm.runInNewContext(source,ctx);
+const bubble=ctx.bubble('assistant: Answer',[
+ {title:'Official',url:'https://example.org/article'},
+ {title:'Bad',url:'javascript:alert(1)'},
+ {title:'Credentials',url:'https://user:pass@example.org/'}]);
+const area=bubble.children[0];
+process.stdout.write(JSON.stringify({text:bubble.textContent,heading:area.children[0].textContent,
+ links:area.children.slice(1)}));
+'''
+    result=subprocess.run(['node','-e',harness],input=script,text=True,capture_output=True,timeout=10,check=True)
+    data=json.loads(result.stdout)
+    assert data['text']=='Answer' and data['heading']=='Sources'
+    assert len(data['links'])==1 and data['links'][0]['href']=='https://example.org/article'
+    assert data['links'][0]['rel']=='noopener noreferrer'

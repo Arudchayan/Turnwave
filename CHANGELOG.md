@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Kept web sources attached to their corresponding replies through follow-up
+  turns, with safe links and reset behavior.
 - Added a capture-loop interruption benchmark and documented its false-cancel
   and quiet-speech observations; interruption behavior is unchanged.
 - Preserve a cloud reply draft as possibly unheard context when playback is
