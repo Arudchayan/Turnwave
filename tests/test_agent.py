@@ -648,3 +648,55 @@ def test_truncated_reply_speaks_retry_message_and_shows_warning(monkeypatch):
         assert app.state()['warning'] is None
     finally:
         app.close()
+
+
+def test_empty_final_after_search_retries_once_with_sources(monkeypatch):
+    requests = []
+    def open_url(req, timeout):
+        if 'api.search.brave.com' in req.full_url:
+            return response({'web': {'results': [{'url': 'https://example.org/a', 'title': 'Source', 'description': 'Evidence'}]}})
+        body = json.loads(req.data)
+        requests.append(body)
+        if len(requests) == 1:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None, 'tool_calls': [
+                {'id': 'call-1', 'type': 'function', 'function': {'name': 'web_search', 'arguments': '{"query":"current information"}'}}]}}]})
+        if len(requests) == 2:
+            return response({'choices': [{'finish_reason': 'stop', 'message': {'content': ''}}]})
+        assert 'tools' not in body
+        assert body['messages'][-1]['role'] == 'user'
+        assert 'Evidence' in body['messages'][-1]['content']
+        assert not any(message['role'] == 'tool' for message in body['messages'])
+        return response({'choices': [{'finish_reason': 'stop', 'message': {'content': 'Answer from the source.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_key='search-key')
+    answer, sources = client.respond('Find current information', [], Turn())
+    assert answer == 'Answer from the source.'
+    assert sources[0]['url'] == 'https://example.org/a'
+    assert len(requests) == 3
+    assert client.last_trace['iterations'][-1]['empty_retried'] is True
+    assert client.last_trace['iterations'][-1]['empty_finish_reason'] == 'stop'
+    assert client.last_trace['iterations'][-1]['retry_search_context_rebuilt'] is True
+
+
+def test_repeated_empty_response_fails_without_unbounded_retry(monkeypatch):
+    requests = []
+    def open_url(req, timeout):
+        requests.append(req)
+        return response({'choices': [{'finish_reason': 'stop', 'message': {'content': ''}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key')
+    with pytest.raises(AgentError, match='empty reply'):
+        client.respond('Hello', [], Turn())
+    assert len(requests) == 2
+    assert client.last_trace['iterations'][-1]['empty_retried'] is True
+
+
+def test_content_filter_empty_reply_is_not_retried(monkeypatch):
+    requests = []
+    def open_url(req, timeout):
+        requests.append(req)
+        return response({'choices': [{'finish_reason': 'content_filter', 'message': {'content': ''}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    with pytest.raises(AgentError, match='empty reply'):
+        AgentClient('key').respond('Hello', [], Turn())
+    assert len(requests) == 1
