@@ -215,3 +215,41 @@ def test_playback_duck_is_applied_to_device_and_echo_reference(monkeypatch):
     assert written[0][0] == pytest.approx(1.0)
     assert written[1][-1] == pytest.approx(.25, abs=1e-6)
     np.testing.assert_allclose(np.concatenate(references), np.concatenate(written))
+
+@pytest.mark.parametrize('hot_frames, expected_reason', [
+    (6, 'backchannel'), (7, 'backchannel'), (8, 'ended-speech'),
+    (9, 'ended-speech'), (10, 'sustained-speech'),
+])
+@pytest.mark.parametrize('block_samples', [160, 320, 480, 640, 960])
+def test_frame_evidence_is_independent_of_capture_block_size(hot_frames, expected_reason, block_samples):
+    # The real frontend consumes 32 ms VAD frames, while capture delivers
+    # blocks of another size. Use deterministic classifications to isolate
+    # counting; these shapes are not labelled natural speech.
+    front = DuplexFrontend(aec=False, holdoff_s=0)
+    front._prob = lambda chunk: float(np.mean(chunk) > .5)
+    policy = FloorPolicy(mode=REVERSIBLE)
+    samples = np.concatenate((np.ones(512 * hot_frames, dtype=np.float32),
+                              np.zeros(16000, dtype=np.float32)))
+    for offset in range(0, len(samples), block_samples):
+        _, started, ended, clean = front.update(samples[offset:offset + block_samples])
+        action = policy.update(offset / 16000, speaking=front.hot, started=started,
+                               ended=ended, onset_ms=front.onset_speech_ms,
+                               evidence_ms=front.speech_evidence_ms,
+                               block_s=len(clean) / 16000)
+        if action.cancel or action.resume:
+            break
+    assert action.reason == expected_reason
+    assert action.speech_ms == pytest.approx(hot_frames * 32)
+
+
+def test_confirmation_inside_a_large_capture_block_commits_immediately():
+    front = DuplexFrontend(aec=False, holdoff_s=0)
+    front._prob = lambda chunk: 1.0
+    policy = FloorPolicy(mode=REVERSIBLE)
+    _, started, ended, clean = front.update(np.ones(5120, dtype=np.float32))
+    action = policy.update(0, speaking=front.hot, started=started, ended=ended,
+                           onset_ms=front.onset_speech_ms,
+                           evidence_ms=front.speech_evidence_ms,
+                           block_s=len(clean) / 16000)
+    assert action.cancel and action.reason == 'sustained-speech'
+    assert action.speech_ms == pytest.approx(320)
