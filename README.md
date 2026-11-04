@@ -290,7 +290,10 @@ interface can also select a model explicitly. Returning from local mode to the
 same provider retains its last selected model for the current app session.
 
 Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
-preferred secret manager. When the cloud agent is enabled, web search defaults
+preferred secret manager. The model selector includes DeepSeek V4 Flash Free
+and V4.1 Flash Free on Zen. Availability and free quotas can change; a missing
+Zen key or provider limit is reported in the interface. Selecting a model
+starts a new conversation. When the cloud agent is enabled, web search defaults
 to Brave if `BRAVE_SEARCH_API_KEY` is set, and otherwise to DuckDuckGo HTML
 search without a search API key. The interface can switch between DuckDuckGo,
 Bing RSS, Brave and off while an agent is selected; Brave requires a key in the

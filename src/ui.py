@@ -58,6 +58,15 @@ color:var(--txt);line-height:1.2
 #st.recording{color:var(--red);animation:pulse 1.1s ease-in-out infinite}
 #st.thinking{color:var(--amber)}
 #st.speaking{color:var(--blue)}
+#activity{display:none;align-items:center;gap:10px;margin:0 0 14px;padding:10px 12px;
+background:var(--green-soft);border:1px solid #b9cfc0;border-radius:9px;
+color:#244f3a;font:600 .8rem "Segoe UI",sans-serif}
+#activity.visible{display:flex}
+.activity-pulse{display:flex;align-items:center;gap:3px;height:18px}
+.activity-pulse i{display:block;width:3px;height:12px;background:var(--green);border-radius:3px;
+animation:activity-breathe 1.1s ease-in-out infinite}
+.activity-pulse i:nth-child(2){animation-delay:.14s}.activity-pulse i:nth-child(3){animation-delay:.28s}
+@keyframes activity-breathe{0%,100%{transform:scaleY(.38);opacity:.55}50%{transform:scaleY(1);opacity:1}}
 @keyframes pulse{50%{opacity:.55}}
 #stages{
 display:grid;grid-template-columns:repeat(3,1fr);gap:8px;list-style:none;margin:12px 0 16px;padding:0;
@@ -198,7 +207,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 #pause-control select{width:100%}
 .msg{max-width:95%}
 }
-@media(prefers-reduced-motion:reduce){#st.recording{animation:none}#etafill{transition:none}}
+@media(prefers-reduced-motion:reduce){#st.recording,.activity-pulse i{animation:none}#etafill{transition:none}}
 #pause-help{font:.75rem Segoe UI,sans-serif;color:var(--muted);flex-basis:100%}
 </style></head><body><main>
 <header>
@@ -212,6 +221,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <div class=status-row><span id=st>starting…</span></div>
 <ol id=stages><li id=st_heard>heard</li><li id=st_under>understanding</li><li id=st_voice>voicing</li></ol>
 <div id=etawrap><div id=etafill></div><span id=etalbl></span></div>
+<div id=activity role=status aria-live=polite><span class=activity-pulse aria-hidden=true><i></i><i></i><i></i></span><span id=activity-text></span></div>
 <div id=wavewrap><canvas id=wave width=700 height=64></canvas>
 <div id=lvl>mic level —</div></div>
 <div id=controls>
@@ -229,6 +239,8 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <option value="opencode-go:beam-free">Cloud Agent · Go Beam Free (30-day retention)</option>
 <option value="opencode-go:iceman-contributor-free">Cloud Agent · Go Iceman Free (data used to improve model)</option>
 <option value="opencode-zen:kimi-k3">Cloud Agent · OpenCode Zen (kimi-k3)</option>
+<option value="opencode-zen:deepseek-v4-flash-free">Cloud Agent · Zen DeepSeek V4 Flash Free</option>
+<option value="opencode-zen:deepseek-v4.1-flash-free">Cloud Agent · Zen DeepSeek V4.1 Flash Free</option>
 <option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
 </select>
 <p class=ctrl-lbl>Changing the mode or model starts a new conversation. Cloud models have different data policies. <a href="https://opencode.ai/v2/docs/console/go/#privacy" target="_blank" rel="noopener noreferrer">Review OpenCode Go privacy terms</a>.</p>
@@ -490,6 +502,12 @@ if((!Array.isArray(s.messages)||s.active_turn)&&Array.isArray(s.agent_sources)&&
 let label=document.createElement('strong');label.textContent='Sources';sources.appendChild(label);
 s.agent_sources.forEach(source=>{try{let url=new URL(source.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
 let line=document.createElement('div'),a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=source.title||url.hostname;line.appendChild(a);sources.appendChild(line);}catch{}});}
+let activity=$('activity'),activityText=$('activity-text');
+let activityLabel=s.agent_mode&&s.active_turn?
+  (s.agent_phase==='searching'?'Searching and using online tools…':s.agent_phase==='thinking'?'Thinking about your reply…':
+   s.agent_phase==='transcribing'?'Understanding your speech…':s.agent_phase==='voicing'?'Preparing your spoken reply…':''):'';
+activity.className=activityLabel?'visible':'';
+if(activityText.textContent!==activityLabel)activityText.textContent=activityLabel;
 let st=$('st');st.textContent=s.status+(s.mic_on?'':' (muted)')+' · '+s.mic;st.className=s.status;
 if(!observedMicPending&&observedMicVersion===micVersion&&!pendingActions.has('micbtn'))lastMicOn=s.mic_on;
 $('micbtn').textContent=lastMicOn?'mute mic':'unmute mic';

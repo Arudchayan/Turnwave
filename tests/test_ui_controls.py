@@ -92,6 +92,14 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
   Object.assign(state,{agent_mode:false});
   await context.tick();
   process.stdout.write(JSON.stringify({mode:beamMode,icemanMode,localMode:nodes.mode.textContent,links,diag:nodes.diag.textContent}));
+ }else if(input.scenario==='activity'){
+  Object.assign(state,{agent_mode:true,active_turn:true,agent_phase:'searching'});
+  await context.tick();
+  const search={label:nodes['activity-text'].textContent,visible:nodes.activity.className};
+  state.agent_phase='thinking';await context.tick();
+  const thinking={label:nodes['activity-text'].textContent,visible:nodes.activity.className};
+  state.active_turn=false;await context.tick();
+  process.stdout.write(JSON.stringify({search,thinking,after:nodes.activity.className}));
  }else if(input.scenario==='historical_sources'){
   Object.assign(state,{agent_mode:true,agent_sources:[{title:'Duplicate',url:'https://duplicate.example/'}],
    transcript_revision:1,messages:[
@@ -302,3 +310,12 @@ process.stdout.write(JSON.stringify({text:bubble.textContent,heading:area.childr
     assert data['text']=='Answer' and data['heading']=='Sources'
     assert len(data['links'])==1 and data['links'][0]['href']=='https://example.org/article'
     assert data['links'][0]['rel']=='noopener noreferrer'
+
+
+def test_agent_activity_tracks_search_thinking_and_completion():
+    result = run_browser('activity')
+    assert result['search']['visible'] == 'visible'
+    assert 'Searching' in result['search']['label']
+    assert result['thinking']['visible'] == 'visible'
+    assert 'Thinking' in result['thinking']['label']
+    assert result['after'] == ''
