@@ -53,9 +53,43 @@ height:22px;margin:10px 0;position:relative;overflow:hidden}
 #etalbl{position:absolute;inset:0;text-align:center;font-size:.75em;line-height:22px;color:var(--txt)}
 details#metrics{margin:10px 0}details#metrics summary{cursor:pointer;color:var(--dim);font-size:.85em}
 footer{margin-top:10px;font-size:.75em;color:var(--dim)}
+/* A quiet listening room: keep the controls close, diagnostics in the background. */
+:root{--bg:#f4f0e8;--card:#fffdf7;--line:#d7d0c2;--txt:#252b26;--dim:#626e60;--green:#356d51;--red:#ac4c3d;--amber:#94621d;--blue:#355d4b}
+body{max-width:940px;padding:clamp(20px,5vw,56px);font-family:Georgia,serif;line-height:1.5}
+header{margin-bottom:clamp(28px,6vw,68px);gap:12px}
+h1{font-size:1.65rem;letter-spacing:-.06em;font-weight:normal}
+#srvlbl,#lvl,button,select,#stages,#banner,#cards,footer,summary{font-family:Segoe UI,sans-serif}
+#srvlbl{font-size:.75rem;letter-spacing:.02em}
+.dot{width:8px;height:8px}
+#st{display:inline-block;font-size:clamp(1.6rem,4vw,2.8rem);font-weight:normal;letter-spacing:-.04em;padding:0;background:none;border:0;border-radius:0;color:var(--txt)!important}
+#stages{margin:10px 0 24px;gap:12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em}
+#stages li{border:0;border-bottom:2px solid var(--line);border-radius:0;padding:.3em 0}
+#banner{background:#f9e9e2;border-color:#c47b6a;color:#702b20}
+#wavewrap{background:#e7e8dc;border-radius:4px;padding:14px;margin:20px 0}
+#lvl{font-size:.72rem;margin-top:4px}
+#controls{gap:8px;margin:24px 0 34px}
+button,select{border-radius:4px;background:transparent;padding:.7em 1em;font-size:.85rem}
+button:hover{border-color:var(--green);background:#e8ebe0}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #b47439;outline-offset:3px}
+button.big{background:var(--green);border-color:var(--green);color:#fffdf7}
+button.big:hover{background:#254f3b}
+#cards{gap:0;border-top:1px solid var(--line)}
+.card{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;text-align:left;padding:12px 8px}
+#log{background:transparent;border-top:1px solid var(--line);border-radius:0;padding:20px 0;gap:14px;min-height:60px}
+.msg{border-radius:4px;line-height:1.5;padding:.65em .9em}
+.msg.u{background:#dce6d8;color:var(--txt)}
+.msg.a{background:var(--card);border-color:var(--line)}
+#etawrap{background:#e7e8dc}#etalbl{color:var(--txt)}
+#mode{font: .8rem Segoe UI,sans-serif;color:var(--dim);margin:8px 0 0}
+#sources{font: .82rem Segoe UI,sans-serif;line-height:1.6}
+#sources a{color:var(--green);overflow-wrap:anywhere}
+footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
+@media(max-width:560px){#cards{grid-template-columns:repeat(2,1fr)}#controls select{max-width:100%;width:100%}.msg{max-width:95%}}
+@media(prefers-reduced-motion:reduce){#st.recording{animation:none}#etafill{transition:none}}
 </style></head><body>
 <header><div class=dot id=srv></div><div><h1>Turnwave</h1>
 <div id=srvlbl>checking server…</div></div></header>
+<div id=mode>Checking processing mode…</div>
 <div><span id=st>starting…</span></div>
 <ol id=stages><li id=st_heard>heard</li><li id=st_under>understanding</li><li id=st_voice>voicing</li></ol>
 <div id=banner></div>
@@ -78,7 +112,8 @@ footer{margin-top:10px;font-size:.75em;color:var(--dim)}
 </div></details>
 <h3 style="margin:.4em 0">conversation</h3><div id=log role=log aria-live=polite></div>
 <div id=draft class="msg a draft" style=display:none></div>
-<footer>100% local · LFM2.5-Audio-1.5B · wear headphones for interruption to work</footer>
+<div id=sources></div>
+<footer>Voice uses your configured server · headphones improve interruption handling</footer>
 <script>
 let lv=[],lastRevision=-1,pollDelay=300;
 const STLBL={st_heard:'heard',st_under:'understanding',st_voice:'voicing'};
@@ -138,12 +173,20 @@ let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
 let s=await(await fetch('/api/state')).json();
 lastState=s;
+let mode=$('mode');mode.textContent=s.agent_mode?
+('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?'enabled':'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
+'Voice conversation · processed by your configured voice server';
+let sources=$('sources');sources.innerHTML='';
+if(Array.isArray(s.agent_sources)&&s.agent_sources.length){
+let label=document.createElement('strong');label.textContent='Sources';sources.appendChild(label);
+s.agent_sources.forEach(source=>{try{let url=new URL(source.url);if(!['http:','https:'].includes(url.protocol))return;
+let line=document.createElement('div'),a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=source.title||url.hostname;line.appendChild(a);sources.appendChild(line);}catch{}});}
 let st=$('st');st.textContent=s.status+(s.mic_on?'':' (muted)')+' · '+s.mic;st.className=s.status;
 if(!observedMicPending&&observedMicVersion===micVersion&&!pendingActions.has('micbtn'))lastMicOn=s.mic_on;
 $('micbtn').textContent=lastMicOn?'mute mic':'unmute mic';
 $('micbtn').disabled=lastMicOn===null||pendingActions.has('micbtn');
 let ok=s.server_ok;$('srv').className='dot'+(ok?' ok':'');
-$('srvlbl').textContent=ok?'server connected (local :8080)':'SERVER OFFLINE — start it in WSL2';
+$('srvlbl').textContent=ok?'voice server connected':'voice server offline — check its connection';
 renderAlerts();
 $('m_ttft').textContent=s.last_ttft??'—';$('m_aud').textContent=s.last_audio_s??'—';
 $('m_turn').textContent=s.last_turn_s??'—';$('m_n').textContent=s.turns;
@@ -177,9 +220,9 @@ pollDelay=(ph==='hearing'||ph==='thinking'||ph==='speaking'||ph==='interrupted')
 let db=s.level>0?(20*Math.log10(s.level)).toFixed(0):'-inf';
 $('lvl').textContent='mic level '+db+' dBFS · '+s.mic;
 lv.push(Math.min(1,s.level*8));if(lv.length>140)lv.shift();
-let c=$('wave'),x=c.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,700,64);
+let c=$('wave'),x=c.getContext('2d');x.fillStyle='#e7e8dc';x.fillRect(0,0,700,64);
 lv.forEach((v,i)=>{let h=Math.max(2,v*60);
-x.fillStyle=s.status==='recording'?'#f85149':(s.status==='speaking'?'#58a6ff':'#3fb950');
+x.fillStyle=s.status==='recording'?'#ac4c3d':(s.status==='speaking'?'#4c7560':'#8e9f86');
 x.fillRect(i*5,32-h/2,4,h);});
 }catch(e){$('srvlbl').textContent='app unreachable — is app.py running?';pollDelay=300;}
 setTimeout(tick,pollDelay);}
