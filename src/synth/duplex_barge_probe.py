@@ -94,7 +94,10 @@ def build_tracks(kind, far, near):
     voice = np.zeros(size, np.float32)
     far_length = min(len(far), round(3.3 * 16000))
     playback[8000:8000 + far_length] = far[:far_length]
-    if kind != 'echo_only':
+    if kind == 'utterance':
+        count = min(len(near), size - 24000)
+        voice[24000:24000 + count] = near[:count]
+    elif kind != 'echo_only':
         length = {'short_fragment': .22, 'sustained': .9, 'mid_pause': .4}[kind]
         count = round(length * 16000)
         voice[24000:24000 + count] = near[:count]
@@ -149,6 +152,8 @@ def main():
     near_source.add_argument('--near', help='mono PCM16 WAV for the near-end speech')
     near_source.add_argument('--public-human', action='store_true', help='download/load the public LibriSpeech dummy clip')
     parser.add_argument('--mode', choices=('current', 'reversible'), default='current')
+    parser.add_argument('--utterance', action='store_true', help='replay the full near-end utterance at two gains')
+    parser.add_argument('--trim-silence', action='store_true', help='trim leading and trailing low-energy 20 ms frames')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
     # Experiment mode is explicit and does not inherit application settings.
@@ -160,16 +165,24 @@ def main():
     near = resample(near, rate)
     if len(far) < 16000 or len(near) < 16000:
         raise ValueError('Far and near fixtures must contain at least 1 second of audio each')
+    if args.trim_silence:
+        hot = [i for i in range(0, len(near) - 320 + 1, 320)
+               if float(np.sqrt(np.mean(near[i:i + 320] ** 2))) > .003]
+        if not hot:
+            raise ValueError('Near fixture contains no speech above the trim threshold')
+        near = near[max(0, hot[0] - 320):min(len(near), hot[-1] + 640)]
     for signal, target in ((far, .05), (near, .06)):
         rms = float(np.sqrt(np.mean(signal ** 2)))
         if rms <= 0:
             raise ValueError('Fixture contains no audio')
         signal *= target / rms
+    cases = ('utterance',) if args.utterance else ('echo_only', 'short_fragment', 'sustained', 'mid_pause')
     rows = [run_case(kind, args.mode, gain, far, near)
-            for kind in ('echo_only', 'short_fragment', 'sustained', 'mid_pause')
+            for kind in cases
             for gain in (1.0, .5)]
     report = {'scope': 'real app capture loop, virtual devices, one synthetic echo path and one speech pair',
               'mode': args.mode, 'near_source': 'librispeech-dummy' if args.public_human else 'supplied WAV',
+              'near_duration_ms': round(len(near) / 16, 1), 'trimmed': args.trim_silence,
               'near_normalized_sha256': hashlib.sha256(near.tobytes()).hexdigest(),
               'far_normalized_sha256': hashlib.sha256(far.tobytes()).hexdigest(),
               'onset_ms': 1500, 'echo_delay_ms': 80, 'frame_ms': 20,

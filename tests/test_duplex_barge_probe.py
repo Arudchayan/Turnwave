@@ -16,6 +16,8 @@ def test_synthetic_tracks_keep_silence_and_pause_boundaries():
     assert np.all(voice[38400:44800] == 1)
     _, echo_only = build_tracks('echo_only', far, near)
     assert not np.any(echo_only)
+    _, utterance = build_tracks('utterance', far, near[:9600])
+    assert np.count_nonzero(utterance) == 9600
 
 
 def test_frame_acknowledgment_waits_for_next_read():
