@@ -6,6 +6,9 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added an experimental opt-in longer echo tail for delayed playback feedback.
+  Quiet interruptions can be delayed; real-device validation is still needed.
+
 - Added optional cloud conversation with local speech processing, web search,
   source links, and preserved questions after interruptions. Live provider and
   real-device spoken-search validation remain outstanding.

@@ -48,6 +48,14 @@ Search results can be incomplete, and provider limits can prevent responses.
 The voice-to-search flow has automated simulated coverage but has not yet passed
 a complete real-device spoken-search acceptance test.
 
+## Optional delayed echo protection
+
+If the microphone picks up a delayed copy of the assistant's speech, set
+`LOCALVOICE_ECHO_PROFILE=long` before starting the app. The standard profile
+remains the default. The longer profile reduced false starts in one synthetic
+comparison, but delayed one quiet interruption; it is experimental and has not
+been validated for a real headset or room. See [results](docs/RESULTS.md).
+
 ## What we tested
 
 | Work | Finding | Status |
