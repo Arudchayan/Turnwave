@@ -43,6 +43,7 @@ class Job:
     playback_closed: threading.Event = field(default_factory=threading.Event)
     agent_input: str = ''
     agent_input_saved: bool = False
+    agent_reply_saved: bool = False
     sources: list = field(default_factory=list)
 
 
@@ -258,12 +259,28 @@ class Assistant:
     def _remember_agent_input(self, job):
         """Keep a recognized request once, even if its reply is interrupted.
 
-        Caller holds _lock. An unfinished reply is intentionally not recorded
-        as though it had been heard.
+        Caller holds _lock.
         """
         if self.agent and job.epoch == self._epoch and job.agent_input and not job.agent_input_saved:
             self._agent_history.append({'role': 'user', 'content': job.agent_input})
             job.agent_input_saved = True
+            self._agent_history = self._agent_history[-20:]
+            while self._agent_history and self._agent_history[0]['role'] != 'user':
+                self._agent_history.pop(0)
+
+    def _remember_interrupted_agent_reply(self, job):
+        """Keep a generated draft only after some audio was accepted for playback.
+
+        The marker explicitly prevents treating any part as definitely heard;
+        playback sample counts cannot tell us which words reached the listener.
+        Caller holds _lock.
+        """
+        text = job.turn.text.strip()
+        if (self.agent and not job.test and job.epoch == self._epoch and
+                job.agent_input and job.played_samples and text and not job.agent_reply_saved):
+            self._remember_agent_input(job)
+            self._agent_history.append({'role': 'assistant', 'content': text + ' [interrupted]'})
+            job.agent_reply_saved = True
             self._agent_history = self._agent_history[-20:]
             while self._agent_history and self._agent_history[0]['role'] != 'user':
                 self._agent_history.pop(0)
@@ -591,7 +608,8 @@ class Assistant:
         def on_written(audio):
             # The blocking write may finish while cancellation arrives. Count
             # accepted samples even then; exclude writes that raised an error.
-            job.played_samples += len(audio)
+            with self._lock:
+                job.played_samples += len(audio)
         with self._play_lock:
             if turn.cancel.is_set():
                 self._archive_call(job, 'finish_generation', turn)
@@ -621,6 +639,7 @@ class Assistant:
                 with self._lock:
                     if self.agent and not job.test and self._active is job and turn.error:
                         self._remember_agent_input(job)
+                        self._remember_interrupted_agent_reply(job)
                     if (self.agent and not job.test and self._active is job and job.epoch == self._epoch
                             and not turn.cancel.is_set() and not turn.error and job.played_samples):
                         self._remember_agent_input(job)
@@ -670,6 +689,7 @@ class Assistant:
             if job is not None:
                 self.diagnostics.event('interrupt', turn_id=job.id, reason=why, played_s=round(job.played_samples/24000, 3))
                 self._remember_agent_input(job)
+                self._remember_interrupted_agent_reply(job)
                 job.turn.abort()
                 self._active = None
                 # Backend cannot truncate its KV to the played prefix.
