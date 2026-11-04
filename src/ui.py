@@ -152,6 +152,9 @@ border-bottom-left-radius:3px
 }
 .msg.s{align-self:center;color:var(--dim);font-style:italic;font-size:.83rem;background:none;border:0;box-shadow:none;padding:.2em .6em}
 .msg.a.draft{border-style:dashed;opacity:.85;margin-top:10px}
+.msg-sources{font:.76rem "Segoe UI",sans-serif;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.msg-sources strong{display:block;color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}
+.msg-sources a{display:block;color:var(--green);overflow-wrap:anywhere;margin-top:4px}
 #sources{
 font:.8rem "Segoe UI",sans-serif;line-height:1.55;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)
 }
@@ -422,9 +425,14 @@ e.preventDefault();
 let inp=$('promptin'),txt=(inp.value||'').trim();
 if(!txt||pendingActions.has('sendbtn'))return;
 if(await action('sendbtn','/api/prompt',{text:txt}))inp.value='';};
-function bubble(t){let d=document.createElement('div');
+function bubble(t,sourceItems=[]){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
-else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
+else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();
+if(Array.isArray(sourceItems)){
+let area=document.createElement('div'),label=document.createElement('strong'),count=0;area.className='msg-sources';label.textContent='Sources';area.appendChild(label);
+sourceItems.forEach(source=>{try{let url=new URL(source.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
+let a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=source.title||url.hostname;area.appendChild(a);count++;}catch{}});
+if(count)d.appendChild(area);}}
 else{d.className='msg s';d.textContent=t;}return d;}
 async function tick(){
 try{
@@ -476,9 +484,9 @@ let hdr=document.createElement('div');hdr.className='note-hdr';hdr.textContent=(
 let body=document.createElement('div');body.className='note-body';body.textContent=n.analysis||'';
 card.appendChild(hdr);card.appendChild(body);notes.appendChild(card);});}}
 let sources=$('sources');sources.innerHTML='';
-if(Array.isArray(s.agent_sources)&&s.agent_sources.length){
+if((!Array.isArray(s.messages)||s.active_turn)&&Array.isArray(s.agent_sources)&&s.agent_sources.length){
 let label=document.createElement('strong');label.textContent='Sources';sources.appendChild(label);
-s.agent_sources.forEach(source=>{try{let url=new URL(source.url);if(!['http:','https:'].includes(url.protocol))return;
+s.agent_sources.forEach(source=>{try{let url=new URL(source.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
 let line=document.createElement('div'),a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=source.title||url.hostname;line.appendChild(a);sources.appendChild(line);}catch{}});}
 let st=$('st');st.textContent=s.status+(s.mic_on?'':' (muted)')+' · '+s.mic;st.className=s.status;
 if(!observedMicPending&&observedMicVersion===micVersion&&!pendingActions.has('micbtn'))lastMicOn=s.mic_on;
@@ -504,7 +512,8 @@ sel.innerHTML='';roster.forEach(([i,n])=>{let o=document.createElement('option')
 lastDeviceIndex=String(s.mic_index);sel.value=lastDeviceIndex;}
 let log=$('log');
 if(s.transcript_revision!==lastRevision){log.innerHTML='';
-s.transcript.forEach(t=>log.appendChild(bubble(t)));lastRevision=s.transcript_revision;}
+if(Array.isArray(s.messages))s.messages.forEach(m=>{if(m&&typeof m.text==='string')log.appendChild(bubble(m.text,m.sources));});
+else s.transcript.forEach(t=>log.appendChild(bubble(t)));lastRevision=s.transcript_revision;}
 let dr=$('draft');
 if(s.assistant_partial){dr.style.display='block';dr.textContent='… '+s.assistant_partial;}
 else{dr.style.display='none';dr.textContent='';}

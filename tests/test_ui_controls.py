@@ -16,7 +16,7 @@ const vm=require('node:vm');
 const input=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
 const nodes={},requests=[],timers=[];
 const state={status:'listening',phase:'listening',mic_on:false,mic:'test',server_ok:true,mics:[],mic_index:1,transcript:[],transcript_revision:0,level:0,warning:'Recording warning',end_silence_ms:480};
-function element(){return {style:{},options:[],children:[],disabled:false,appendChild(c){this.children.push(c);},getContext(){return {fillRect(){}}}};}
+function element(){return {style:{},options:[],children:[],disabled:false,set innerHTML(value){this.children=[];},appendChild(c){this.children.push(c);},getContext(){return {fillRect(){}}}};}
 let release,releaseState,stateRequests=0;
 const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cleared=true;},setTimeout(fn,ms){timers.push({fn,ms});return timers.length-1;},document:{getElementById(id){return nodes[id]??=element();},createElement:element},fetch:async(path,options={})=>{
  if(path==='/api/state'){
@@ -92,6 +92,21 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
   Object.assign(state,{agent_mode:false});
   await context.tick();
   process.stdout.write(JSON.stringify({mode:beamMode,icemanMode,localMode:nodes.mode.textContent,links,diag:nodes.diag.textContent}));
+ }else if(input.scenario==='historical_sources'){
+  Object.assign(state,{agent_mode:true,agent_sources:[{title:'Duplicate',url:'https://duplicate.example/'}],
+   transcript_revision:1,messages:[
+    {text:'user: First question',sources:[]},
+    {text:'assistant: First answer',sources:[{title:'<b>First</b>',url:'https://example.org/first'},
+     {title:'Unsafe',url:'javascript:alert(1)'},{title:'Credential',url:'https://user@example.org/'}]}]});
+  await context.tick();
+  const first=nodes.log.children[1].children[0].children.slice(1).map(a=>({href:a.href,text:a.textContent}));
+  state.messages.push({text:'user: Second question',sources:[]},{text:'assistant: Second answer',
+   sources:[{title:'Second',url:'https://example.org/second'}]});
+  state.transcript_revision=2;
+  await context.tick();
+  const replies=nodes.log.children.filter(c=>c.className==='msg a').map(c=>({text:c.textContent,
+   links:c.children[0].children.slice(1).map(a=>({href:a.href,text:a.textContent}))}));
+  process.stdout.write(JSON.stringify({first,replies,globalSources:nodes.sources.children.length}));
  }else if(input.scenario==='stale_poll'){
   const first=nodes.micbtn.onclick();await new Promise(setImmediate);
   const poll=context.tick();await new Promise(setImmediate);
@@ -200,6 +215,16 @@ def test_model_choices_disclose_provider_data_terms_before_selection():
     assert 'Go Beam Free (30-day retention)' in PAGE
     assert 'Go Iceman Free (data used to improve model)' in PAGE
     assert 'https://opencode.ai/v2/docs/console/go/#privacy' in PAGE
+
+
+def test_each_answer_retains_its_own_safe_source_links():
+    result = run_browser('historical_sources')
+    assert result['first'] == [{'href': 'https://example.org/first', 'text': '<b>First</b>'}]
+    assert result['replies'] == [
+        {'text': 'First answer', 'links': [{'href': 'https://example.org/first', 'text': '<b>First</b>'}]},
+        {'text': 'Second answer', 'links': [{'href': 'https://example.org/second', 'text': 'Second'}]},
+    ]
+    assert result['globalSources'] == 0
 
 
 def test_prompt_submission_trims_text_dispatches_api_and_clears_input():

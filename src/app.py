@@ -344,6 +344,19 @@ class Assistant:
                     return True
             return False
 
+    def _attach_sources(self, message_id, sources):
+        """Attach public source labels to the matching reply, if it still exists."""
+        safe = [{'title': str(source.get('title') or '')[:300], 'url': source['url']}
+                for source in sources if isinstance(source, dict)
+                and isinstance(source.get('url'), str) and len(source['url']) <= 2048]
+        with self._lock:
+            for message in self._messages:
+                if message['id'] == message_id:
+                    message['sources'] = safe
+                    self.transcript_revision += 1
+                    return True
+            return False
+
     def _remember_agent_input(self, job):
         """Keep a recognized request once, even if its reply is interrupted.
 
@@ -370,7 +383,7 @@ class Assistant:
                 self._agent_history = self._agent_history[-20:]
                 while self._agent_history and self._agent_history[0]['role'] != 'user':
                     self._agent_history.pop(0)
-                if job.sources:
+                if job.sources and self._active is job:
                     self._agent_sources = list(job.sources)
 
     def _asr_worker(self):
@@ -1041,6 +1054,8 @@ class Assistant:
                                   ' [reply reached length limit]' if turn.truncated else
                                   '')
                         self._replace(job.reply_id, 'assistant: ' + (text or turn.error or ('[speaker check complete]' if job.test and job.played_samples else '[voice reply]' if job.played_samples else '[no reply]')) + suffix)
+                        if text and job.sources:
+                            self._attach_sources(job.reply_id, job.sources)
                     if self._active is job:
                         self._agent_phase = None
                         if self._barge is not None and self._barge.get('job') is job:
@@ -1519,6 +1534,9 @@ class Assistant:
                         mic_identity=dict(self._mic_identity) if self._mic_identity is not None else None,
                         server_ok=self._server_ok, level=self.front.level,
                         transcript=[m['text'] for m in self._messages if m['text']],
+                        messages=[{'id': m['id'], 'text': m['text'],
+                                   'sources': [dict(source) for source in m.get('sources', [])]}
+                                  for m in self._messages if m['text']],
                         transcript_revision=self.transcript_revision,
                         assistant_partial=partial, heard_at=self.heard_at,
                         gen_start=self.gen_start, first_audio_at=self.first_audio_at,

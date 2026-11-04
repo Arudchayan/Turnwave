@@ -251,6 +251,58 @@ def test_voice_agent_transcribes_speaks_remembers_and_resets():
         app.close()
 
 
+def test_sources_remain_attached_to_their_reply_across_followups_and_reset():
+    class FirstSourceAgent(FakeAgent):
+        def __init__(self): self.calls = 0
+        def respond(self, text, history, turn, on_search):
+            self.calls += 1
+            sources = ([{'title': 'First source', 'url': 'https://example.org/first'}]
+                       if self.calls == 1 else [])
+            return 'A short answer.', sources
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                    client=LocalVoice(), agent=FirstSourceAgent())
+    try:
+        first = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: first.playback_closed.is_set() and app._active is None)
+        state = app.state()
+        first_reply = next(m for m in state['messages'] if m['id'] == first.reply_id)
+        assert first_reply['sources'] == [{'title': 'First source', 'url': 'https://example.org/first'}]
+        first_reply['sources'][0]['title'] = 'Changed in caller'
+        second = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        messages = app.state()['messages']
+        assert next(m for m in messages if m['id'] == first.reply_id)['sources'][0]['title'] == 'First source'
+        assert next(m for m in messages if m['id'] == second.reply_id)['sources'] == []
+        app.set_agent_mode('local')
+        assert next(m for m in app.state()['messages'] if m['id'] == first.reply_id)['sources']
+        app.reset()
+        assert app.state()['messages'] == []
+    finally:
+        app.close()
+
+
+def test_cancelled_before_playback_keeps_sources_with_the_visible_draft():
+    import threading
+    entered = threading.Event()
+    class WaitingVoice(LocalVoice):
+        def tts(self, text, turn, max_tokens=128, on_audio=None):
+            entered.set()
+            turn.cancel.wait(2)
+            turn.done.set()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                    client=WaitingVoice(), agent=FakeAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert entered.wait(2)
+        app.interrupt()
+        wait_for(lambda: job.playback_closed.is_set() and job.generation_closed.is_set())
+        reply = next(m for m in app.state()['messages'] if m['id'] == job.reply_id)
+        assert reply['text'].startswith('assistant: A short answer.') and job.played_samples == 0
+        assert reply['sources'] == [{'title': 'Source', 'url': 'https://example.org'}]
+    finally:
+        app.close()
+
+
 def test_app_distinguishes_transcribed_and_typed_turns():
     class ModalityAgent(FakeAgent):
         supports_input_modality = True
