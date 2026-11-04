@@ -694,6 +694,41 @@ def test_search_selection_and_zen_switch_preserve_provider(monkeypatch):
         app.close()
 
 
+def test_agent_switch_uses_consistent_defaults_and_does_not_reuse_another_providers_model(monkeypatch):
+    monkeypatch.delenv('LOCALVOICE_AGENT_MODEL', raising=False)
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice())
+    try:
+        assert app.set_agent_mode('go')['model'] == 'kimi-k3'
+        assert app.set_agent_mode('go', 'beam-free')['model'] == 'beam-free'
+        app.set_agent_mode('local')
+        assert app.set_agent_mode('go')['model'] == 'beam-free'
+        assert app.set_agent_mode('zen')['model'] == 'kimi-k3'
+        assert app.set_agent_mode('custom')['model'] == 'local-model'
+    finally:
+        app.close()
+
+
+def test_agent_switch_honors_configured_default_model(monkeypatch):
+    monkeypatch.setenv('LOCALVOICE_AGENT_MODEL', 'custom-go-model')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice())
+    try:
+        assert app.set_agent_mode('go')['model'] == 'custom-go-model'
+    finally:
+        app.close()
+
+
+@pytest.mark.parametrize('expert,expected', [(None, 'kimi-k3'), ('expert-model', 'expert-model')])
+def test_model_switch_updates_default_expert_but_preserves_explicit_expert(expert, expected):
+    agent = AgentClient('key', model='beam-free', expert_model=expert)
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        app.set_agent_mode('go', 'kimi-k3')
+        assert app.agent.model == 'kimi-k3'
+        assert app.agent.expert_model == expected
+    finally:
+        app.close()
+
+
 def test_search_provider_http_rejects_missing_brave_key_and_invalid_body():
     import threading
     from http.server import ThreadingHTTPServer

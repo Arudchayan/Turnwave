@@ -1165,8 +1165,15 @@ class Assistant:
                 return {'ok': True, 'agent_mode': False}
             provider = ('custom' if mode == 'custom'
                         else 'zen' if mode in ('opencode-zen', 'zen') else 'go')
-            desired_model = (model.strip() if model else None) or getattr(self._saved_agent, 'model', None) or os.getenv('LOCALVOICE_AGENT_MODEL', 'beam-free')
-            if self._saved_agent is not None and getattr(self._saved_agent, 'provider', 'go') == provider:
+            same_provider = (self._saved_agent is not None and
+                             getattr(self._saved_agent, 'provider', 'go') == provider)
+            saved_model = getattr(self._saved_agent, 'model', None) if same_provider else None
+            default_model = 'local-model' if provider == 'custom' else 'kimi-k3'
+            desired_model = ((model.strip() if model else None) or saved_model or
+                             os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or default_model)
+            if same_provider:
+                if saved_model and getattr(self._saved_agent, 'expert_model', None) == saved_model:
+                    self._saved_agent.expert_model = desired_model
                 self._saved_agent.model = desired_model
                 self.agent = self._saved_agent
             else:
@@ -1734,7 +1741,7 @@ def main():
         search_key = os.getenv('BRAVE_SEARCH_API_KEY')
         search_provider = os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or ('brave' if search_key else 'ddg')
         agent = AgentClient(os.getenv(key_name), provider=provider,
-                            model=os.getenv('LOCALVOICE_AGENT_MODEL', 'kimi-k3'),
+                            model=os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or 'kimi-k3',
                             search_key=search_key,
                             search_provider=search_provider,
                             local_tools=True,

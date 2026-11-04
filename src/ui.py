@@ -221,9 +221,9 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <label class=ctrl-lbl for=agentsel>Processing &amp; reasoning model</label>
 <select id=agentsel aria-label="Processing mode and model">
 <option value="local">Local Direct · LFM Speech-to-Speech</option>
+<option value="opencode-go:kimi-k3">Cloud Agent · OpenCode Go (kimi-k3)</option>
 <option value="opencode-go:beam-free">Cloud Agent · Go Beam Free (30-day retention)</option>
 <option value="opencode-go:iceman-contributor-free">Cloud Agent · Go Iceman Free (data used to improve model)</option>
-<option value="opencode-go:kimi-k3">Cloud Agent · OpenCode Go (kimi-k3)</option>
 <option value="opencode-zen:kimi-k3">Cloud Agent · OpenCode Zen (kimi-k3)</option>
 <option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
 </select>
@@ -447,7 +447,7 @@ lastPersona=s.agent_persona;psel.value=lastPersona;}
 psel.disabled=!s.agent_mode||pendingActions.has('personasel');}
 let agsel=$('agentsel');
 if(agsel&&!observedAgentPending&&observedAgentVersion===agentVersion&&!pendingActions.has('agentsel')){
-let cur=s.agent_mode?((s.agent_provider==='Custom Endpoint'?'custom':s.agent_provider==='OpenCode Zen'?'opencode-zen':'opencode-go')+':'+(s.agent_model||'beam-free')):'local';
+let cur=s.agent_mode?((s.agent_provider==='Custom Endpoint'?'custom':s.agent_provider==='OpenCode Zen'?'opencode-zen':'opencode-go')+':'+(s.agent_model||'kimi-k3')):'local';
 if(!Array.from(agsel.options).some(o=>o.value===cur)&&s.agent_mode){
 let o=document.createElement('option');o.value=cur;o.textContent='Cloud Agent · '+(s.agent_provider||'OpenCode')+' ('+(s.agent_model||'custom')+')';agsel.appendChild(o);}
 lastAgentVal=cur;agsel.value=cur;}

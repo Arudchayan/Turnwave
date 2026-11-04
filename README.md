@@ -235,6 +235,11 @@ $env:LOCALVOICE_AGENT = 'opencode-zen'
 $env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-completions model
 ```
 
+Go and Zen use `kimi-k3` when no model is specified. `LOCALVOICE_AGENT_MODEL`
+sets the startup default and the default for a newly selected provider; the
+interface can also select a model explicitly. Returning from local mode to the
+same provider retains its last selected model for the current app session.
+
 Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
 preferred secret manager. When the cloud agent is enabled, web search defaults
 to Brave if `BRAVE_SEARCH_API_KEY` is set, and otherwise to DuckDuckGo HTML
