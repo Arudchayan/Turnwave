@@ -128,8 +128,9 @@ the authored 3/3 backchannel preservation in the policy replay did not survive
 the real frontend and echo. The reversible path still ducked first and delayed
 the commit by about 220 ms, but it did not preserve the turn.
 
-The acoustic result is the reason the default remains hard and the feature
-remains opt-in. Backchannel preservation needs either better double-talk
+The acoustic result is a reason the reversible feature remains opt-in. The app's
+default uses deferred interruption; `hard` is an explicit experimental mode.
+Backchannel preservation needs either better double-talk
 evidence, a different duration/energy policy, or real-device tuning.
 
 ## Public-pause EOT diagnostic

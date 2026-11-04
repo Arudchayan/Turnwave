@@ -130,6 +130,28 @@ real-device acceptance. The LFM3 figure is a single smoke test, not a latency
 benchmark. The mid-turn-pause false cancel is reduced but not eliminated; the
 optional sidecar and floor mode remain opt-in.
 
+## Local continuity after a context reset
+
+On November 4, a paired LFM3 Omni Q4 diagnostic used synthesized speech for
+“Give me three ways to relax after work” followed by “What about something
+else?” The same model's ASR recovered both inputs exactly. With the conversation
+socket retained, the follow-up gave additional suggestions; after resetting it,
+the reply was “What else?” Two runs of this single prompt pair showed that same
+pattern. This is a small diagnostic, not a general accuracy score or a live
+interruption test. The app currently resets local context after cancellation
+because the backend cannot truncate its context to what was actually heard.
+Reproduce with the app stopped and an LFM3 server running:
+
+```powershell
+python -m src.synth.continuity_reset_probe --out outputs/continuity-reset.json
+```
+
+In a separate synthetic echo sweep using one far-end recording, 12 delay/gain
+combinations produced no starts in either hard or reversible mode. The room and
+headset path were not measured. The acoustic double-talk replay still cancelled
+its short backchannel in both modes, so neither result establishes reliable echo
+or backchannel handling on a real device.
+
 ## What remains open
 
 False interruptions, paused-sentence behavior and reply quality remain unresolved.
