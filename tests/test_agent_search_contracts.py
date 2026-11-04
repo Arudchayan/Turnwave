@@ -470,5 +470,3 @@ def test_empty_reasoning_reply_retries_without_effort(monkeypatch):
     answer, _ = AgentClient('key').respond('Hello', [], Turn())
     assert answer == 'Recovered reply.'
     assert attempts == [('low', 450), (None, 1200)]
-
-
