@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Clarified the pause control's response-delay tradeoff and added a
+  reproducible annotated-pause comparison for its three presets.
 - Prevented a playback stop from racing with echo-reference delivery and a
   subsequent device write.
 - Show a retry message when local transcription is empty instead of sending an

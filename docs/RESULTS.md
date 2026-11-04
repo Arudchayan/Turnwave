@@ -340,6 +340,43 @@ headset path were not measured. The acoustic double-talk replay still cancelled
 its short backchannel in both modes, so neither result establishes reliable echo
 or backchannel handling on a real device.
 
+## Adjustable pause between turns
+
+An additional annotation-only screen compared the three fixed pause presets
+on the first 400 English validation rows of [LiveKit's end-of-turn dataset](https://huggingface.co/datasets/livekit/eot-bench-data).
+Among 850 annotated mid-turn pauses, the 480 ms threshold crossed 286 (33.65%),
+800 ms crossed 105 (12.35%), and 1,120 ms crossed 60 (7.06%). The longer
+settings also add 320 and 640 ms, respectively, to the nominal silence wait
+relative to 480 ms. All 400 annotated final pauses in this subset extended past
+each threshold; that is a property of these annotations, not a real-world
+end-of-turn recall measurement.
+
+This screen uses per-pause observations from the first 400 rows, not a random
+or independent held-out sample. It does not run Turnwave's VAD, model,
+microphone, playback, or room acoustics. Longer waits can still split a longer
+pause and make completed turns feel slower. The default remains 480 ms; users
+can select the longer options. The source Parquet SHA-256 was
+`e475d435c8e693912243e8a810bf7e34a59e01e208551ce5b362c9c778b0fdc4`.
+With `pandas` and a Parquet reader installed, reproduce against a local copy:
+
+```powershell
+python -m src.synth.fixed_pause_benchmark --dataset path/to/validation.parquet --limit 400 --out outputs/pause-presets.json
+```
+
+The interface offers 480, 800 and 1,120 ms silence waits. In one CPU replay
+through the Silero frontend with echo processing disabled and no holdoff, the
+SAPI phrase “Hello, can you hear me clearly?” was trimmed to 100 ms around samples above 0.008 absolute
+amplitude, resulting in a 2.196 s clip. It was repeated with either 650 or
+850 ms of inserted silence, followed by 1.5 s of silence, in 20 ms steps.
+At both inserted gaps, the 480 and 800 ms settings produced
+two detected turns; the 1,120 ms setting produced one. For the 650 ms gap,
+the final endpoints were at 5.46, 5.78 and 6.10 s, respectively: joining the
+two clips came with 640 ms of additional final wait compared with 480 ms.
+The inserted silence is not the entire VAD-measured silence because the clips
+also contain quiet audio. This is one synthetic voice and does not establish
+word retention, false-interruption rates or a generally safe setting. The
+default remains 480 ms and the setting changes only between utterances.
+
 ## Delayed playback echo tail
 
 A synthetic frontend comparison used one generated far-end clip, one public
