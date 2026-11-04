@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added a capture-loop interruption benchmark and documented its false-cancel
+  and quiet-speech observations; interruption behavior is unchanged.
 - Added a reproducible synthetic spoken-search probe and recorded two live
   provider trials, with their device and reliability limits.
 - Added conversation mode, model, and search controls. Changing mode or model

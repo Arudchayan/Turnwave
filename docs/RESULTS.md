@@ -1,5 +1,37 @@
 # Results and lessons
 
+## Capture-loop interruption replay
+
+On November 4, 2026, the app capture loop was replayed with one generated
+far-end clip, one public LibriSpeech dummy near-end clip, simulated direct and
+80 ms delayed echo, and instantaneous playback gain changes. Each policy ran
+eight cases: echo-only, a 220 ms speech fragment, a 900 ms sustained fragment,
+and two 400 ms fragments separated by 500 ms, each at full and half near-end
+gain. This was a clipped speech fragment, not an annotated acknowledgment.
+
+The current policy at main `326e6c0` canceled the full-gain 220 ms fragment
+at 3,180 ms on the audio clock, versus 1,900 ms for the draft reversible policy
+at `a0d75d3`. Neither detected the half-gain fragment. Both canceled the
+900 ms case at both gains: current at 3,080 and 3,140 ms; draft at 1,900 and
+2,400 ms. Near speech began at 1,500 ms. Neither canceled either echo-only
+case. The draft also split the full-gain paused case into two captures. These
+are individual diagnostics, not rates or evidence of headset performance.
+
+The simulation uses virtual devices, one speaker pair, a simplified acoustic
+path, and instant gain changes; real playback uses gain ramps. The two policies
+were tested in different source revisions; the experiment does not isolate the
+policy from all other branch differences. It does not assess recognition,
+semantic intent, human listening, or a real room. It cannot establish that a
+threshold change would improve real backchannels or quiet interruptions.
+
+With the optional public dataset dependencies installed, reproduce the current
+policy with `python -m src.synth.duplex_barge_probe --public-human --out outputs/barge.json`.
+The experimental branch also supports `--mode reversible`. For a supplied mono
+PCM16 WAV use `--near` instead of `--public-human`. Output records normalized
+fixture hashes and per-case capture and gain events. No microphone or backend is
+opened. The public near clip is fetched from an unpinned dataset revision, so
+compare its recorded hash when reproducing.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance
