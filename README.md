@@ -15,6 +15,8 @@ prototype: natural pauses, speaker echo and response quality remain limitations.
 [Real-device testing](docs/TESTING.md) · [Example audio](research/examples/README.md) ·
 [Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
+[Change log](CHANGELOG.md) · [Experiment ledger](EXPERIMENTS.md)
+
 ```mermaid
 flowchart LR
     Mic[Microphone] --> Capture[Echo processing / VAD / capture]
