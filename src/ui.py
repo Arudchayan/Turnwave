@@ -82,6 +82,14 @@ button.big:hover{background:#254f3b}
 .msg.a{background:var(--card);border-color:var(--line)}
 #etawrap{background:#e7e8dc}#etalbl{color:var(--txt)}
 #mode{font: .8rem Segoe UI,sans-serif;color:var(--dim);margin:8px 0 0}
+#conversation-settings{margin:18px 0;font:.85rem Segoe UI,sans-serif}
+#conversation-settings summary{cursor:pointer;color:var(--green)}
+#conversation-settings p{color:var(--dim);line-height:1.5}
+.settings-grid{display:grid;grid-template-columns:minmax(120px, 1fr) minmax(0, 2fr);align-items:center;gap:10px}
+.settings-grid select,.settings-grid input{width:100%;max-width:none}
+.settings-grid input{font:inherit;padding:.7em 1em;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:4px;min-width:0}
+.settings-grid input:focus-visible{outline:3px solid #b47439;outline-offset:3px}
+#agentapply{grid-column:2;justify-self:start}
 #sources{font: .82rem Segoe UI,sans-serif;line-height:1.6}
 #sources a{color:var(--green);overflow-wrap:anywhere}
 footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
@@ -106,6 +114,15 @@ footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 <label id=pause-control for=pausesel>Pause before reply
 <select id=pausesel><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
 </div>
+<details id=conversation-settings><summary>Conversation and search settings</summary>
+<p>Changing the conversation mode or model starts a new conversation. Cloud mode sends recognized speech and conversation history to the selected provider.</p>
+<div class=settings-grid><label for=agentsel>Conversation mode</label>
+<select id=agentsel disabled><option value=local>Local voice</option><option value=opencode-go>OpenCode Go</option><option value=opencode-zen>OpenCode Zen</option></select>
+<label for=agentmodel>Cloud model</label><input id=agentmodel maxlength=100 placeholder="kimi-k3" autocomplete=off>
+<button id=agentapply disabled>Apply conversation settings</button>
+<label for=searchsel>Web search</label><select id=searchsel disabled><option value=none>Off</option><option value=ddg>DuckDuckGo</option><option value=bing>Bing</option><option value=brave>Brave</option></select>
+</div><p>Search sends queries to the selected search provider. Provider API keys must be configured in the app environment.</p>
+</details>
 <details id=metrics><summary>metrics</summary>
 <div id=cards>
 <div class=card><b id=m_ttft>—</b><span>time to first audio</span></div>
@@ -127,6 +144,7 @@ const $=id=>document.getElementById(id);
 let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
 let lastDeviceIndex=null,deviceVersion=0;
 let lastPause=null,pauseVersion=0;
+let settingsVersion=0,settingsBusy=false,settingsState=null,settingsDirty=false;
 const pendingActions=new Set();
 function renderAlerts(){
 let s=lastState;
@@ -172,12 +190,28 @@ if(pendingActions.has('pausesel')||![480,800,1120].includes(value))return;
 pauseVersion++;
 if(await action('pausesel','/api/pause',{milliseconds:value}))lastPause=value;
 sel.value=lastPause??'';};
+$('agentsel').onchange=()=>{settingsDirty=true;};
+$('agentmodel').oninput=()=>{settingsDirty=true;};
+$('agentapply').onclick=async()=>{
+if(settingsBusy||!settingsState)return;
+let mode=$('agentsel').value,model=$('agentmodel').value.trim();
+if(!['local','opencode-go','opencode-zen'].includes(mode))return;
+settingsBusy=true;settingsVersion++;
+let body=mode==='local'?{mode}:{mode,model:model||'kimi-k3'};
+if(await action('agentapply','/api/agent',body))settingsDirty=false;
+settingsBusy=false;};
+$('searchsel').onchange=async e=>{
+if(settingsBusy||!settingsState||!['none','ddg','bing','brave'].includes(e.target.value))return;
+settingsBusy=true;settingsVersion++;
+await action('searchsel','/api/search-provider',{provider:e.target.value});
+settingsBusy=false;};
 function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
 else{d.className='msg s';d.textContent=t;}return d;}
 async function tick(){
 try{
+let observedSettingsVersion=settingsVersion,observedSettingsBusy=settingsBusy;
 let observedMicVersion=micVersion;
 let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
@@ -188,6 +222,17 @@ let pause=$('pausesel');
 if(!observedPausePending&&observedPauseVersion===pauseVersion&&!pendingActions.has('pausesel')&&[480,800,1120].includes(s.end_silence_ms)){
 lastPause=s.end_silence_ms;pause.value=String(lastPause);}
 pause.disabled=lastPause===null||pendingActions.has('pausesel');
+if(!observedSettingsBusy&&observedSettingsVersion===settingsVersion&&!settingsBusy){
+settingsState=s;
+let modeSelect=$('agentsel'),modelInput=$('agentmodel'),searchSelect=$('searchsel');
+if(!settingsDirty){
+if(document.activeElement!==modeSelect)modeSelect.value=s.agent_mode_id||'local';
+if(document.activeElement!==modelInput&&s.agent_model)modelInput.value=s.agent_model;}
+if(document.activeElement!==searchSelect)searchSelect.value=s.search_provider||'none';
+let busy=s.active_turn||s.pending_turns||s.status==='recording';
+modeSelect.disabled=!!busy;modelInput.disabled=!!busy;
+$('agentapply').disabled=!!busy;searchSelect.disabled=!!busy||!s.agent_mode;
+}
 let mode=$('mode');mode.textContent=s.agent_mode?
 ('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?(s.search_provider||'enabled'):'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
