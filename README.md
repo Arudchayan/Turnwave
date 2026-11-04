@@ -160,6 +160,8 @@ environment. The experimental adapter gives Heretic access to text logits and
 hidden states while preserving the saved speech-model architecture:
 
 ```powershell
+python -m venv .venv-heretic
+.venv-heretic/Scripts/python -m pip install heretic-llm==2.0.0
 .venv-heretic/Scripts/python scripts/heretic_lfm3.py --model-dir models/LFM3-Omni-2B-HF --trust-model-code -- --device-map cpu --batch-size 1 --study-checkpoint-dir outputs/maintenance/heretic-checkpoints
 ```
 
