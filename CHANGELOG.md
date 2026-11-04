@@ -6,6 +6,9 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Interrupt pooled cloud response reads when a conversation turn is canceled.
+- Close interrupted or unread cloud responses before reusing their connections.
+
 - Added an optional LFM3 model-modification research adapter and explicit
   standard/research backend launch selection; weights remain separate.
 - Added an optional local Whisper comparison to the interruption research probe;

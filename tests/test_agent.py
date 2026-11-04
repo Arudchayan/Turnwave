@@ -117,6 +117,44 @@ def test_response_close_error_does_not_hide_completed_reply(monkeypatch):
     assert turn._response is None
 
 
+@pytest.mark.parametrize('scenario', ['http_error', 'oversized', 'cancelled'])
+def test_unread_pooled_response_is_closed_before_reuse(scenario):
+    events = []
+    status = 429 if scenario == 'http_error' else 200
+    body = b'x' * (2 * 1024 * 1024 + 1) if scenario == 'oversized' else b'error body'
+    turn = Turn()
+
+    class PooledResponse:
+        def __init__(self):
+            self.status = status
+
+        def read(self, size):
+            return body[:size]
+
+        def close(self):
+            events.append('close')
+
+        def release_conn(self):
+            events.append('release')
+
+    class Pool:
+        def request(self, *args, **kwargs):
+            if scenario == 'cancelled':
+                turn.abort()
+            return PooledResponse()
+
+    client = AgentClient('key')
+    client._pool = Pool()
+    request = urllib.request.Request('https://example.test/')
+    if scenario == 'cancelled':
+        assert client._read(request, turn, 'Provider') is None
+    else:
+        with pytest.raises(AgentError):
+            client._read(request, turn, 'Provider')
+    assert events == ['close', 'release']
+    assert turn._response is None
+
+
 def test_usage_limit_reports_actionable_message(monkeypatch):
     def fail(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 429, 'limit', {}, io.BytesIO(b''))
