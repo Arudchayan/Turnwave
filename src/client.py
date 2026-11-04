@@ -117,7 +117,10 @@ class Turn:
         if resp is not None:
             try:
                 import socket
-                sock = resp.fp.raw._sock
+                # urllib3 wraps the standard-library HTTPResponse in _fp.
+                # The direct local client uses the standard response itself.
+                http_response = getattr(resp, '_fp', resp)
+                sock = http_response.fp.raw._sock
                 sock.shutdown(socket.SHUT_RDWR)
                 # urllib marks its socket closed while a makefile still owns
                 # the handle. On Windows shutdown alone does not wake recv.
