@@ -163,6 +163,22 @@ topic, though each repeated a music suggestion. First-audio times were 3.995,
 latency cost after a real cancellation; the experiment does not establish that
 the recovery is ready for everyday use.
 
+An alternative replayed the previous audio directly into a fresh session,
+along with the interrupted draft marked as potentially unheard. In a three-pair,
+fixed-order diagnostic after simulated cancellation, reset-only first-audio
+times were 2.559, 6.844 and 2.812 s; direct-audio replay times were 3.131,
+2.885 and 2.731 s. All three replay replies remained on topic, but two repeated
+some suggestions; the three reset-only replies all asked “What else?” An earlier
+unpaired replay run took 4.152, 10.694 and 9.812 s, showing substantial timing
+variation. Both use one synthesized prompt pair and the same model for fixture
+ASR. This does not establish a reliable speedup, so direct replay is a research
+probe and is not used by the app. With the app stopped and the LFM3 server
+running, reproduce the paired diagnostic with:
+
+```powershell
+python -m src.synth.audio_context_replay_probe --rounds 3 --out outputs/audio-context-replay.json
+```
+
 In a separate synthetic echo sweep using one far-end recording, 12 delay/gain
 combinations produced no starts in either hard or reversible mode. The room and
 headset path were not measured. The acoustic double-talk replay still cancelled
