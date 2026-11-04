@@ -560,6 +560,9 @@ class Assistant:
                     with self._lock:
                         if turn.cancel.is_set() or self._active is not job:
                             return
+                        if not isinstance(text, str) or not text.strip():
+                            raise RuntimeError('No speech was transcribed. Please try again.')
+                        text = text.strip()
                         job.agent_input = text
                         self._replace(job.user_id, 'user: ' + text)
                         self._agent_phase = 'thinking'

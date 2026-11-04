@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Show a retry message when local transcription is empty instead of sending an
+  empty request to the cloud conversation provider.
 - Fixed cloud follow-up context when a device write completes just after an
   interruption, while keeping reset conversations separate.
 - Kept web sources attached to their corresponding replies through follow-up
