@@ -169,3 +169,32 @@ fallback was used; the fallback is not a reproduction of these exact results):
 ```powershell
 python -m src.synth.echo_tail_probe --out outputs/echo-tail-probe.json
 ```
+## Live synthetic spoken search on the merged app
+
+On November 4, 2026, two trials of the same generated question, “Search the
+web for Python downloads on python dot org,” passed through LFM3 Omni Q4 local
+transcription, a live OpenCode Go `beam-free` model, Bing RSS search, and LFM3
+synthesis. Both called the search tool, returned five source links including
+the official Python downloads page, and generated reply audio. The first run
+produced 211,200 samples and took 21.95 seconds; the included probe produced
+318,720 samples and took 22.72 seconds. Times include generating the synthetic
+input, and the fake playback consumes audio faster than real time. LFM3 ran on
+CPU through an isolated local llama-server; model output and external services
+are variable. Earlier requests included HTTP 429 and empty replies.
+
+These are two repetitions of one synthetic prompt, not a general accuracy or
+latency benchmark. No microphone or speaker was opened, and no human judged the
+audio. The source check establishes that an official link was returned, not that
+all claims are correct. Provider availability, terms and charges can change.
+To rerun, stop the app, start a separately owned LFM3 server at the chosen URL,
+install the optional `scipy` package, and set the Go API key in the process
+environment. This makes live model and search requests and may consume quota:
+
+```powershell
+python -m src.synth.live_search_probe --url http://127.0.0.1:18085 --model beam-free --out outputs/live-search.json
+```
+
+The probe refuses an active app on port 8000 and uses the backend ownership lock;
+it does not detect unrelated applications that ignore that lock. Use a dedicated
+backend instance. Output contains the synthetic prompt, model reply, and source
+URLs; do not use it with private material.
