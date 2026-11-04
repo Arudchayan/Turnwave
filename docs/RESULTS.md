@@ -221,6 +221,27 @@ Alex,” misattributing the name. This small check verifies the typed request
 path and exposes a model-quality failure; it does not establish that generated
 speech matches text or that conversation memory is reliable.
 
+## Controlled spoken-search pipeline
+
+On November 4, one device-free run generated a synthetic spoken request for
+Python downloads, transcribed it with LFM3 Omni, and passed it through the app.
+A deterministic local stand-in requested live Bing search and returned a fixed
+answer only after receiving an official Python link. Bing supplied three source
+links; the app attached them to the reply and generated 4.0 seconds of audio.
+LFM3's separate ASR session transcribed that audio as the expected sentence.
+The app turn took 4.464 seconds with a non-realtime audio sink. This checks the
+integration path, not cloud-model tool choice or reasoning, microphone capture,
+voice detection and endpointing, real speaker playback, or independent speech
+recognition. Reproduce with the
+app stopped and the LFM3 server running:
+
+```powershell
+python -m src.synth.spoken_search_probe --out outputs/spoken-search-probe.json
+```
+
+The probe contacts Bing with a fixed public query and starts a local-only mock
+model server. It does not use the OpenCode key or record user audio.
+
 ## What remains open
 
 On November 4, a live OpenCode Go `kimi-k3` search request returned HTTP 429,
