@@ -124,6 +124,10 @@ class FloorPolicy:
             if self.mode == HARD or not audible:
                 return self._begin(now, True, 'hard' if self.mode == HARD else 'not-audible',
                                    initial)
+            if evidence_ms is not None and initial * 1000 >= self.floor_confirm_ms:
+                self._begin(now, True, 'sustained-speech', initial)
+                return FloorAction(state=FLOOR, cancel=True, reason=self.reason,
+                                   speech_ms=self._speech_ms())
             return self._begin(now, False, 'duck', initial)
 
         if self.state != CANDIDATE:

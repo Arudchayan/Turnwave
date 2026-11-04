@@ -240,3 +240,16 @@ def test_frame_evidence_is_independent_of_capture_block_size(hot_frames, expecte
             break
     assert action.reason == expected_reason
     assert action.speech_ms == pytest.approx(hot_frames * 32)
+
+
+def test_confirmation_inside_a_large_capture_block_commits_immediately():
+    front = DuplexFrontend(aec=False, holdoff_s=0)
+    front._prob = lambda chunk: 1.0
+    policy = FloorPolicy(mode=REVERSIBLE)
+    _, started, ended, clean = front.update(np.ones(5120, dtype=np.float32))
+    action = policy.update(0, speaking=front.hot, started=started, ended=ended,
+                           onset_ms=front.onset_speech_ms,
+                           evidence_ms=front.speech_evidence_ms,
+                           block_s=len(clean) / 16000)
+    assert action.cancel and action.reason == 'sustained-speech'
+    assert action.speech_ms == pytest.approx(320)
