@@ -1013,7 +1013,8 @@ class Assistant:
         def on_written(audio):
             # The blocking write may finish while cancellation arrives. Count
             # accepted samples even then; exclude writes that raised an error.
-            job.played_samples += len(audio)
+            with self._lock:
+                job.played_samples += len(audio)
         with self._play_lock:
             if turn.cancel.is_set():
                 self._archive_call(job, 'finish_generation', turn)

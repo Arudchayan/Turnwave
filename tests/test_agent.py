@@ -1013,3 +1013,63 @@ def test_switching_provider_clears_context_and_busy_switch_is_rejected():
         assert app._agent_history == [] and app.agent.provider == 'zen'
     finally:
         app.close()
+
+
+def test_followup_receives_interrupted_reply_as_possibly_unheard():
+    import threading
+    first_written = threading.Event()
+    release_playback = threading.Event()
+
+    class InterruptiblePlayer(FakePlayer):
+        def play_chunks(self, chunks, cancel=None, on_start=None, on_play=None, on_written=None):
+            self.playing = True
+            try:
+                for audio in chunks:
+                    if cancel.is_set(): break
+                    on_start()
+                    on_play(audio)
+                    on_written(audio)
+                    first_written.set()
+                    release_playback.wait(2)
+                    break
+            finally:
+                self.playing = False
+
+    agent = FakeAgent()
+    app = Assistant(mic=FakeMic(), player=InterruptiblePlayer(), front=FakeFront(),
+                    client=LocalVoice(), agent=agent)
+    try:
+        first = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert first_written.wait(2)
+        app.interrupt()
+        release_playback.set()
+        wait_for(lambda: first.playback_closed.is_set())
+        second = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        assert agent.histories[1] == [
+            {'role': 'user', 'content': 'What is new?'},
+            {'role': 'assistant', 'content': 'A short answer. [interrupted]'}]
+        messages, _ = AgentClient._build_messages('system', agent.histories[1], 'What about something else?')
+        assert 'may not have heard' in messages[2]['content']
+        assert 'A short answer.' in messages[2]['content']
+    finally:
+        release_playback.set()
+        app.close()
+
+
+def test_interrupted_draft_is_saved_once_and_reset_discards_it():
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=FakeAgent())
+    try:
+        from app import Job
+        job = Job(epoch=app._epoch, agent_input='question', played_samples=20)
+        job.turn.text_parts.append('Generated answer.')
+        app._active = job
+        app.interrupt()
+        with app._lock:
+            app._remember_agent_reply(job, interrupted=True)
+        assert app._agent_history == [{'role': 'user', 'content': 'question'},
+                                      {'role': 'assistant', 'content': 'Generated answer. [interrupted]'}]
+        app.reset()
+        assert app._agent_history == []
+    finally:
+        app.close()

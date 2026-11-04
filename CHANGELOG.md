@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Preserve a cloud reply draft as possibly unheard context when playback is
+  interrupted after audio has been accepted, improving follow-up continuity.
 - Added a reproducible synthetic spoken-search probe and recorded two live
   provider trials, with their device and reliability limits.
 - Added conversation mode, model, and search controls. Changing mode or model
