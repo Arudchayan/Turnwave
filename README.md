@@ -200,6 +200,10 @@ default when the app restarts.
 `LOCALVOICE_SERVER` changes the backend URL (default local port 8080).
 `LOCALVOICE_CHAT_SYSTEM` changes the chat instruction. Optional transcription
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
+For devices with long playback delays, the experimental
+`LOCALVOICE_ECHO_PROFILE=long` keeps echo history longer after playback. It may
+reduce self-interruptions but can delay quiet speech while echo is present; see
+[the measured tradeoff](docs/RESULTS.md). Restart the app to change profiles.
 `LOCALVOICE_FLOOR_MODE=reversible` enables the experimental duck/backchannel
 path: a short vocalisation during a reply no longer has to cancel it. The
 existing deferred interruption behavior remains the default; set `hard` explicitly

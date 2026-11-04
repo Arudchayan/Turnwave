@@ -489,6 +489,7 @@ $('m_turn').textContent=s.last_turn_s??'—';$('m_n').textContent=s.turns;
 let ad=s.audio_diagnostics||{},pb=ad.playback||{},diag=$('diag');
 if(diag){
 let line='gain '+(ad.input_gain??'—')+' · drops '+(ad.input_drops??0)+' · echo '+(ad.echo_score??0).toFixed?.(2)+' · residual rejections '+(ad.residual_rejections??0)+' · underflows '+(pb.underflows??0)+' · max write gap '+(pb.max_gap_ms??0)+' ms';
+if(s.echo_tail_ms!=null)line+=' · echo tail '+s.echo_tail_ms+' ms';
 if(s.last_trace){
 let lt=s.last_trace,ck=lt.checks||{},toolsUsed=(lt.tools_used||[]).length?lt.tools_used.join(','):'none';
 line+=' · trace #'+lt.turn_id+' ('+lt.status+', tools: '+toolsUsed+', checks: '+(ck.all_passed?'✓ pass':'⚠ check')+(s.trace_file?', saved '+s.trace_file:'')+')';}

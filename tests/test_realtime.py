@@ -290,6 +290,24 @@ def assistant():
     a.close()
 
 
+def test_long_echo_profile_is_opt_in_and_rejects_unknown_values(monkeypatch):
+    options = []
+    def make_front(**kwargs):
+        options.append(kwargs)
+        return FakeFront()
+    monkeypatch.setattr('app.DuplexFrontend', make_front)
+    monkeypatch.delenv('LOCALVOICE_ECHO_PROFILE', raising=False)
+    a = Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
+    a.close()
+    monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'long')
+    a = Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
+    a.close()
+    assert options == [{}, {'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
+    monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'invalid')
+    with pytest.raises(ValueError, match='LOCALVOICE_ECHO_PROFILE'):
+        Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
+
+
 class WarmClient(FakeClient):
     def __init__(self, fail_audio=False, order=None):
         super().__init__()
@@ -854,6 +872,34 @@ def test_echo_cancellation_continues_through_cancelled_playback_tail():
     assert not started and not np.any(clean)
     for _ in range(16): front.update(np.zeros(320, np.float32))
     assert not front._far_active
+
+
+def test_extended_echo_tail_rejects_delayed_render_without_suppressing_unrelated_speech():
+    from duplex import DuplexFrontend
+    rng = np.random.default_rng(4242)
+    render = np.zeros(32000, np.float32)
+    render[3200:19200] = rng.normal(0, .06, 16000).astype(np.float32)
+    delayed = np.zeros_like(render)
+    delayed[8000:] = render[:-8000]
+    unrelated = np.zeros_like(render)
+    unrelated[24000:30000] = rng.normal(0, .06, 6000).astype(np.float32)
+
+    def onsets(mic, extended):
+        opts = {'echo_tail_ms': 1500, 'echo_history_ms': 1600} if extended else {}
+        front = DuplexFrontend(aec=False, holdoff_s=0, **opts)
+        front._prob = lambda x: .9 if np.sqrt(np.mean(x ** 2)) > .01 else 0.
+        starts = []
+        for offset in range(0, len(render), 320):
+            if 3200 <= offset < 19200:
+                front.push_far(render[offset:offset + 320])
+            _, started, _, _ = front.update(mic[offset:offset + 320])
+            if started:
+                starts.append(offset)
+        return starts
+
+    assert onsets(delayed, False), 'The default tail must expose this delayed echo control'
+    assert not onsets(delayed, True)
+    assert onsets(unrelated, True), 'The longer history must still admit unrelated speech'
 
 def test_quiet_echo_residual_does_not_interrupt_but_quiet_user_speech_can():
     class ResidualAEC:

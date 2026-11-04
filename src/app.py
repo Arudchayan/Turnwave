@@ -69,7 +69,14 @@ class Assistant:
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
-        self.front = front if front is not None else DuplexFrontend()
+        if front is not None:
+            self.front = front
+        else:
+            echo_profile = os.getenv('LOCALVOICE_ECHO_PROFILE', 'standard').strip().lower()
+            if echo_profile not in ('standard', 'long'):
+                raise ValueError('LOCALVOICE_ECHO_PROFILE must be standard or long')
+            options = {'echo_tail_ms': 1500, 'echo_history_ms': 1600} if echo_profile == 'long' else {}
+            self.front = DuplexFrontend(**options)
         self.eot = eot
         self.eot_error = None
         if self.eot is None and os.getenv('LOCALVOICE_EOT_MODEL'):
@@ -1500,6 +1507,8 @@ class Assistant:
                         eta_first_audio_ms=eta, eta_budget_ms=round(budget * 1000),
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
                         floor_state=self.floor.state, floor_mode=self.floor_mode,
+                        echo_tail_ms=getattr(self.front, 'echo_tail_samples', 0) / 16 or None,
+                        echo_history_ms=getattr(self.front, 'echo_history_samples', 0) / 16 or None,
                         eot_enabled=self.eot is not None, eot_error=self.eot_error,
                         eot=self.eot.snapshot() if self.eot is not None else None,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,

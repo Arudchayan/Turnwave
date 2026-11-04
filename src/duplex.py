@@ -18,7 +18,7 @@ F_VAD = 512
 class DuplexFrontend:
     def __init__(self, stream_delay_ms=40, vad_thresh=0.5, start_chunks=3,
                  end_silence_ms=480, aec=True, holdoff_s=0.35, residual_floor=.005,
-                 onset_window_chunks=None):
+                 onset_window_chunks=None, echo_tail_ms=300, echo_history_ms=750):
         self.vad_thresh = vad_thresh
         self.start_chunks = int(start_chunks)
         if self.start_chunks < 1:
@@ -31,6 +31,10 @@ class DuplexFrontend:
         self.end_chunks = max(1, round(end_silence_ms / 32))
         self.holdoff_s = holdoff_s
         self.residual_floor = max(0.0, float(residual_floor))
+        if not 0 <= echo_tail_ms <= 3000 or not 100 <= echo_history_ms <= 3000:
+            raise ValueError('Echo tail and history must be within supported bounds')
+        self.echo_tail_samples = round(echo_tail_ms * 16)
+        self.echo_history_samples = round(echo_history_ms * 16)
         self._lock = threading.RLock()
         self._sample_clock = 0
         self._play_t0 = -1e9
@@ -163,7 +167,7 @@ class DuplexFrontend:
 
     def _advance_history(self, raw, far, clean):
         self._near_history = np.concatenate((self._near_history, raw))[-1600:]
-        self._far_history = np.concatenate((self._far_history, far))[-12000:]
+        self._far_history = np.concatenate((self._far_history, far))[-self.echo_history_samples:]
         self._clean_history = np.concatenate((self._clean_history, clean))[-1600:]
         self._sample_clock += len(raw)
 
@@ -199,7 +203,7 @@ class DuplexFrontend:
             out.append(near)
         clean = np.concatenate(out) if out else np.zeros(0, np.float32)
         self._since_far += len(incoming)
-        if self._since_far > 4800 and not len(self._far_buf):
+        if self._since_far > self.echo_tail_samples and not len(self._far_buf):
             self._far_active = False
         self._vad_buf = np.concatenate((self._vad_buf, clean))
         raw_clean = np.concatenate(raw_out) if raw_out else np.zeros(0, np.float32)

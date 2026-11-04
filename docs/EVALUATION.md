@@ -133,6 +133,11 @@ default uses deferred interruption; `hard` is an explicit experimental mode.
 Backchannel preservation needs either better double-talk
 evidence, a different duration/energy policy, or real-device tuning.
 
+The separate delayed-tail comparison in [results](RESULTS.md) stops adding the
+render reference after playback ends and evaluates standard versus experimental
+long echo history. It includes near-only and overlapping speech controls; the
+long profile reduces synthetic echo-only starts while delaying some quiet speech.
+
 ## Public-pause EOT diagnostic
 
 `src/synth/eot_bench.py` scores the English validation split of
