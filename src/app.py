@@ -637,6 +637,12 @@ class Assistant:
             # accepted samples even then; exclude writes that raised an error.
             with self._lock:
                 job.played_samples += len(audio)
+                if turn.cancel.is_set():
+                    # A successful device write can return after interrupt()
+                    # observed zero samples. The playback lock still keeps
+                    # the next turn behind this callback. Preserve the draft
+                    # as possibly unheard, provided the epoch is still valid.
+                    self._remember_interrupted_agent_reply(job)
         with self._play_lock:
             if turn.cancel.is_set():
                 self._archive_call(job, 'finish_generation', turn)
