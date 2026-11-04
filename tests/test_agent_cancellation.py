@@ -5,7 +5,7 @@ import threading
 import time
 import urllib.request
 
-import pytest
+import urllib3  # The pooled path is a required test dependency.
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'src'))
 from agent import AgentClient
@@ -13,7 +13,6 @@ from client import Turn
 
 
 def test_abort_unblocks_pooled_agent_response_read():
-    pytest.importorskip('urllib3')
     headers_sent = threading.Event()
     release_server = threading.Event()
 
