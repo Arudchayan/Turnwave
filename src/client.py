@@ -100,6 +100,7 @@ class Turn:
         self.text_parts = []
         self.audio_frames = 0
         self.audio_samples = 0
+        self.first_text = None
         self.error = None
         self.finish_reason = None
         self.request_observer = None
