@@ -212,6 +212,13 @@ python -m src.synth.echo_tail_probe --out outputs/echo-tail-probe.json
 
 ## What remains open
 
+On November 4, a live OpenCode Go `kimi-k3` search request returned HTTP 429,
+so it did not exercise the model or spoken search end to end. An independent
+Bing RSS query for Python downloads with a `site:python.org` restriction
+returned three links on that domain. This checks provider reachability and
+filtering for one query; it does not verify that snippets are current, that a
+model uses them correctly, or that spoken search works on a device.
+
 False interruptions, paused-sentence behavior and reply quality remain unresolved.
 Controlled real-device acceptance and a clean-machine native installation have
 not been established. The EOT held-out check is one deterministic English split;

@@ -90,6 +90,12 @@ def test_zen_uses_its_endpoint_and_resets_conversation_session(monkeypatch):
     assert requests[0].get_header('X-opencode-session') != requests[1].get_header('X-opencode-session')
 
 
+def test_zen_error_identifies_selected_provider(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({'choices': []}))
+    with pytest.raises(AgentError, match='OpenCode Zen returned an invalid response'):
+        AgentClient('key', provider='zen').respond('Hi', [], Turn())
+
+
 def test_agent_http_failure_does_not_expose_body_or_key(monkeypatch):
     def fail(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 401, 'secret', {}, io.BytesIO(b'secret'))
@@ -155,6 +161,27 @@ def test_ddg_search_parses_results_and_filters_unsafe_urls(monkeypatch):
     assert answer == 'Found Latest News.'
     assert sources == [{'title': 'Latest News', 'url': 'https://example.org/news',
                         'description': 'First snippet.'}]
+
+
+@pytest.mark.parametrize('provider', ['ddg', 'brave'])
+def test_search_results_respect_site_restriction_and_reject_malformed_urls(monkeypatch, provider):
+    results = [
+        ('https://docs.example.org/release', 'Correct'),
+        ('https://evil-example.org/', 'Wrong domain'),
+        ('https://example.org@evil.org/', 'Credentials'),
+        ('https://[broken', 'Malformed'),
+    ]
+    if provider == 'ddg':
+        body = ''.join(f'<a class="result__a" href="{url}">{title}</a>'
+                       f'<a class="result__snippet">Details</a>' for url, title in results).encode()
+        monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: io.BytesIO(body))
+    else:
+        payload = {'web': {'results': [{'url': url, 'title': title, 'description': 'Details'}
+                                      for url, title in results]}}
+        monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response(payload))
+    client = AgentClient('key', search_provider=provider, search_key='search-key')
+    found = client.search('release site:example.org', Turn())
+    assert [item['url'] for item in found] == ['https://docs.example.org/release']
 
 
 def test_reasoning_effort_falls_back_when_model_rejects_parameter(monkeypatch):
@@ -358,7 +385,7 @@ def test_ddg_empty_falls_back_to_wikipedia(monkeypatch):
     monkeypatch.setattr('urllib.request.urlopen', open_url)
     client = AgentClient('key', search_provider='ddg')
     answer, sources = client.respond('Tell me about Jujutsu Kaisen', [], Turn())
-    assert answer == 'Jujutsu Kaisen is a manga series.'
+    assert answer == 'Web search was unavailable, so these results are limited to Wikipedia. Jujutsu Kaisen is a manga series.'
     assert sources == [{'title': 'Jujutsu Kaisen (Wikipedia)', 'url': 'https://en.wikipedia.org/wiki/Jujutsu_Kaisen', 'description': 'Japanese manga series'}]
 
 
@@ -408,6 +435,43 @@ def test_empty_search_and_fallback_report_no_results(monkeypatch):
     result, sources = client._run_tool('web_search', '{"query":"latest Python"}', Turn(), None)
     assert result['results'] == [] and sources == []
     assert 'no usable results' in result['notice']
+
+
+def test_model_cannot_claim_an_answer_after_empty_search(monkeypatch):
+    def open_url(req, timeout):
+        if 'bing.com/search?' in req.full_url:
+            return io.BytesIO(b'<rss><channel></channel></rss>')
+        body = json.loads(req.data)
+        if len(body['messages']) == 2:
+            return response({'choices': [{'message': {'role': 'assistant', 'content': None,
+                'tool_calls': [{'id': 's1', 'type': 'function', 'function': {
+                    'name': 'web_search', 'arguments': '{"query":"today news"}'}}]}}]})
+        return response({'choices': [{'message': {'content': 'The event definitely happened today.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key', search_provider='bing')
+    answer, sources = client.respond('What happened today?', [], Turn())
+    assert answer == "I couldn't find usable web results, so I can't verify an answer. Please try again."
+    assert sources == []
+    assert client.last_trace['checks']['search_evidence_missing']
+    assert 'no verified results' in client.last_trace['search_warning']
+
+
+def test_partial_search_warning_does_not_claim_all_results_are_fallback(monkeypatch):
+    from agent import SearchResults
+    client = AgentClient('key', search_provider='bing')
+    searches = iter([SearchResults(notice='No results'),
+                     SearchResults([{'title': 'Source', 'url': 'https://example.org/', 'description': 'Evidence'}])])
+    monkeypatch.setattr(client, 'search', lambda query, turn: next(searches))
+    responses = iter([
+        {'choices': [{'message': {'role': 'assistant', 'content': None, 'tool_calls': [
+            {'id': 'a', 'type': 'function', 'function': {'name': 'web_search', 'arguments': '{"query":"a"}'}},
+            {'id': 'b', 'type': 'function', 'function': {'name': 'web_search', 'arguments': '{"query":"b"}'}}]}}]},
+        {'choices': [{'message': {'content': 'Here is what I found.'}}]},
+    ])
+    monkeypatch.setattr(client, '_json', lambda *args: next(responses))
+    answer, sources = client.respond('Look up two things', [], Turn())
+    assert answer == 'Some web searches returned incomplete results. Here is what I found.' and len(sources) == 1
+    assert client.last_trace['search_warning'] == 'Some web searches returned incomplete results.'
 
 
 def test_bing_rss_search_honors_site_restriction_and_returns_sources(monkeypatch):

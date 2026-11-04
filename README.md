@@ -252,6 +252,10 @@ DuckDuckGo may block automated requests. If it returns no usable results,
 Turnwave marks its Wikipedia fallback as limited and warns that current web
 information could not be verified. Site-restricted queries do not use that
 fallback, because Wikipedia cannot honor the requested site restriction.
+When a requested web search returns no usable evidence, the spoken reply says
+that verification failed instead of repeating an unsupported model answer.
+When only the Wikipedia fallback is available, the spoken reply identifies the
+limitation, and the interface shows the source links.
 For answers after web search, a dotted version number absent from all returned
 titles and snippets is replaced by an uncertainty message. This narrow check
 does not verify other claims, and search snippets can be incomplete or stale.

@@ -148,6 +148,21 @@ def _clean_html(text):
     return ' '.join(_TAG.sub('', html.unescape(str(text or ''))).split())
 
 
+def _valid_search_url(url, query):
+    """Accept usable links and enforce any explicit site restriction."""
+    if not isinstance(url, str) or len(url) > 2048:
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = (parsed.hostname or '').lower().strip('.')
+        sites = [site.lower().strip('.') for site in re.findall(
+            r'(?<![\w.-])site:([a-zA-Z0-9.-]+)', query, re.IGNORECASE)]
+        return bool(parsed.scheme in ('http', 'https') and host and not parsed.username and not parsed.password
+                    and (not sites or any(host == site or host.endswith('.' + site) for site in sites)))
+    except ValueError:
+        return False
+
+
 def _clean_spoken_text(text):
     """Strip markdown decorations and stage directions so TTS speaks cleanly."""
     cleaned = _MD_CODE.sub(lambda m: m.group(1) or '', str(text or ''))
@@ -570,10 +585,16 @@ class AgentClient:
             for match in _DDG_RESULT.finditer(text):
                 url = html.unescape(match.group(1)).strip()
                 if 'uddg=' in url:
-                    url = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get('uddg', [url])[0]
-                if urllib.parse.urlparse(url).scheme not in ('https', 'http'):
+                    try:
+                        url = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get('uddg', [url])[0]
+                    except ValueError:
+                        continue
+                if not _valid_search_url(url, query):
                     continue
-                results.append({'title': _clean_html(match.group(2))[:300],
+                title = _clean_html(match.group(2))[:300]
+                if not title:
+                    continue
+                results.append({'title': title,
                                 'url': url[:2048],
                                 'description': _clean_html(match.group(3))[:1000]})
                 if len(results) >= 5:
@@ -609,18 +630,10 @@ class AgentClient:
             root = ET.fromstring(raw)
         except ET.ParseError:
             raise AgentError('Web search returned an invalid response') from None
-        sites = [site.lower().strip('.') for site in re.findall(
-            r'(?<![\w.-])site:([a-zA-Z0-9.-]+)', query, re.IGNORECASE)]
         results = []
         for item in root.findall('./channel/item'):
             url = (item.findtext('link') or '').strip()
-            try:
-                parsed = urllib.parse.urlsplit(url)
-                host = (parsed.hostname or '').lower().strip('.')
-            except ValueError:
-                continue
-            if (parsed.scheme not in ('http', 'https') or not host or parsed.username or parsed.password or
-                    (sites and not any(host == site or host.endswith('.' + site) for site in sites))):
+            if not _valid_search_url(url, query):
                 continue
             title = _clean_html(item.findtext('title'))[:300]
             if not title:
@@ -649,11 +662,16 @@ class AgentClient:
             return []
         results = []
         for item in data.get('web', {}).get('results', [])[:5]:
-            url = item.get('url', '')
-            if not isinstance(url, str) or urllib.parse.urlparse(url).scheme not in ('https', 'http'):
+            if not isinstance(item, dict):
                 continue
-            results.append({'title': str(item.get('title', ''))[:300], 'url': url[:2048],
-                            'description': str(item.get('description', ''))[:1000]})
+            url = item.get('url', '')
+            if not _valid_search_url(url, query):
+                continue
+            title = _clean_html(item.get('title', ''))[:300]
+            if not title:
+                continue
+            results.append({'title': title, 'url': url[:2048],
+                            'description': _clean_html(item.get('description', ''))[:1000]})
         return results
 
     @staticmethod
@@ -804,6 +822,8 @@ class AgentClient:
         messages, history_stats = self._build_messages(system, history, user_text)
         sources = []
         web_evidence = []
+        limited_search = False
+        complete_search = False
         session = self._session
         effort = self.reasoning_effort
         trace = {
@@ -851,7 +871,7 @@ class AgentClient:
                     message = choice['message']
                     calls = message.get('tool_calls') or []
                 except (KeyError, IndexError, TypeError):
-                    raise AgentError('OpenCode Go returned an invalid response') from None
+                    raise AgentError(self.label + ' returned an invalid response') from None
                 if not calls:
                     raw_answer = message.get('content')
                     if (not isinstance(raw_answer, str) or not raw_answer.strip()) and not empty_retried and (
@@ -878,12 +898,22 @@ class AgentClient:
                         'tool_calls_succeeded': all(tc.get('ok', False) for tc in trace['tool_calls']),
                         'reply_non_empty': False,
                     }
-                    raise AgentError('OpenCode Go returned an empty reply')
+                    raise AgentError(self.label + ' returned an empty reply')
                 if _TEXT_TOOL_CALL.search(raw_answer):
                     raise AgentError('The model returned a tool request as text, so it was not executed. '
                                      'Please retry or choose another model.')
                 answer = _clean_spoken_text(raw_answer) or raw_answer.strip()
                 searched_web = any(tc.get('tool') == 'web_search' for tc in trace['tool_calls'])
+                missing_evidence = bool(searched_web and not web_evidence)
+                if missing_evidence:
+                    answer = "I couldn't find usable web results, so I can't verify an answer. Please try again."
+                    trace['search_warning'] = 'Web search returned no verified results.'
+                elif searched_web and limited_search and not complete_search:
+                    answer = ("Web search was unavailable, so these results are limited to Wikipedia. " + answer)
+                    trace['search_warning'] = 'Web search was unavailable; results are limited to Wikipedia.'
+                elif searched_web and limited_search:
+                    answer = 'Some web searches returned incomplete results. ' + answer
+                    trace['search_warning'] = 'Some web searches returned incomplete results.'
                 claims = set(_VERSION.findall(answer)) if searched_web else set()
                 evidence = ' '.join(str(source.get(field) or '') for source in web_evidence
                                     for field in ('title', 'description'))
@@ -903,6 +933,7 @@ class AgentClient:
                     'tool_calls_succeeded': all(tc.get('ok', False) for tc in trace['tool_calls']),
                     'reply_non_empty': bool(answer),
                     'unsupported_version_blocked': bool(unsupported),
+                    'search_evidence_missing': missing_evidence,
                 }
                 return answer, sources
             if iteration >= 3 or not tools or len(calls) > 3:
@@ -920,12 +951,11 @@ class AgentClient:
                 tool_s = round(time.perf_counter() - tool_t0, 3)
                 if turn.cancel.is_set():
                     return None
-                if name == 'web_search' and isinstance(result, dict) and result.get('notice'):
-                    trace['search_warning'] = (
-                        'Web search was unavailable; results are limited to Wikipedia.'
-                        if new_sources else 'Web search returned no verified results.'
-                    )
                 if name == 'web_search':
+                    if isinstance(result, dict) and result.get('notice'):
+                        limited_search = True
+                    elif new_sources:
+                        complete_search = True
                     web_evidence.extend(new_sources)
                 trace['tool_calls'].append({
                     'tool': name,
