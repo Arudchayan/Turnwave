@@ -32,12 +32,13 @@ before starting `python src/app.py`:
 
 ```powershell
 $env:LOCALVOICE_AGENT = 'opencode-go' # or opencode-zen
-$env:OPENCODE_GO_API_KEY = '<your key>' # Zen uses OPENCODE_ZEN_API_KEY
 $env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # choose a model available to your provider
 $env:LOCALVOICE_SEARCH = 'ddg' # ddg, bing, brave, or none
 ```
 
-Brave search also requires `BRAVE_SEARCH_API_KEY`; without it Brave search is
+Set `OPENCODE_GO_API_KEY` in the application environment (or
+`OPENCODE_ZEN_API_KEY` for Zen) before starting it. Brave search also requires
+`BRAVE_SEARCH_API_KEY`; without it Brave search is
 unavailable. Remove `LOCALVOICE_AGENT` to return to local conversation. Settings
 are read at startup. Recognized speech and conversation history are sent to the
 chosen provider; search queries are sent to the selected search service. The
