@@ -9,13 +9,57 @@ import json
 from pathlib import Path
 import sys
 import time
+import wave
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from duplex import DuplexFrontend
-from synth.floor_acoustic import human_near, read_wav, resample
+def read_wav(path):
+    with wave.open(str(path)) as w:
+        if w.getnchannels() != 1 or w.getsampwidth() != 2:
+            raise ValueError('Expected mono PCM16')
+        rate = w.getframerate()
+        data = np.frombuffer(w.readframes(w.getnframes()), dtype='<i2')
+    return data.astype(np.float32) / 32768.0, rate
+
+
+def resample(audio, rate, target=16000):
+    if rate == target:
+        return audio.astype(np.float32)
+    positions = np.arange(round(len(audio) * target / rate)) * rate / target
+    return np.interp(positions, np.arange(len(audio)), audio).astype(np.float32)
+
+
+def speech_slice(audio, rate, duration, start=.25):
+    count = round(duration * rate)
+    begin = round(start * rate)
+    if begin + count > len(audio):
+        begin = max(0, len(audio) - count)
+    return audio[begin:begin + count].copy()
+
+
+def human_near():
+    """A public human LibriSpeech clip, used as the near-end speaker."""
+    import io
+    import pandas as pd
+    import soundfile as sf
+    from huggingface_hub import hf_hub_download
+    path = hf_hub_download('hf-internal-testing/librispeech_asr_dummy',
+                           'clean/validation-00000-of-00001.parquet',
+                           repo_type='dataset')
+    frame = pd.read_parquet(path)
+    audio, rate = sf.read(io.BytesIO(frame.iloc[0]['audio']['bytes']),
+                          dtype='float32')
+    # Start at the first clear speech energy rather than a fixed offset.
+    window = max(1, round(.02 * rate))
+    for begin in range(0, len(audio) - window, window):
+        if float(np.sqrt(np.mean(audio[begin:begin + window] ** 2))) > .02:
+            return audio[begin:].copy(), rate
+    return audio, rate
+
+
 
 
 def run_case(far, near, delay_ms, case, extended):
