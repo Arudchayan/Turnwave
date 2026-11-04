@@ -146,3 +146,27 @@ def test_conversation_settings_send_mode_and_search_without_credentials():
     assert result['requests']==[
         {'path':'/api/agent','body':{'mode':'opencode-go','model':'chosen-model'}},
         {'path':'/api/search-provider','body':{'provider':'bing'}}]
+
+
+def test_reply_sources_render_with_safe_links():
+    code = PAGE.split('function bubble(t)', 1)[1].split('async function tick()', 1)[0]
+    script = 'function bubble(t)' + code
+    harness = r'''
+const vm=require('node:vm'), fs=require('node:fs');
+const source=fs.readFileSync(0,'utf8');
+function element(){return {children:[],appendChild(x){this.children.push(x);}};}
+const ctx={URL,document:{createElement:element}};
+vm.runInNewContext(source,ctx);
+const bubble=ctx.messageBubble({text:'assistant: Answer',sources:[
+ {title:'Official',url:'https://example.org/article'},
+ {title:'Bad',url:'javascript:alert(1)'},
+ {title:'Credentials',url:'https://user:pass@example.org/'}]});
+const box=bubble.children[0];
+process.stdout.write(JSON.stringify({text:bubble.textContent,heading:box.children[0].textContent,
+ links:box.children.slice(1).map(row=>row.children[0])}));
+'''
+    result=subprocess.run(['node','-e',harness],input=script,text=True,capture_output=True,timeout=10,check=True)
+    data=json.loads(result.stdout)
+    assert data['text']=='Answer' and data['heading']=='Sources'
+    assert len(data['links'])==1 and data['links'][0]['href']=='https://example.org/article'
+    assert data['links'][0]['rel']=='noopener noreferrer'

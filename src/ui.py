@@ -92,6 +92,8 @@ button.big:hover{background:#254f3b}
 #agentapply{grid-column:2;justify-self:start}
 #sources{font: .82rem Segoe UI,sans-serif;line-height:1.6}
 #sources a{color:var(--green);overflow-wrap:anywhere}
+.message-sources{font:.82rem Segoe UI,sans-serif;margin-top:10px;line-height:1.6}
+.message-sources a{color:var(--green);overflow-wrap:anywhere}
 footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 @media(max-width:560px){#cards{grid-template-columns:repeat(2,1fr)}#controls select{max-width:100%;width:100%}.msg{max-width:95%}}
 @media(prefers-reduced-motion:reduce){#st.recording{animation:none}#etafill{transition:none}}
@@ -209,6 +211,19 @@ function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
 else{d.className='msg s';d.textContent=t;}return d;}
+function messageBubble(message){
+let d=bubble(message.text||'');
+if(Array.isArray(message.sources)&&message.sources.length){
+let box=document.createElement('div');box.className='message-sources';
+let heading=document.createElement('strong');heading.textContent='Sources';box.appendChild(heading);
+let count=0;
+message.sources.forEach(source=>{try{let url=new URL(source.url);
+if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
+let line=document.createElement('div'),a=document.createElement('a');a.href=url.href;
+a.target='_blank';a.rel='noopener noreferrer';a.textContent=source.title||url.hostname;
+line.appendChild(a);box.appendChild(line);count++;}catch{}});
+if(count)d.appendChild(box);
+}return d;}
 async function tick(){
 try{
 let observedSettingsVersion=settingsVersion,observedSettingsBusy=settingsBusy;
@@ -237,7 +252,7 @@ let mode=$('mode');mode.textContent=s.agent_mode?
 ('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?(s.search_provider||'enabled'):'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
 let sources=$('sources');sources.innerHTML='';
-if(Array.isArray(s.agent_sources)&&s.agent_sources.length){
+if(!Array.isArray(s.messages)&&Array.isArray(s.agent_sources)&&s.agent_sources.length){
 let label=document.createElement('strong');label.textContent='Sources';sources.appendChild(label);
 s.agent_sources.forEach(source=>{try{let url=new URL(source.url);if(!['http:','https:'].includes(url.protocol))return;
 let line=document.createElement('div'),a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=source.title||url.hostname;line.appendChild(a);sources.appendChild(line);}catch{}});}
@@ -257,7 +272,8 @@ sel.innerHTML='';roster.forEach(([i,n])=>{let o=document.createElement('option')
 lastDeviceIndex=String(s.mic_index);sel.value=lastDeviceIndex;}
 let log=$('log');
 if(s.transcript_revision!==lastRevision){log.innerHTML='';
-s.transcript.forEach(t=>log.appendChild(bubble(t)));lastRevision=s.transcript_revision;}
+if(Array.isArray(s.messages))s.messages.forEach(m=>log.appendChild(messageBubble(m)));
+else s.transcript.forEach(t=>log.appendChild(bubble(t)));lastRevision=s.transcript_revision;}
 let dr=$('draft');
 if(s.assistant_partial){dr.style.display='block';dr.textContent='… '+s.assistant_partial;}
 else{dr.style.display='none';dr.textContent='';}
