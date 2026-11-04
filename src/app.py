@@ -275,12 +275,13 @@ class Assistant:
             for thread in list(self._threads):
                 if thread is not threading.current_thread():
                     thread.join(timeout=1)
-            close_client = getattr(self.client, 'close', None)
-            if close_client is not None:
-                try:
-                    close_client()
-                except Exception:
-                    pass
+            for voice_client in (self.client, self.asr_client):
+                close_client = getattr(voice_client, 'close', None)
+                if callable(close_client):
+                    try:
+                        close_client()
+                    except Exception:
+                        pass
             self.diagnostics.event('shutdown')
             self.diagnostics.close()
             with self._lock:

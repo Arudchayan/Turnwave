@@ -11,6 +11,20 @@ from client import Turn, wav16k_bytes
 from lfm3_client import LFM3Client
 
 
+def test_assistant_closes_both_voice_clients():
+    from app import Assistant
+    from test_realtime import FakeMic, FakePlayer, FakeFront
+    closed = []
+    client = LFM3Client('http://127.0.0.1:8080')
+    client.close = lambda: closed.append('conversation')
+    transcriber = LFM3Client('http://127.0.0.1:8081')
+    transcriber.close = lambda: closed.append('transcription')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                    client=client, asr_client=transcriber)
+    app.close()
+    assert closed == ['conversation', 'transcription']
+
+
 class Socket:
     def __init__(self, events):
         self.events = iter(events)
