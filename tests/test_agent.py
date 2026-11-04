@@ -582,6 +582,29 @@ def test_build_messages_dedupes_repeated_turns_and_closes_interrupted_ones():
     assert messages[-1]['content'] == 'Can you tell me a story?'
 
 
+def test_agent_is_told_previous_draft_may_not_have_been_heard(monkeypatch):
+    def open_url(req, timeout):
+        messages = json.loads(req.data)['messages']
+        assert messages[1]['content'] == 'Suggest ways to relax.'
+        assert messages[2]['role'] == 'assistant'
+        assert 'may not have heard all' in messages[2]['content']
+        assert 'Walk, read, or listen to music.' in messages[2]['content']
+        assert messages[3]['content'] == 'What about something else?'
+        return response({'choices': [{'message': {'content': 'Try a warm bath.'}}]})
+    monkeypatch.setattr('urllib.request.urlopen', open_url)
+    client = AgentClient('key')
+    history = [{'role': 'user', 'content': 'Suggest ways to relax.'},
+               {'role': 'assistant', 'content': 'Walk, read, or listen to music. [interrupted]'}]
+    assert client.respond('What about something else?', history, Turn()) == ('Try a warm bath.', [])
+
+
+def test_unanswered_prior_turn_is_marked_as_unheard():
+    messages, _ = AgentClient._build_messages('SYS', [
+        {'role': 'user', 'content': 'Tell me about the weather.'}], 'Actually, make it tomorrow.')
+    assert 'without a confirmed audible answer' in messages[2]['content']
+    assert messages[-1]['content'] == 'Actually, make it tomorrow.'
+
+
 def test_interrupted_spoken_reply_is_recorded_in_history_to_prevent_repeat_hell():
     import threading
     playing_started = threading.Event()

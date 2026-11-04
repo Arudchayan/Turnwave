@@ -21,8 +21,10 @@ This is a research prototype, not a claim of universally reliable conversation.
   can disagree with generated audio, and correct content is a separate question.
 - Exact instructions, attribution and conversation memory can fail. Interruptions
   reset the local audio model context for recovery; in cloud-agent mode,
-  recognized user requests are retained in memory across interruptions, while
-  unfinished assistant replies are excluded.
+  recognized requests are retained. If playback started, the generated draft
+  is retained with an explicit warning to the model that it may not have been
+  heard in full. Actual heard words are not known, and the model may still
+  mishandle that uncertainty.
 - Cloud conversation and web search depend on external network reachability,
   provider quotas and search-result quality. OpenCode Go is described by the
   provider as intended for coding-agent traffic and enforces account usage

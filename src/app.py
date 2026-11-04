@@ -358,7 +358,7 @@ class Assistant:
                 self._agent_history.pop(0)
 
     def _remember_agent_reply(self, job, interrupted=False):
-        """Record a reply once playback has begun so the agent knows what it already said."""
+        """Keep generated text, marking playback interrupted when applicable."""
         if (self.agent and not job.test and job.epoch == self._epoch
                 and job.played_samples > 0 and not job.agent_reply_saved):
             text = job.turn.text.strip()

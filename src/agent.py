@@ -677,12 +677,18 @@ class AgentClient:
     @staticmethod
     def _build_messages(system, history, user_text):
         """Normalize conversation history so interrupted turns never stack or repeat."""
-        recent = [
-            {'role': item['role'], 'content': _BRACKET_META.sub(' ', str(item.get('content', ''))).strip()}
-            for item in history[-16:]
-            if isinstance(item, dict) and item.get('role') in ('user', 'assistant')
-            and _BRACKET_META.sub(' ', str(item.get('content', ''))).strip()
-        ]
+        recent = []
+        for item in history[-16:]:
+            if not isinstance(item, dict) or item.get('role') not in ('user', 'assistant'):
+                continue
+            raw = str(item.get('content', ''))
+            content = _BRACKET_META.sub(' ', raw).strip()
+            if not content:
+                continue
+            if item['role'] == 'assistant' and _BRACKET_META.search(raw):
+                content = ('[Playback was interrupted or incomplete; the user may not have heard '
+                           'all of this generated draft.] ' + content)
+            recent.append({'role': item['role'], 'content': content})
         normalized = []
         deduped = 0
         closed_unanswered = 0
@@ -698,7 +704,7 @@ class AgentClient:
                 normalized.append({'role': 'user', 'content': content[:8000]})
                 normalized.append({
                     'role': 'assistant',
-                    'content': 'Understood.',
+                    'content': '[The previous request ended without a confirmed audible answer.]',
                 })
                 closed_unanswered += 1
             else:
