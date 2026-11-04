@@ -505,7 +505,11 @@ class Assistant:
                         with self._lock:
                             if self._active is job:
                                 self._agent_phase = 'searching' if active else 'thinking'
-                    result = self.agent.respond(text, history, turn, on_search=searching)
+                    if getattr(self.agent, 'supports_input_modality', False):
+                        result = self.agent.respond(text, history, turn, on_search=searching,
+                                                    input_modality='voice')
+                    else:
+                        result = self.agent.respond(text, history, turn, on_search=searching)
                     if result is None or turn.cancel.is_set():
                         return
                     answer, job.sources = result
@@ -1059,7 +1063,10 @@ def main():
         key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
         agent = AgentClient(os.getenv(key_name), provider=provider,
                             model=os.getenv('LOCALVOICE_AGENT_MODEL', 'kimi-k3'),
-                            search_key=os.getenv('BRAVE_SEARCH_API_KEY'))
+                            search_key=os.getenv('BRAVE_SEARCH_API_KEY'),
+                            search_provider=(os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or
+                                             ('brave' if os.getenv('BRAVE_SEARCH_API_KEY') else 'ddg')),
+                            local_tools=False)
     elif agent_mode:
         raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
     backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()
