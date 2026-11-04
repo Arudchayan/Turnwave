@@ -1096,3 +1096,36 @@ def test_length_limited_reply_is_labelled_and_followup_preserves_context(assista
     assert a.state()['transcript'][-1].endswith(' [reply reached length limit]')
     assert a.error is None
     assert any(event.get('finish_reason') == 'length' for event in a.diagnostics.recent())
+
+
+def test_stop_during_echo_callback_prevents_late_device_write(monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+    writes = []
+    aborted = []
+    class Output:
+        def __init__(self, **kwargs): pass
+        def start(self): pass
+        def write(self, audio): writes.append(audio.copy()); return False
+        def abort(self): aborted.append(True)
+        def stop(self): pass
+        def close(self): pass
+    monkeypatch.setattr('audio_io.sd.OutputStream', Output)
+    player = Player()
+    player.native_rate = 24000
+    player.native_channels = 1
+    def reference(audio):
+        entered.set()
+        assert release.wait(2)
+    thread = threading.Thread(target=lambda: player.play_chunks([np.ones(480, np.float32)], on_play=reference))
+    thread.start()
+    try:
+        assert entered.wait(2)
+        player.stop()
+        release.set()
+        thread.join(2)
+        assert not thread.is_alive()
+        assert aborted == [True] and writes == []
+    finally:
+        release.set()
+        thread.join(2)

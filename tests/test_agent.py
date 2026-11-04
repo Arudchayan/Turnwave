@@ -1212,3 +1212,39 @@ def test_failed_transcription_does_not_call_cloud_or_speak():
         assert job.played_samples == 0 and app._agent_history == []
     finally:
         app.close()
+
+
+def test_interrupt_clears_reference_after_inflight_callback():
+    import threading
+    entered = threading.Event()
+    release = threading.Event()
+    interrupt_done = threading.Event()
+    class BlockingFront(FakeFront):
+        def __init__(self):
+            super().__init__()
+            self.order = []
+        def push_far(self, audio, rate=16000):
+            entered.set()
+            assert release.wait(2)
+            self.order.append('push')
+        def clear_playback(self):
+            self.order.append('clear')
+    front = BlockingFront()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=front, client=LocalVoice(), agent=FakeAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert entered.wait(2)
+        def stop():
+            app.interrupt()
+            interrupt_done.set()
+        thread = threading.Thread(target=stop)
+        thread.start()
+        assert not interrupt_done.wait(.05)
+        release.set()
+        assert interrupt_done.wait(2)
+        thread.join(2)
+        wait_for(lambda: job.playback_closed.is_set())
+        assert front.order[-2:] == ['push', 'clear']
+    finally:
+        release.set()
+        app.close()

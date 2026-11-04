@@ -1,5 +1,20 @@
 # Results and lessons
 
+## Playback cancellation and echo-reference ordering
+
+One forced-order regression screen called stop from the echo-reference callback
+before the next device write, using a fake 24 kHz output device. On the prior
+main revision the player wrote a 480-sample block after stop in 100/100 trials;
+with a cancellation check after the callback, it did so in 0/100. A separate
+threaded test holds an in-flight reference callback while interrupt runs and
+checks that reference delivery completes before the interruption clears it.
+
+These are deterministic scheduling tests, not an estimate of how frequently
+the race occurs or what a real listener hears. A stop can still race with a
+device write already in progress. The change does not establish general echo
+suppression, headset performance, or backchannel handling. Run the checks with
+`python -m pytest tests/test_realtime.py tests/test_agent.py -q`.
+
 ## Capture-loop interruption replay
 
 On November 4, 2026, the app capture loop was replayed with one generated
