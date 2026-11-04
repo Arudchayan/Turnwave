@@ -69,6 +69,7 @@ h1{font-size:1.65rem;letter-spacing:-.06em;font-weight:normal}
 #lvl{font-size:.72rem;margin-top:4px}
 #controls{gap:8px;margin:24px 0 34px}
 #pause-control{display:flex;align-items:center;gap:8px;font:.8rem Segoe UI,sans-serif;color:var(--dim);white-space:nowrap}
+#pause-help{font:.75rem Segoe UI,sans-serif;color:var(--dim);flex-basis:100%}
 button,select{border-radius:4px;background:transparent;padding:.7em 1em;font-size:.85rem}
 button:hover{border-color:var(--green);background:#e8ebe0}
 button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #b47439;outline-offset:3px}
@@ -114,7 +115,8 @@ footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 <button id=tstbtn>test speaker</button>
 <select id=micsel aria-label="Input device"></select>
 <label id=pause-control for=pausesel>Pause before reply
-<select id=pausesel><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
+<select id=pausesel aria-describedby=pause-help><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
+<span id=pause-help>Longer waits allow more time to pause, but delay the reply.</span>
 </div>
 <details id=conversation-settings><summary>Conversation and search settings</summary>
 <p>Changing the conversation mode or model starts a new conversation. Cloud mode sends recognized speech and conversation history to the selected provider.</p>

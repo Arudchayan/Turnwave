@@ -285,6 +285,27 @@ See [evaluation boundaries and reproduction](EVALUATION.md).
 
 ## Adjustable pause between turns
 
+An additional annotation-only screen compared the three fixed pause presets
+on the first 400 English validation rows of [LiveKit's end-of-turn dataset](https://huggingface.co/datasets/livekit/eot-bench-data).
+Among 850 annotated mid-turn pauses, the 480 ms threshold crossed 286 (33.65%),
+800 ms crossed 105 (12.35%), and 1,120 ms crossed 60 (7.06%). The longer
+settings also add 320 and 640 ms, respectively, to the nominal silence wait
+relative to 480 ms. All 400 annotated final pauses in this subset extended past
+each threshold; that is a property of these annotations, not a real-world
+end-of-turn recall measurement.
+
+This screen uses per-pause observations from the first 400 rows, not a random
+or independent held-out sample. It does not run Turnwave's VAD, model,
+microphone, playback, or room acoustics. Longer waits can still split a longer
+pause and make completed turns feel slower. The default remains 480 ms; users
+can select the longer options. The source Parquet SHA-256 was
+`e475d435c8e693912243e8a810bf7e34a59e01e208551ce5b362c9c778b0fdc4`.
+With `pandas` and a Parquet reader installed, reproduce against a local copy:
+
+```powershell
+python -m src.synth.fixed_pause_benchmark --dataset path/to/validation.parquet --limit 400 --out outputs/pause-presets.json
+```
+
 The interface offers 480, 800 and 1,120 ms silence waits. In one CPU replay
 through the Silero frontend with echo processing disabled and no holdoff, the
 SAPI phrase “Hello, can you hear me clearly?” was trimmed to 100 ms around samples above 0.008 absolute
