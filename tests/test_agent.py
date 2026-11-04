@@ -1101,3 +1101,73 @@ def test_sources_stay_with_their_reply_across_followup_and_reset():
         assert app.state()['messages'] == []
     finally:
         app.close()
+
+
+def test_late_device_write_preserves_interrupted_reply_before_followup():
+    import threading
+    writing = threading.Event()
+    release_write = threading.Event()
+    class LateWritePlayer(FakePlayer):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+        def play_chunks(self, chunks, cancel=None, on_start=None, on_play=None, on_written=None):
+            self.calls += 1
+            if self.calls != 1:
+                return super().play_chunks(chunks, cancel, on_start, on_play, on_written)
+            self.playing = True
+            try:
+                for audio in chunks:
+                    on_start()
+                    on_play(audio)
+                    writing.set()
+                    assert release_write.wait(3)
+                    # A device write returned successfully after cancellation.
+                    on_written(audio)
+                    break
+            finally:
+                self.playing = False
+    agent = FakeAgent()
+    app = Assistant(mic=FakeMic(), player=LateWritePlayer(), front=FakeFront(), client=LocalVoice(), agent=agent)
+    try:
+        first = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert writing.wait(2)
+        second = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert first.turn.cancel.is_set() and first.played_samples == 0
+        release_write.set()
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        assert agent.histories[1] == [
+            {'role': 'user', 'content': 'What is new?'},
+            {'role': 'assistant', 'content': 'A short answer. [interrupted]'}]
+    finally:
+        release_write.set()
+        app.close()
+
+
+def test_late_write_after_reset_does_not_restore_old_context():
+    import threading
+    writing = threading.Event()
+    release_write = threading.Event()
+    class LateWritePlayer(FakePlayer):
+        def play_chunks(self, chunks, cancel=None, on_start=None, on_play=None, on_written=None):
+            self.playing = True
+            try:
+                for audio in chunks:
+                    on_start()
+                    writing.set()
+                    assert release_write.wait(3)
+                    on_written(audio)
+                    break
+            finally:
+                self.playing = False
+    app = Assistant(mic=FakeMic(), player=LateWritePlayer(), front=FakeFront(), client=LocalVoice(), agent=FakeAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        assert writing.wait(2)
+        app.reset()
+        release_write.set()
+        wait_for(lambda: job.playback_closed.is_set())
+        assert app._agent_history == []
+    finally:
+        release_write.set()
+        app.close()
