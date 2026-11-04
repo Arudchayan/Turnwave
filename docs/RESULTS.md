@@ -146,6 +146,23 @@ Reproduce with the app stopped and an LFM3 server running:
 python -m src.synth.continuity_reset_probe --out outputs/continuity-reset.json
 ```
 
+An experimental recovery transcribes the interrupted user's prior audio and
+provides it, plus a generated draft labeled as potentially unheard, to a new
+LFM3 session. A three-round follow-up comparison on this same prompt pair gave
+three topical follow-ups with new suggestions under recovery; three resets
+without recovery instead asked what else the user wanted. Median time from the
+follow-up request to first audio was 2.641 s with recovery versus 1.303 s with
+reset alone (and 0.289 s with the original context retained). The automated test
+suite ran concurrently for part of this local GPU diagnostic, so timing is only
+indicative. It used synthesized inputs and no actual interruption; the draft may
+include text the user never heard. Recovery is opt-in pending broader checks.
+In a subsequent three-round simulation that cancelled generation after one
+second of generated audio, all three recovered replies stayed on the relaxation
+topic, though each repeated a music suggestion. First-audio times were 3.995,
+4.676 and 7.134 seconds after the follow-up request. This exposes a substantial
+latency cost after a real cancellation; the experiment does not establish that
+the recovery is ready for everyday use.
+
 In a separate synthetic echo sweep using one far-end recording, 12 delay/gain
 combinations produced no starts in either hard or reversible mode. The room and
 headset path were not measured. The acoustic double-talk replay still cancelled

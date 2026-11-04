@@ -17,6 +17,8 @@ from client import Turn
 
 
 class LFM3Client:
+    supports_context_recovery = True
+
     def __init__(self, base='http://127.0.0.1:8080', timeout=60):
         self.base = base.rstrip('/').replace('http://localhost:', 'http://127.0.0.1:')
         self.timeout = timeout
@@ -144,7 +146,21 @@ class LFM3Client:
                 return True
         return False
 
-    def chat_turn(self, wav_bytes, turn, first, max_tokens=512, on_audio=None, require_audio=True):
+    def chat_turn(self, wav_bytes, turn, first, max_tokens=512, on_audio=None, require_audio=True,
+                  recovery_wav=None, recovery_reply=''):
+        context = ''
+        if first and recovery_wav and not turn.cancel.is_set():
+            try:
+                context = self.asr_text(recovery_wav, turn=turn).strip()[:1000]
+            except Exception:
+                # A failed optional recovery must not prevent a new voice turn.
+                turn.error = None
+            finally:
+                turn.text_parts.clear()
+                turn.done.clear()
+        if turn.cancel.is_set():
+            turn.done.set()
+            return
         acquired = False
         try:
             acquired = self._acquire(turn)
@@ -156,6 +172,15 @@ class LFM3Client:
                 self._chat, self._out_rate = self._connect(turn)
             if self._chat is None or turn.cancel.is_set():
                 return
+            if context:
+                draft = str(recovery_reply or '').strip()[:600]
+                prior = ('Earlier the user said: ' + context +
+                         '\nThe assistant reply was interrupted.')
+                if draft:
+                    prior += (' The assistant generated this draft, but some or all may not have been heard: ' + draft)
+                prior += '\nContinue with the next user request.'
+                self._chat.send(json.dumps({'type': 'conversation.item.create', 'item': {
+                    'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': prior}]}}))
             if turn.request_observer:
                 turn.request_observer({'protocol': 'realtime', 'wav_base64': base64.b64encode(wav_bytes).decode('ascii'),
                                        'reset_context': bool(first), 'max_tokens': max_tokens})

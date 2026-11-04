@@ -61,6 +61,61 @@ def test_transcription_uses_separate_session(monkeypatch):
     assert sock.sent[-1] == {'type': 'input_audio_buffer.commit', 'final': True}
 
 
+def test_interrupted_question_is_transcribed_and_supplied_as_context(monkeypatch):
+    pcm = np.array([500, -500], dtype='<i2').tobytes()
+    sock = Socket(initial_events() + [
+        {'type': 'response.output_text.delta', 'delta': 'Try a warm bath.'},
+        {'type': 'response.output_audio.delta', 'delta': base64.b64encode(pcm).decode()},
+        {'type': 'response.done', 'response': {'status': 'completed'}}])
+    monkeypatch.setattr('lfm3_client.websocket.create_connection', lambda *a, **k: sock)
+    client = LFM3Client()
+    def transcribe(wav, turn):
+        assert wav == b'previous audio'
+        turn.text_parts.append('Give me ways to relax.')
+        turn.done.set()
+        return turn.text
+    monkeypatch.setattr(client, 'asr_text', transcribe)
+    turn = Turn()
+    client.chat_turn(wav16k_bytes(np.ones(800, np.float32)), turn, True,
+                     recovery_wav=b'previous audio', recovery_reply='Try going for a walk.')
+    context = next(x for x in sock.sent if x['type'] == 'conversation.item.create')
+    assert 'Give me ways to relax.' in context['item']['content'][0]['text']
+    assert 'may not have been heard' in context['item']['content'][0]['text']
+    assert 'Try going for a walk.' in context['item']['content'][0]['text']
+    assert turn.text == 'Try a warm bath.' and turn.error is None and turn.done.is_set()
+
+
+def test_failed_context_transcription_falls_back_to_fresh_turn(monkeypatch):
+    pcm = np.array([500], dtype='<i2').tobytes()
+    sock = Socket(initial_events() + [
+        {'type': 'response.output_audio.delta', 'delta': base64.b64encode(pcm).decode()},
+        {'type': 'response.done', 'response': {'status': 'completed'}}])
+    monkeypatch.setattr('lfm3_client.websocket.create_connection', lambda *a, **k: sock)
+    client = LFM3Client()
+    def fail(wav, turn):
+        turn.error = 'transcription unavailable'
+        raise RuntimeError(turn.error)
+    monkeypatch.setattr(client, 'asr_text', fail)
+    turn = Turn()
+    client.chat_turn(wav16k_bytes(np.ones(800, np.float32)), turn, True, recovery_wav=b'old')
+    assert turn.error is None and turn.audio_samples == 1 and turn.done.is_set()
+    assert not any(x['type'] == 'conversation.item.create' for x in sock.sent)
+
+
+def test_cancellation_during_recovery_never_starts_a_new_reply(monkeypatch):
+    client = LFM3Client()
+    def cancel(wav, turn):
+        turn.abort()
+        turn.done.set()
+        return ''
+    monkeypatch.setattr(client, 'asr_text', cancel)
+    monkeypatch.setattr('lfm3_client.websocket.create_connection',
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError('unexpected connection')))
+    turn = Turn()
+    client.chat_turn(wav16k_bytes(np.ones(800, np.float32)), turn, True, recovery_wav=b'old')
+    assert turn.cancel.is_set() and turn.done.is_set() and turn.error is None
+
+
 def test_tts_handles_split_pcm_frames(monkeypatch):
     data = np.array([.25, -.5, .75], dtype='<f4').tobytes()
     class Response:

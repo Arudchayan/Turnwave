@@ -204,6 +204,12 @@ uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
 path: a short vocalisation during a reply no longer has to cancel it. The
 existing deferred interruption behavior remains the default; set `hard` explicitly
 to compare immediate cancellation.
+For LFM3 Omni, `LOCALVOICE_CONTEXT_RECOVERY=1` enables an experimental recovery
+after an interrupted local reply. It keeps the preceding user audio in memory,
+transcribes it locally on the next turn, and supplies it with an explicitly
+possibly unheard assistant draft as context. This adds latency, may misrecognize
+speech, and does not reconstruct what was actually heard. Resetting the
+conversation or changing mode clears the saved context. It is off by default.
 `LOCALVOICE_EOT_MODEL=smart-turn` enables the optional Smart Turn completion
 sidecar and extends the silence wait to `LOCALVOICE_EOT_TIMEOUT_MS` (default
 1000; 2000 lowers false cut-offs further at a longer worst-case wait).

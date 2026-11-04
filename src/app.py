@@ -38,6 +38,8 @@ class Job:
     user_id: int = 0
     first: bool = True
     wav: bytes = b''
+    recovery_wav: bytes = b''
+    recovery_reply: str = ''
     t0: float = field(default_factory=time.perf_counter)
     played_samples: int = 0
     test: bool = False
@@ -133,6 +135,9 @@ class Assistant:
         self._messages = []
         self.transcript_revision = 0
         self.first = True
+        self._local_context_recovery = os.getenv('LOCALVOICE_CONTEXT_RECOVERY', '0') == '1'
+        self._local_recovery_wav = b''
+        self._local_recovery_reply = ''
         self.mic_on = not start_muted
         self.status = 'starting'
         self.error = None
@@ -694,7 +699,12 @@ class Assistant:
             self.interrupt('new turn', announce=False)
             self.error = None
             self._job_id += 1
-            job = Job(epoch=self._epoch, first=self.first, wav=wav, id=self._job_id)
+            recovery = self._local_recovery_wav if not self.agent and self.first else b''
+            recovery_reply = self._local_recovery_reply if recovery else ''
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
+            job = Job(epoch=self._epoch, first=self.first, wav=wav, recovery_wav=recovery,
+                      recovery_reply=recovery_reply, id=self._job_id)
             if self.agent:
                 self._agent_sources = []
                 self._agent_notes = []
@@ -924,7 +934,12 @@ class Assistant:
                     turn.text_parts.append(job.agent_input)
                     self._speak_answer(job.agent_input, turn, receive)
                 else:
-                    self.client.chat_turn(job.wav, turn, job.first, on_audio=receive)
+                    if job.recovery_wav and getattr(self.client, 'supports_context_recovery', False):
+                        self.client.chat_turn(job.wav, turn, job.first, on_audio=receive,
+                                              recovery_wav=job.recovery_wav,
+                                              recovery_reply=job.recovery_reply)
+                    else:
+                        self.client.chat_turn(job.wav, turn, job.first, on_audio=receive)
             except Exception as exc:
                 if not turn.cancel.is_set():
                     turn.error = str(exc)
@@ -1052,6 +1067,10 @@ class Assistant:
             job = self._active
             if job is not None:
                 self.diagnostics.event('interrupt', turn_id=job.id, reason=why, played_s=round(job.played_samples/24000, 3))
+                if (self._local_context_recovery and not self.agent and not job.test and job.wav
+                        and getattr(self.client, 'supports_context_recovery', False)):
+                    self._local_recovery_wav = job.wav
+                    self._local_recovery_reply = job.turn.text.strip()[:600]
                 self._remember_agent_input(job)
                 self._remember_agent_reply(job, interrupted=True)
                 job.turn.abort()
@@ -1081,6 +1100,8 @@ class Assistant:
             self._epoch += 1
             self.first = True
             self._messages.clear()
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
             self._agent_history.clear()
             self._agent_sources.clear()
             self._agent_notes.clear()
@@ -1116,6 +1137,8 @@ class Assistant:
             raise ValueError('This voice transport supports local conversation only; restart with HTTP transport to use a cloud agent')
         with self._lock:
             self.interrupt('mode change', announce=False)
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
             if mode == 'local':
                 self.agent = None
                 self._agent_sources = []

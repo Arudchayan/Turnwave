@@ -374,6 +374,32 @@ def test_mic_processes_barge_in_during_app_playback(assistant):
     assert end['pre_roll_ms'] == 250 and 'end_silence_ms' in end
 
 
+def test_interrupted_local_question_is_carried_into_next_turn_and_reset_clears_it(monkeypatch):
+    monkeypatch.setenv('LOCALVOICE_CONTEXT_RECOVERY', '1')
+    class RecoveryClient(FakeClient):
+        supports_context_recovery = True
+        def __init__(self):
+            super().__init__()
+            self.recoveries = []
+        def chat_turn(self, wav, turn, first, on_audio=None, max_tokens=512,
+                      require_audio=True, recovery_wav=None, recovery_reply=''):
+            self.recoveries.append(recovery_wav)
+            super().chat_turn(wav, turn, first, on_audio, max_tokens, require_audio)
+    client = RecoveryClient()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=client)
+    try:
+        first = app.submit_audio(np.ones(8000, np.float32) * .1)
+        wait_for(lambda: app.status == 'speaking')
+        second = app.submit_audio(np.ones(8000, np.float32) * .2)
+        wait_for(lambda: len(client.recoveries) >= 2)
+        assert client.recoveries[:2] == [None, first.wav]
+        assert second.first and first.turn.cancel.is_set()
+        app.reset()
+        assert app._local_recovery_wav == b''
+    finally:
+        app.close()
+
+
 def test_short_blip_during_playback_restores_gain_without_cancelling(assistant):
     a = assistant
     a._spawn(a._loop)
