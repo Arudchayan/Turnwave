@@ -50,6 +50,12 @@ Search results can be incomplete, and provider limits can prevent responses.
 The voice-to-search flow has automated simulated coverage but has not yet passed
 a complete real-device spoken-search acceptance test.
 
+If a cloud reply is interrupted after playback starts, the next turn can use
+its generated text as context, explicitly marked as possibly unheard. Playback
+does not provide word-level alignment, so the model cannot know which words the
+listener actually heard. Interruptions before any audio is accepted retain only
+the recognized request.
+
 ## Optional delayed echo protection
 
 If the microphone picks up a delayed copy of the assistant's speech, set the
