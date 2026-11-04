@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Report cloud replies that reach their length limit instead of speaking an
+  incomplete fragment as a complete answer.
 - Clarified the pause control's response-delay tradeoff and added a
   reproducible annotated-pause comparison for its three presets.
 - Prevented a playback stop from racing with echo-reference delivery and a
