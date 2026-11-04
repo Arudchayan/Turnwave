@@ -852,3 +852,41 @@ playback, and a synthetic echo path. Both versions canceled the 220 ms overlap
 at 1,880 ms; neither canceled the echo-only control, and both canceled the
 longer and mid-pause clips. This change fixes bookkeeping but does not establish
 better natural backchannel recognition, real-device behavior or audible quality.
+
+
+## Follow-up: synthesized acknowledgments and commands (draft)
+
+We compared the frame-accounting change in the actual capture loop using the
+eight Windows-generated fixtures from the short-utterance screen (two voices,
+“mm-hmm,” “yes,” “stop,” and “wait”), each at full and half normalized gain.
+Both versions used the reversible policy, virtual devices, one generated
+far-end voice, an 80 ms synthetic echo and instant gain changes. The baseline
+was commit `28e530b`; the candidate was `332ccef`. Both canceled the same
+3/4 full-gain and 1/4 half-gain acknowledgments and the same 3/4 full-gain and
+0/4 half-gain commands. One detected command canceled 20 ms earlier in the
+candidate. These are scripted intended words, not verified human perception.
+
+On the candidate, increasing floor confirmation / backchannel cutoffs together
+from 300/250 ms to 400/350, 500/450 and 650/600 ms left all 16 decisions
+unchanged and delayed detected commands. A separate in-sample experiment gated
+VAD probability during ongoing speech whenever echo correlation crossed 0.6.
+It reduced acknowledgment cancellations from 4/8 to 2/8 but also reduced
+detected commands from 3/8 to 2/8: a previously detected “stop” was missed.
+At 0.8, it still missed that command without changing the aggregate
+acknowledgment count. Both gates and the baseline had no cancellation in one
+echo-only replay. These are tiny, non-independent screens with one acoustic
+path; no gate or new cutoff is promoted.
+
+To reproduce on Windows with the named SAPI voices, generate fixtures into a
+new folder and run the baseline and separate experimental settings, choosing
+new output paths each time:
+
+```powershell
+./src/synth/generate_interrupt_fixtures.ps1 -OutDir outputs/interrupt-fixtures
+python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --out outputs/sweep-default.json
+python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --out outputs/sweep-400.json --floor-ms 400
+python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --out outputs/sweep-gate.json --active-echo-gate 0.6
+```
+
+The report includes fixture and normalized-audio hashes. Voice versions can
+differ, and the active gate is confined to the benchmark process.
