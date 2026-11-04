@@ -277,3 +277,78 @@ def test_search_warning_is_visible_and_reset():
         assert app.state()['warning'] is None
     finally:
         app.close()
+
+
+def test_runtime_mode_and_search_controls_keep_keys_private_and_reset_context(monkeypatch):
+    monkeypatch.setenv('OPENCODE_GO_API_KEY', 'private-control-test-key')
+    monkeypatch.setenv('OPENCODE_ZEN_API_KEY', 'other-private-control-test-key')
+    monkeypatch.delenv('BRAVE_SEARCH_API_KEY', raising=False)
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice())
+    try:
+        app._agent_history.append({'role': 'user', 'content': 'private previous conversation'})
+        app.set_agent_mode('opencode-go', 'chosen-model')
+        state = app.state()
+        assert state['agent_mode_id'] == 'opencode-go' and state['agent_model'] == 'chosen-model'
+        assert not app._agent_history and not app.agent.local_tools
+        assert 'private-control-test-key' not in json.dumps(state)
+        app.set_search_provider('bing')
+        assert app.state()['search_provider'] == 'bing'
+        with pytest.raises(ValueError, match='BRAVE_SEARCH_API_KEY'):
+            app.set_search_provider('brave')
+        assert app.state()['search_provider'] == 'bing'
+        app._agent_history.append({'role': 'user', 'content': 'another private turn'})
+        app.set_agent_mode('opencode-zen', 'another-model')
+        assert app.state()['agent_mode_id'] == 'opencode-zen'
+        assert app.state()['search_provider'] == 'bing'
+        assert not app._agent_history
+        app.set_agent_mode('local')
+        assert app.state()['agent_mode_id'] == 'local'
+    finally:
+        app.close()
+
+
+def test_mode_change_rejected_while_recording_without_discarding_context(monkeypatch):
+    monkeypatch.setenv('OPENCODE_GO_API_KEY', 'test-key')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice())
+    try:
+        app.status = 'recording'
+        app._agent_history.append({'role': 'user', 'content': 'keep me'})
+        with pytest.raises(RuntimeError, match='current conversation turn'):
+            app.set_agent_mode('opencode-go')
+        assert app.agent is None and app._agent_history[0]['content'] == 'keep me'
+    finally:
+        app.close()
+
+
+def test_settings_http_endpoints_return_actionable_errors(monkeypatch):
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from app import Handler
+    monkeypatch.delenv('BRAVE_SEARCH_API_KEY', raising=False)
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice())
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    server.assistant = app
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    def post(path, body):
+        request = urllib.request.Request(f'http://127.0.0.1:{server.server_port}' + path,
+                                         data=json.dumps(body).encode(), method='POST')
+        return urllib.request.urlopen(request, timeout=3)
+    try:
+        with post('/api/agent', {'mode': 'opencode-go', 'model': 'kimi-k3'}) as result:
+            assert json.load(result)['ok']
+        with pytest.raises(urllib.error.HTTPError) as error:
+            post('/api/search-provider', {'provider': 'brave'})
+        assert error.value.code == 409
+        assert 'BRAVE_SEARCH_API_KEY' in json.load(error.value)['error']
+        app.status = 'recording'
+        with pytest.raises(urllib.error.HTTPError) as error:
+            post('/api/agent', {'mode': 'local'})
+        assert error.value.code == 409
+        assert app.state()['agent_mode_id'] == 'opencode-go'
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+        app.close()

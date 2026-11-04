@@ -714,6 +714,58 @@ class Assistant:
                 raise RuntimeError('Finish speaking before changing the pause')
             return self.front.set_end_silence(milliseconds)
 
+    def _require_idle_settings(self):
+        if self.status == 'recording' or self._active is not None or self._pending_jobs:
+            raise RuntimeError('Wait until the current conversation turn finishes before changing settings.')
+
+    def set_agent_mode(self, mode, model=None):
+        if mode not in ('local', 'opencode-go', 'opencode-zen'):
+            raise ValueError('Unsupported conversation mode')
+        if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 100):
+            raise ValueError('Invalid model name')
+        if mode != 'local' and not callable(getattr(self.client, 'asr_text', None)):
+            raise ValueError('The current voice backend does not support transcription.')
+        with self._lock:
+            self._require_idle_settings()
+            provider = 'zen' if mode == 'opencode-zen' else 'go'
+            current_mode = ('opencode-' + getattr(self.agent, 'provider', 'go')) if self.agent else 'local'
+            desired_model = (model.strip() if model else os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or 'kimi-k3')
+            if mode == current_mode and (mode == 'local' or desired_model == getattr(self.agent, 'model', None)):
+                return {'ok': True}
+            replacement = None
+            if mode != 'local':
+                from agent import AgentClient
+                key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
+                search_key = os.getenv('BRAVE_SEARCH_API_KEY')
+                search_provider = (getattr(self.agent, 'search_provider', None) or
+                                   os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or
+                                   ('brave' if search_key else 'ddg'))
+                replacement = AgentClient(os.getenv(key_name), provider=provider,
+                                          model=desired_model, search_key=search_key,
+                                          search_provider=search_provider, local_tools=False)
+            self.reset()
+            self.agent = replacement
+            self.diagnostics.event('agent_mode_changed', agent_mode=bool(replacement),
+                                   provider=provider if replacement else None,
+                                   model=desired_model if replacement else None)
+            return {'ok': True}
+
+    def set_search_provider(self, provider):
+        if provider not in ('none', 'ddg', 'bing', 'brave'):
+            raise ValueError('Unsupported search provider')
+        with self._lock:
+            self._require_idle_settings()
+            if self.agent is None:
+                raise ValueError('Select a cloud conversation mode first.')
+            if provider == 'brave' and not getattr(self.agent, '_search_key', None):
+                raise ValueError('Brave search requires BRAVE_SEARCH_API_KEY in the app environment.')
+            self.agent.search_provider = provider
+            self.agent.search_enabled = provider != 'none'
+            self._agent_sources.clear()
+            self._agent_search_warning = None
+            self.diagnostics.event('search_provider_changed', provider=provider)
+            return {'ok': True}
+
     def _archive_sealed(self):
         return self._recording_sealed or bool(getattr(self.session_archive, 'sealed', False))
 
@@ -921,6 +973,8 @@ class Assistant:
                         end_silence_ms=getattr(self.front, 'end_chunks', 0) * 32 or None,
                         agent_mode=bool(self.agent), agent_phase=self._agent_phase,
                         agent_provider=getattr(self.agent, 'label', None),
+                        agent_mode_id=('opencode-' + getattr(self.agent, 'provider', 'go')) if self.agent else 'local',
+                        agent_model=getattr(self.agent, 'model', None),
                         search_enabled=bool(self.agent and self.agent.search_enabled),
                         search_provider=getattr(self.agent, 'search_provider', None),
                         agent_sources=list(self._agent_sources),
@@ -1041,6 +1095,24 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(json.dumps({'error': str(exc)}), 409)
                     return
                 self._send(json.dumps({'ok': True, 'milliseconds': actual}))
+                return
+            elif self.path in ('/api/agent', '/api/search-provider'):
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict):
+                    raise ValueError('Expected settings object')
+                try:
+                    if self.path == '/api/agent':
+                        if 'mode' not in desired or not set(desired) <= {'mode', 'model'}:
+                            raise ValueError('Expected conversation mode settings')
+                        result = assistant.set_agent_mode(desired['mode'], desired.get('model'))
+                    else:
+                        if set(desired) != {'provider'}:
+                            raise ValueError('Expected search provider')
+                        result = assistant.set_search_provider(desired['provider'])
+                except (ValueError, RuntimeError) as exc:
+                    self._send(json.dumps({'error': str(exc)}), 409)
+                    return
+                self._send(json.dumps(result))
                 return
             elif self.path == '/api/reset':
                 assistant.reset()
