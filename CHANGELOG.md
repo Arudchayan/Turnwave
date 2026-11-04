@@ -1,0 +1,33 @@
+# Change log
+
+Changes are listed when they reach the default branch. Work in an open pull
+request is described separately so experimental behavior is not mistaken for a
+released default. No version numbers are assigned here without a release tag.
+
+## Unreleased
+
+- Added a public change log and an experiment ledger with outcomes, decisions,
+  reproduction references, and evidence limits.
+
+## In development
+
+The [voice and agent development pull request](https://github.com/Arudchayan/Turnwave/pull/1)
+contains work on local voice, optional cloud conversation and search, the
+interface, and research tooling. These changes are **not yet on the default
+branch**. Some features are experimental or opt-in and still need real-device
+validation. See [EXPERIMENTS.md](EXPERIMENTS.md) for measured outcomes and
+[known limitations](docs/KNOWN_LIMITATIONS.md) for the current baseline.
+
+## Baseline
+
+- The existing default branch contains the local LFM2.5 audio prototype and its
+  documented synthetic and native-model studies. See [results](docs/RESULTS.md)
+  and [evaluation methods](docs/EVALUATION.md).
+
+## Maintenance
+
+For each merged pull request, add a concise user-facing entry to **Unreleased**.
+For each experiment, record the comparison, denominator, environment, outcome,
+limitations, and decision in the experiment ledger or a linked detailed report.
+Do not include private recordings, transcripts, credentials, or local machine
+paths. Move entries into a dated version section only when a release is tagged.
