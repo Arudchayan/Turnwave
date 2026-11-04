@@ -39,8 +39,10 @@ $env:LOCALVOICE_SEARCH = 'ddg' # ddg, bing, brave, or none
 Set `OPENCODE_GO_API_KEY` in the application environment (or
 `OPENCODE_ZEN_API_KEY` for Zen) before starting it. Brave search also requires
 `BRAVE_SEARCH_API_KEY`; without it Brave search is
-unavailable. Remove `LOCALVOICE_AGENT` to return to local conversation. Settings
-are read at startup. Recognized speech and conversation history are sent to the
+unavailable. The Conversation and search settings panel can switch modes, models,
+and search providers while the app is running. Changing the mode or model starts
+a new conversation; credentials remain in the application environment.
+Environment variables set startup defaults. Recognized speech and conversation history are sent to the
 chosen provider; search queries are sent to the selected search service. The
 local audio backend still handles transcription and speech synthesis. Check the
 provider's current terms: OpenCode Go is intended for coding-agent traffic.
