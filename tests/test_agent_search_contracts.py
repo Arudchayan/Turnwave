@@ -470,3 +470,23 @@ def test_empty_reasoning_reply_retries_without_effort(monkeypatch):
     answer, _ = AgentClient('key').respond('Hello', [], Turn())
     assert answer == 'Recovered reply.'
     assert attempts == [('low', 450), (None, 1200)]
+
+
+def test_nonempty_truncated_cloud_reply_is_not_spoken_as_complete(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
+        'choices': [{'finish_reason': 'length', 'message': {'content': 'The answer is definitely'}}]}))
+    client = AgentClient('test-key')
+    answer, sources = client.respond('Explain the answer', [], Turn())
+    assert answer == 'My reply was cut short. Please ask me to try again.'
+    assert sources == []
+    assert client.last_trace['checks']['response_truncated'] is True
+    assert 'length limit' in client.last_trace['response_warning']
+
+
+def test_complete_reply_does_not_report_truncation(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
+        'choices': [{'finish_reason': 'stop', 'message': {'content': 'A complete answer.'}}]}))
+    client = AgentClient('test-key')
+    assert client.respond('Explain', [], Turn()) == ('A complete answer.', [])
+    assert client.last_trace['checks']['response_truncated'] is False
+    assert 'response_warning' not in client.last_trace
