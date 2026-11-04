@@ -832,3 +832,23 @@ one local synthesis/transcription path, not the model's safety, conversational
 quality, voice quality, or general effectiveness of the modification. The
 research variant still requires explicitly selected artifacts and a server
 restart.
+
+
+## Floor speech accounting across capture sizes (draft)
+
+The reversible policy previously estimated speech time by multiplying the
+most recent VAD decision by the capture block length. Capture blocks and the
+32 ms VAD frames are not aligned, and a block can contain no new decision or
+more than one. We replayed deterministic sequences of 6–10 hot VAD frames
+followed by silence through the actual frontend and policy at 10, 20, 30, 40
+and 60 ms capture sizes (`tests/test_floor_policy.py`). No microphone, AEC,
+or speech model was used; the VAD decisions were scripted.
+
+The previous policy disagreed across capture sizes on the 8-, 9- and 10-frame
+cases. The candidate counted 192, 224, 256, 288 and 320 ms respectively at
+every block size and made the same decision per shape. A separate run of
+`python -m src.synth.floor_acoustic` used one public human clip, generated
+playback, and a synthetic echo path. Both versions canceled the 220 ms overlap
+at 1,880 ms; neither canceled the echo-only control, and both canceled the
+longer and mid-pause clips. This change fixes bookkeeping but does not establish
+better natural backchannel recognition, real-device behavior or audible quality.
