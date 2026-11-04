@@ -412,3 +412,31 @@ def test_interrupted_draft_is_saved_once_and_reset_discards_it():
         assert app._agent_history == []
     finally:
         app.close()
+
+
+def test_sources_stay_with_their_reply_across_followup_and_reset():
+    class FirstSourceAgent(FakeAgent):
+        def __init__(self): self.calls = 0
+        def respond(self, text, history, turn, on_search):
+            self.calls += 1
+            sources = [{'title': 'Official', 'url': 'https://example.org/article'},
+                       {'title': 'bad', 'url': 'javascript:alert(1)'},
+                       {'title': 'credentials', 'url': 'https://user:pass@example.org/'}] if self.calls == 1 else []
+            return 'A short answer.', sources
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(), agent=FirstSourceAgent())
+    try:
+        first = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: first.playback_closed.is_set() and app._active is None)
+        first_reply = next(m for m in app.state()['messages'] if m['id'] == first.reply_id)
+        assert first_reply['sources'] == [{'title': 'Official', 'url': 'https://example.org/article'}]
+        assert app.state()['agent_sources'] == first_reply['sources']
+        first_reply['sources'][0]['title'] = 'changed externally'
+        second = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        state = app.state()
+        assert next(m for m in state['messages'] if m['id'] == first.reply_id)['sources'][0]['title'] == 'Official'
+        assert next(m for m in state['messages'] if m['id'] == second.reply_id)['sources'] == []
+        app.reset()
+        assert app.state()['messages'] == []
+    finally:
+        app.close()
