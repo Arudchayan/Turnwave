@@ -189,7 +189,7 @@ if(!observedPausePending&&observedPauseVersion===pauseVersion&&!pendingActions.h
 lastPause=s.end_silence_ms;pause.value=String(lastPause);}
 pause.disabled=lastPause===null||pendingActions.has('pausesel');
 let mode=$('mode');mode.textContent=s.agent_mode?
-('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?'enabled':'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
+('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?(s.search_provider||'enabled'):'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
 let sources=$('sources');sources.innerHTML='';
 if(Array.isArray(s.agent_sources)&&s.agent_sources.length){

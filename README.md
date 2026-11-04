@@ -24,6 +24,30 @@ flowchart LR
     Player -->|render reference| Capture
 ```
 
+## Optional cloud conversation and web search
+
+Local voice remains the default. To use a cloud model, start the local voice
+backend as described below, then set environment variables in the application terminal
+before starting `python src/app.py`:
+
+```powershell
+$env:LOCALVOICE_AGENT = 'opencode-go' # or opencode-zen
+$env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # choose a model available to your provider
+$env:LOCALVOICE_SEARCH = 'ddg' # ddg, bing, brave, or none
+```
+
+Set `OPENCODE_GO_API_KEY` in the application environment (or
+`OPENCODE_ZEN_API_KEY` for Zen) before starting it. Brave search also requires
+`BRAVE_SEARCH_API_KEY`; without it Brave search is
+unavailable. Remove `LOCALVOICE_AGENT` to return to local conversation. Settings
+are read at startup. Recognized speech and conversation history are sent to the
+chosen provider; search queries are sent to the selected search service. The
+local audio backend still handles transcription and speech synthesis. Check the
+provider's current terms: OpenCode Go is intended for coding-agent traffic.
+Search results can be incomplete, and provider limits can prevent responses.
+The voice-to-search flow has automated simulated coverage but has not yet passed
+a complete real-device spoken-search acceptance test.
+
 ## What we tested
 
 | Work | Finding | Status |

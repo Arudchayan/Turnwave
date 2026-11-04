@@ -98,6 +98,20 @@ def test_abort_wakes_a_blocked_network_read(streaming_server):
     release.set()
 
 
+def test_transcription_accepts_turn_for_interruption(streaming_server):
+    client, release, first, _ = streaming_server
+    turn = Turn()
+    worker = threading.Thread(target=client.asr_text, args=(b'wav',), kwargs={'turn': turn})
+    worker.start()
+    assert first.wait(1)
+    turn.abort()
+    worker.join(.5)
+    assert not worker.is_alive()
+    assert turn.cancel.is_set() and turn.done.is_set()
+    assert turn.error is None
+    release.set()
+
+
 def test_requests_are_serialized(streaming_server):
     client, release, first, active = streaming_server
     a, b = Turn(), Turn()
@@ -159,6 +173,41 @@ def test_playback_preserves_samples_and_releases_device(monkeypatch):
     assert closed == [True]
 
 
+def test_playback_gain_ducks_and_restores_without_click(monkeypatch):
+    writes, refs = [], []
+    class Output:
+        def __init__(self, **kwargs): pass
+        def start(self): pass
+        def write(self, a): writes.append(a.copy()); return False
+        def stop(self): pass
+        def close(self): pass
+    monkeypatch.setattr('audio_io.sd.OutputStream', Output)
+    player = Player()
+    player.native_rate = 24000
+    player.native_channels = 1
+    chunks = [np.ones(480, np.float32) for _ in range(4)]
+    def on_play(piece):
+        refs.append(piece.copy())
+        if len(refs) == 1:
+            player.set_gain(.2)
+        elif len(refs) == 2:
+            player.set_gain(5)  # Clamped to 1.0; effective on the next piece.
+    player.set_gain(.2)  # A new playback must still start at full gain.
+    player.play_chunks(iter(chunks), on_play=on_play)
+    device = np.concatenate(writes)
+    np.testing.assert_array_equal(np.concatenate(refs), device)
+    assert np.all(device[:480] == 1)
+    fade_down = device[480:960]
+    assert fade_down[0] == 1 and .19 < fade_down[-1] < .21
+    fade_up = device[960:1440]
+    assert .19 < fade_up[0] < .21 and fade_up[-1] > .99
+    assert np.all(device[1440:] == 1)
+    player.set_gain(.4)
+    player.stop()
+    assert player._target_gain == 1.0
+    assert player.set_gain(-1) == 0.0 and player.set_gain(9) == 1.0
+
+
 def test_playback_exception_releases_device(monkeypatch):
     closed = []
     class Output:
@@ -197,8 +246,12 @@ class FakeFront:
 
 
 class FakePlayer:
-    def __init__(self): self.playing = False; self.stops = 0
-    def stop(self): self.stops += 1; self.playing = False
+    def __init__(self): self.playing = False; self.stops = 0; self.gains = []; self.gain = 1.0
+    def set_gain(self, level):
+        self.gain = max(0.0, min(1.0, float(level)))
+        self.gains.append(self.gain)
+        return self.gain
+    def stop(self): self.stops += 1; self.playing = False; self.gain = 1.0
     def play_chunks(self, chunks, cancel=None, on_start=None, on_play=None, on_written=None):
         started = False
         try:
@@ -216,7 +269,7 @@ class FakeClient:
     base = 'http://chat'
     def __init__(self, fail=False): self.calls = []; self.fail = fail
     def health(self): return False
-    def chat_turn(self, wav, turn, first, on_audio=None):
+    def chat_turn(self, wav, turn, first, on_audio=None, max_tokens=512, require_audio=True):
         self.calls.append(first)
         if self.fail: raise RuntimeError('simulated disconnect')
         for _ in range(40):
@@ -237,18 +290,124 @@ def assistant():
     a.close()
 
 
+class WarmClient(FakeClient):
+    def __init__(self, fail_audio=False, order=None):
+        super().__init__()
+        self.fail_audio = fail_audio
+        self.order = order if order is not None else []
+        self.warm = []
+    def health(self): return True
+    def tts(self, text, turn, max_tokens=128, on_audio=None):
+        self.order.append('tts')
+        turn.done.set()
+    def chat_turn(self, wav, turn, first, on_audio=None, max_tokens=512, require_audio=True):
+        self.order.append('audio_warmup')
+        self.warm.append(dict(size=len(wav), first=first, max_tokens=max_tokens,
+                              require_audio=require_audio))
+        if self.fail_audio:
+            raise RuntimeError('simulated warmup failure')
+        turn.done.set()
+
+
+class WarmMic(FakeMic):
+    def __init__(self, order):
+        super().__init__()
+        self.order = order
+    def start(self): self.order.append('mic')
+
+
+def startup_assistant(client):
+    order = client.order
+    a = Assistant(mic=WarmMic(order), player=FakePlayer(), front=FakeFront(),
+                  client=client, start_muted=True)
+    a._loop = lambda: None
+    return a, order
+
+
+def test_startup_warms_audio_input_before_mic_starts():
+    client = WarmClient()
+    a, order = startup_assistant(client)
+    try:
+        a._startup()
+        assert order == ['tts', 'audio_warmup', 'mic']
+        assert len(client.warm) == 1
+        warm = client.warm[0]
+        assert warm['first'] is True
+        assert warm['max_tokens'] == 8 and warm['require_audio'] is False
+        assert .5 <= (warm['size'] - 44) / 32000 <= .8
+        assert a.status == 'listening' and a._messages == []
+        assert any(e['event'] == 'audio_warmup' and e['ok'] for e in a.diagnostics.recent())
+    finally:
+        a.close()
+
+
+def test_startup_audio_warmup_failure_does_not_block_microphone():
+    client = WarmClient(fail_audio=True)
+    a, order = startup_assistant(client)
+    try:
+        a._startup()
+        assert order == ['tts', 'audio_warmup', 'mic']
+        assert a.status == 'listening' and a.error is None
+        assert 'Audio warmup skipped' in (a.warning or '')
+        assert any(e['event'] == 'audio_warmup_error' for e in a.diagnostics.recent())
+    finally:
+        a.close()
+
+
 def test_mic_processes_barge_in_during_app_playback(assistant):
     a = assistant
     a._spawn(a._loop)
     job = a.submit_audio(np.ones(8000, np.float32) * .1)
     wait_for(lambda: a.status == 'speaking')
     a.mic.q.put(np.ones(3200, np.float32) * .1)
-    wait_for(job.turn.cancel.is_set)
-    assert a.status == 'recording'
-    assert a.front.calls >= 1
+    wait_for(lambda: a.status == 'recording')
+    assert not job.turn.cancel.is_set(), 'Onset alone must only duck the reply'
+    assert a.player.gain == .2
+    assert any(e['event'] == 'barge_candidate' for e in a.diagnostics.recent())
     a.mic.q.put(np.zeros(3200, np.float32))
     wait_for(lambda: len(a.client.calls) == 2)
+    assert job.turn.cancel.is_set()
+    assert a.player.gain == 1.0
     assert a.client.calls == [True, True]
+    assert any(e['event'] == 'barge_confirm' for e in a.diagnostics.recent())
+    end = next(e for e in a.diagnostics.recent() if e['event'] == 'speech_end')
+    assert end['pre_roll_ms'] == 250 and 'end_silence_ms' in end
+
+
+def test_short_blip_during_playback_restores_gain_without_cancelling(assistant):
+    a = assistant
+    a._spawn(a._loop)
+    job = a.submit_audio(np.ones(8000, np.float32) * .1)
+    wait_for(lambda: a.status == 'speaking')
+    a.mic.q.put(np.ones(1600, np.float32) * .1)
+    wait_for(lambda: a.player.gain == .2)
+    assert a.status == 'recording' and not job.turn.cancel.is_set()
+    a.mic.q.put(np.zeros(320, np.float32))
+    wait_for(lambda: a.player.gain == 1.0)
+    wait_for(lambda: a.status == 'speaking')
+    assert a._active is job
+    assert not job.turn.cancel.is_set()
+    assert len(a.client.calls) == 1
+    assert any(e['event'] == 'barge_restore' and e.get('reason') == 'short utterance'
+               for e in a.diagnostics.recent())
+
+
+def test_valid_barge_ducks_then_confirms_and_starts_a_new_turn(assistant):
+    a = assistant
+    a._spawn(a._loop)
+    job = a.submit_audio(np.ones(8000, np.float32) * .1)
+    wait_for(lambda: a.status == 'speaking')
+    a.mic.q.put(np.ones(3200, np.float32) * .1)
+    wait_for(lambda: a.player.gain == .2)
+    assert not job.turn.cancel.is_set()
+    assert not any(e['event'] == 'barge_confirm' for e in a.diagnostics.recent())
+    a.mic.q.put(np.zeros(3200, np.float32))
+    wait_for(lambda: len(a.client.calls) == 2)
+    assert job.turn.cancel.is_set() and a._active is not job
+    assert a.client.calls == [True, True]
+    events = [e['event'] for e in a.diagnostics.recent()]
+    assert events.index('barge_candidate') < events.index('barge_confirm')
+    assert a.player.gain == 1.0
 
 
 def test_request_failure_restores_listening(assistant):
@@ -547,6 +706,7 @@ def test_tts_and_chat_use_distinct_modalities():
     client = ServerClient()
     assert client._payload(TTS_VOICE, 'hello', True, 64)['modalities'] == ['audio']
     assert client._payload(CHAT_SYS, [], True, 512)['modalities'] == ['text', 'audio']
+    assert client._payload(CHAT_SYS, [], True, 8)['max_tokens'] == 8
     assert client._payload(ASR_SYS, [], True, 64, audio=False)['modalities'] == ['text']
     assert ServerClient('http://localhost:8080').base == 'http://127.0.0.1:8080'
 
@@ -791,6 +951,7 @@ def test_stream_preserves_completion_reason_and_generated_audio(monkeypatch, rea
     client._stream({}, turn, on_audio=chunks.append)
     assert turn.error is None and turn.done.is_set()
     assert turn.finish_reason == reason and turn.truncated == (reason == 'length')
+    assert turn.first_text is not None and turn.first_event is not None
     assert turn.text == 'Hello' and len(np.concatenate(chunks)) == 1440
 
 

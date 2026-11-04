@@ -58,6 +58,7 @@ class VirtualMic:
 
 class VirtualSpeaker:
     def __init__(self):self.playing=True;self.sample_clock=0;self.stop_sample=None
+    def set_gain(self,level):pass
     def stop(self):
         if self.playing and self.stop_sample is None:self.stop_sample=self.sample_clock
         self.playing=False
@@ -72,6 +73,12 @@ class CaptureAssistant(Assistant):
     def __init__(self,**kwargs):super().__init__(**kwargs);self.captured=[];self.capture_end_samples=[]
     def submit_audio(self,audio):
         self.captured.append(audio.copy());self.capture_end_samples.append(self.player.sample_clock);self.status='listening'
+    def _confirm_barge(self):
+        # The capture rig measures interruption when the replacement turn is
+        # confirmed, not at the candidate onset.
+        candidate=self._barge
+        if candidate is not None and candidate.get('job') is self._active:self.player.stop()
+        return super()._confirm_barge()
     def interrupt(self,why='button',announce=True):
         if why=='barge-in' and self._active is not None and hasattr(self.front,'use_barge_endpoint'):
             self.front.use_barge_endpoint()
