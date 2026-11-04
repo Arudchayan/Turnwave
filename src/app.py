@@ -55,7 +55,14 @@ class Assistant:
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
-        self.front = front if front is not None else DuplexFrontend()
+        if front is not None:
+            self.front = front
+        else:
+            echo_profile = os.getenv('LOCALVOICE_ECHO_PROFILE', 'standard').strip().lower()
+            if echo_profile not in ('standard', 'long'):
+                raise ValueError('LOCALVOICE_ECHO_PROFILE must be standard or long')
+            options = {'echo_tail_ms': 1500, 'echo_history_ms': 1600} if echo_profile == 'long' else {}
+            self.front = DuplexFrontend(**options)
         self.client = client if client is not None else ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
         self.asr_client = asr_client
         self.agent = agent
@@ -935,6 +942,8 @@ class Assistant:
                         gen_start=self.gen_start, first_audio_at=self.first_audio_at,
                         eta_first_audio_ms=eta, eta_budget_ms=round(budget * 1000),
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
+                        echo_tail_ms=getattr(self.front, 'echo_tail_samples', 0) / 16 or None,
+                        echo_history_ms=getattr(self.front, 'echo_history_samples', 0) / 16 or None,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
                         error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self._agent_search_warning, getattr(self.agent, 'configuration_error', None)] if w) or None,

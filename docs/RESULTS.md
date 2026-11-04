@@ -143,3 +143,29 @@ The inserted silence is not the entire VAD-measured silence because the clips
 also contain quiet audio. This is one synthetic voice and does not establish
 word retention, false-interruption rates or a generally safe setting. The
 default remains 480 ms and the setting changes only between utterances.
+
+## Delayed playback echo tail
+
+A synthetic frontend comparison used one generated far-end clip, one public
+LibriSpeech near-end clip, five direct echo delays (80–1,100 ms), and full- and
+quarter-level near speech. Unlike the earlier acoustic replay, it stopped
+feeding the render reference when playback ended. The standard 300 ms tail and
+750 ms history detected echo-only speech in 3/5 cases. An experimental 1.5 s
+tail with 1.6 s history detected none. Both detected all 10 near-only cases. In
+the 10 mixed echo/speech cases, the standard profile started before near speech
+in four; the long profile had no early starts but delayed one quiet overlap
+onset by 850 ms. Each result uses one signal pair and a simple delayed gain,
+not a measured headset, room impulse response or varied speakers. Timing of
+speech onset includes the detector's confirmation time. Median wall time to
+process each 5.5-second synthetic case was 0.263 s for standard and 0.462 s for
+long on this machine; this is not a real-time CPU-utilization measurement.
+
+The app keeps the standard profile by default. Set
+`LOCALVOICE_ECHO_PROFILE=long` before launch to try the longer profile; it can
+improve long-tail suppression while delaying quiet interruptions. Reproduce the
+50-case probe with (the output records whether the public clip or the generated
+fallback was used; the fallback is not a reproduction of these exact results):
+
+```powershell
+python -m src.synth.echo_tail_probe --out outputs/echo-tail-probe.json
+```
