@@ -8,6 +8,7 @@ llama.cpp notice for source included in the patches is preserved in
 | Component | Role | Source / terms to review |
 | --- | --- | --- |
 | LiquidAI LFM3-Omni-2B | Optional local audio model | [Model card and terms](https://huggingface.co/LiquidAI/LFM3-Omni-2B), [GGUF release](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF) |
+| Heretic | Optional model-modification research tool | [Upstream project and license](https://github.com/p-e-w/heretic) |
 | LiquidAI LFM2.5-Audio-1.5B | Direct audio input/output model | [Model card](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B), [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B/blob/main/LICENSE) |
 | llama.cpp Liquid audio integration | External native GGUF runner; local derived patches | [PR 18641](https://github.com/ggml-org/llama.cpp/pull/18641), [upstream license at pinned source](https://github.com/ggml-org/llama.cpp/blob/ec9d1fdd9cc18643c5e161b65b8053f6f6f34a4b/LICENSE) |
 | pywebrtc-audio | Echo processing wrapper | [Project](https://pypi.org/project/pywebrtc-audio/) and installed distribution notices |

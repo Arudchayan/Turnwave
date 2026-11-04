@@ -403,3 +403,57 @@ The probe refuses an active app on port 8000 and uses the backend ownership lock
 it does not detect unrelated applications that ignore that lock. Use a dedicated
 backend instance. Output contains the synthetic prompt, model reply, and source
 URLs; do not use it with private material.
+
+## Exploratory LFM3 model modification
+
+An isolated CPU compatibility probe used Heretic 2.0.0 with the LiquidAI
+LFM3-Omni-2B checkpoint at revision `5797d07c125503bd4f4c0e7f915ae2d3d703e8de`
+(model SHA-256 `76c0ec2c3e27832fb19f886d5eb0afe37f03c5c32c4a796a7ce08cef119d2763`).
+The research adapter uses Transformers' text generation for the analysis and
+normalizes inactive sampling parameters so the model can be saved. The probe used
+three examples in each direction, two examples per score, rank 1 and one trial;
+the refusal score was 2/2 before and after, with reported KL divergence 0.0004.
+These figures are too small to establish an effect or model quality.
+
+The merged checkpoint had identical tensor names and 24 changed tensors, all in
+the language backbone; all other model tensors matched the original exactly.
+The result converted with llama.cpp b12032, was quantized to Q4_K_M, and was
+served on a separate CPU server using the original projector. Turnwave's client
+produced 53,760 speech samples in one TTS call; a separate synthesized sentence
+was transcribed correctly. This checks basic functionality only: no human
+listening assessment, broad behavior evaluation, or runtime mode switch was tested.
+See [Heretic](https://github.com/p-e-w/heretic) and the
+[original model](https://huggingface.co/LiquidAI/LFM3-Omni-2B) for their terms.
+
+A second exploratory CPU study used 20 training prompts per direction, 10
+evaluation prompts per score, rank 4, five trials, seed 42, and at most 32
+generated tokens. The baseline refusal score was 9/10; the selected candidate
+scored 7/10 with reported KL divergence 0.2227. The other four trials each
+scored 9/10. These are in-sample optimization scores, not an independent test;
+the small sample and short generation limit preclude a broad effectiveness or
+quality claim. The saved model had 44 changed tensors, all in the language
+backbone, and unchanged tensor names and remaining tensor values.
+
+The selected candidate was converted and quantized to Q4_K_M (SHA-256
+`55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`). On a separate
+llama.cpp b12032 CPU server, using the original projector, a synthetic voice
+turn produced the transcription “What is two plus two?” and the spoken reply
+“Two plus two equals four.” This does not replace a human listening assessment,
+a broader independent behavior evaluation, or tests of the remote agent.
+
+An additional held-out text-only comparison used the next 10 prompts from the
+same dataset's test split, with a 32-token limit and deterministic sampling on
+the Q4_K_M llama.cpp CPU server. Heretic's keyword heuristic matched 10/10
+responses from the original and 9/10 from the research candidate. This small
+heuristic check is not a manual assessment and does not measure general model
+quality or speech behavior. The two Q4 files were quantized separately.
+
+On November 4, 2026, a fresh isolated CPU smoke check loaded that same Q4
+research artifact with the original LFM3 projector. It synthesized “The research
+voice model is ready” into 53,760 samples at 24 kHz; the same model's ASR
+transcribed the generated audio as “The Research Voice model is ready.” No
+microphone or speaker was opened, and no human assessed the audio. This verifies
+one local synthesis/transcription path, not the model's safety, conversational
+quality, voice quality, or general effectiveness of the modification. The
+research variant still requires explicitly selected artifacts and a server
+restart.

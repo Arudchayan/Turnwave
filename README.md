@@ -147,6 +147,50 @@ In a second terminal set `$env:LOCALVOICE_BACKEND = 'lfm3'` before running
 its context resets after interruptions, and real-device conversation quality
 and long sessions need further validation. See [results](docs/RESULTS.md).
 
+#### Optional model-modification research
+
+The original and a separately prepared research variant can be selected when
+starting an LFM3 backend. This is a server restart, not an in-app live switch;
+it changes the local voice model, not the remote cloud model. Model weights and
+native runners are not included in this repository.
+
+For experiments, obtain the full-precision LFM3 Omni checkpoint separately,
+inspect its custom Python code, and install `heretic-llm==2.0.0` in a separate
+environment. The experimental adapter gives Heretic access to text logits and
+hidden states while preserving the saved speech-model architecture:
+
+```powershell
+python -m venv .venv-heretic
+.venv-heretic/Scripts/python -m pip install heretic-llm==2.0.0
+.venv-heretic/Scripts/python scripts/heretic_lfm3.py --model-dir models/LFM3-Omni-2B-HF --trust-model-code -- --device-map cpu --batch-size 1 --study-checkpoint-dir outputs/maintenance/heretic-checkpoints
+```
+
+Options after `--` are passed to Heretic. Save any modified checkpoint in a
+separate directory, then use a compatible llama.cpp converter and quantizer to
+prepare model and projector GGUF files. Verify their compatibility and behavior
+before use. The helper executes checkpoint code only with the explicit trust
+flag; inspect that code first. See [Heretic](https://github.com/p-e-w/heretic),
+the [LFM3 model card](https://huggingface.co/LiquidAI/LFM3-Omni-2B), and
+[results](docs/RESULTS.md) for terms, the small experiments, and their limits.
+The existing research checkpoints are not published or automatically selected.
+
+For the WSL server, set `LOCALVOICE_LFM3_VARIANT=research`,
+`LOCALVOICE_LFM3_RESEARCH_MODEL`, and `LOCALVOICE_LFM3_RESEARCH_PROJECTOR`
+inside WSL before running `src/server_lfm3_wsl.sh`. Omit those variables when
+starting the standard variant. For an independently installed Windows
+llama-server and matching artifacts, the optional Windows launcher can select
+the variant explicitly:
+
+```powershell
+./src/server_lfm3_windows.ps1 -Variant standard
+# Stop the standard server first; supply your own research artifacts:
+./src/server_lfm3_windows.ps1 -Variant research -Model path/to/research.gguf -Projector path/to/projector.gguf
+```
+
+Use `-Runner` to select an installed Windows server. Research mode requires
+explicit model and projector paths. The launcher does not check model-projector
+compatibility or validate the quality or behavior of the modified model.
+
 From the repository root, start the backend:
 
 ```powershell
