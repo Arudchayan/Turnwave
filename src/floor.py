@@ -90,7 +90,8 @@ class FloorPolicy:
         return max(0.0, self._speech_s * 1000.0)
 
     def update(self, now, speaking, started=False, ended=False, rms=0.0,
-               assistant_active=True, audible=True, block_s=0.02, onset_ms=None):
+               assistant_active=True, audible=True, block_s=0.02, onset_ms=None,
+               evidence_ms=None):
         """Consume one audio block and return the action to apply.
 
         ``now`` is a monotonic clock in seconds. ``ended`` is the frontend's
@@ -116,6 +117,8 @@ class FloorPolicy:
 
         if started and self.state in (IDLE, BACKCHANNEL):
             initial = block_s if onset_ms is None else max(0.0, float(onset_ms)) / 1000.0
+            if evidence_ms is not None:
+                initial += max(0.0, float(evidence_ms)) / 1000.0
             if initial <= 0 and speaking:
                 initial = block_s
             if self.mode == HARD or not audible:
@@ -126,7 +129,11 @@ class FloorPolicy:
         if self.state != CANDIDATE:
             return FloorAction(state=self.state)
 
-        if speaking:
+        if evidence_ms is not None:
+            evidence_s = max(0.0, float(evidence_ms)) / 1000.0
+            self._speech_s += evidence_s
+            speaking = evidence_s > 0
+        elif speaking:
             self._speech_s += max(0.0, float(block_s))
         self._last = now
         wall_ms = self._elapsed_ms(now)

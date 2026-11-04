@@ -116,6 +116,7 @@ def run_case(kind, mode, far, near):
                                started=onset, ended=ended,
                                block_s=len(clean) / 16000,
                                onset_ms=front.onset_speech_ms,
+                               evidence_ms=front.speech_evidence_ms,
                                assistant_active=True, audible=True)
         if action.duck or action.resume or action.cancel:
             actions.append(dict(kind='duck' if action.duck else

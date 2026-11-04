@@ -659,7 +659,8 @@ class Assistant:
                 ended=ended, rms=rms, assistant_active=self._active is not None,
                 audible=bool(getattr(self.player, 'playing', False)),
                 block_s=len(clean) / 16000,
-                onset_ms=getattr(self.front, 'onset_speech_ms', None))
+                onset_ms=getattr(self.front, 'onset_speech_ms', None),
+                evidence_ms=getattr(self.front, 'speech_evidence_ms', None))
             if not recording:
                 pre.append(clean)
                 # Retain speech before confirmation without delaying onset.
