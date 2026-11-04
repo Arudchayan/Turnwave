@@ -1038,7 +1038,7 @@ class Assistant:
                     # observed zero samples. The playback lock still keeps
                     # the next turn behind this callback. Preserve the draft
                     # as possibly unheard, provided the epoch is still valid.
-                    self._remember_interrupted_agent_reply(job)
+                    self._remember_agent_reply(job, interrupted=True)
         with self._play_lock:
             if turn.cancel.is_set():
                 self._archive_call(job, 'finish_generation', turn)
