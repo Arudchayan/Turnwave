@@ -155,6 +155,35 @@ The probe requests the backend ownership lock and records transcripts and
 fixture hashes. It cannot protect against unrelated clients that ignore that
 lock. Use a dedicated backend and generated or otherwise non-private material.
 
+An additional screen used faster-whisper 1.2.1 with local CPU int8 models,
+four CPU threads, beam size five and no VAD filter. It evaluated the same eight
+clean and eight captured synthetic utterances with the 0.9 experimental echo
+gate, once with `Systran/faster-whisper-base.en` revision
+`3d3d5dee26484f91867d81cb899cfcf72b96be6c` and once with
+`Systran/faster-whisper-small` revision
+`536b0662742c02347bc0e980a01041f333bce120`. Both models transcribed the clean
+Zira “stop” as “Stop.” For its echo-mixed capture, base.en returned “This is a
+job yesterday.” and small returned “Good job yesterday.” A repeat using the
+checked-in probe produced the same outputs on that case. The base model also
+returned “Mm-hmm yesterday” for the echo-mixed Zira acknowledgment.
+
+In the checked-in-probe repeat, captured-audio transcription took 0.56–4.42 s
+per request with base.en and 1.74–4.42 s with small on this machine, after
+endpointing and model loading. These are not calibrated latency distributions.
+Both candidates missed one of four commands in one fixed synthetic scenario;
+the result does not quantify real-world accuracy or identify the exact cause of
+the extra words. Neither model was integrated as an interruption gate. To rerun
+with optional `faster-whisper` dependencies and a separately obtained local
+checkpoint, use the same generated fixtures:
+
+```powershell
+python -m src.synth.semantic_interrupt_probe --fixtures outputs/interrupt-fixtures --whisper-model path/to/local/snapshot --out outputs/interrupt-whisper.json
+```
+
+The Whisper path makes no server request or model download; the report stores
+the local snapshot directory name as a revision identifier. Verify checkpoint
+provenance separately. Outputs contain synthetic transcripts and fixture hashes.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance
