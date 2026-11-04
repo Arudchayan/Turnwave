@@ -510,3 +510,44 @@ def test_late_write_after_reset_does_not_restore_old_context():
     finally:
         release_write.set()
         app.close()
+
+
+@pytest.mark.parametrize('transcript', ['', '   ', None])
+def test_empty_transcription_does_not_call_cloud_or_speak(transcript):
+    class EmptyVoice(LocalVoice):
+        def asr_text(self, wav, turn):
+            return transcript
+        def tts(self, *args, **kwargs):
+            pytest.fail('No speech should be synthesized for an empty transcription')
+    class NeverAgent(FakeAgent):
+        def respond(self, *args, **kwargs):
+            pytest.fail('An empty transcription must not be sent to the provider')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=EmptyVoice(), agent=NeverAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        state = app.state()
+        assert state['error'] == 'No speech was transcribed. Please try again.'
+        assert job.played_samples == 0 and app._agent_history == []
+        assert state['agent_sources'] == []
+    finally:
+        app.close()
+
+
+def test_failed_transcription_does_not_call_cloud_or_speak():
+    class FailingVoice(LocalVoice):
+        def asr_text(self, wav, turn):
+            raise RuntimeError('Local transcription unavailable')
+        def tts(self, *args, **kwargs):
+            pytest.fail('No reply should be synthesized after transcription failure')
+    class NeverAgent(FakeAgent):
+        def respond(self, *args, **kwargs):
+            pytest.fail('The cloud provider must not receive a failed transcription')
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=FailingVoice(), agent=NeverAgent())
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert app.state()['error'] == 'Local transcription unavailable'
+        assert job.played_samples == 0 and app._agent_history == []
+    finally:
+        app.close()
