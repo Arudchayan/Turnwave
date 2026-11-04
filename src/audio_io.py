@@ -444,6 +444,12 @@ class Player:
                             on_start()
                     if on_play is not None:
                         on_play(piece)
+                    # Stop may occur inside the reference callback. Recheck
+                    # before entering the blocking device write.
+                    with self._lock:
+                        obsolete = generation != self._gen
+                    if obsolete or (cancel is not None and cancel.is_set()):
+                        return
                     try:
                         device_audio = piece
                         if self.native_rate != self.rate:
