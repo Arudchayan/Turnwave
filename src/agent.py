@@ -142,6 +142,7 @@ _MD_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
 _MD_BOLD = re.compile(r'(\*\*|__)(.*?)\1')
 _VERSION = re.compile(r'(?<![\w.])\d+\.\d+(?:\.\d+){0,2}(?!\w|\.\d)')
 _TEXT_TOOL_CALL = re.compile(r'<\s*tool_call(?:\s[^>]*)?>', re.IGNORECASE)
+_FULL_TEXT_TOOL_CALL = re.compile(r'\s*<\s*tool_call\s*>(.*?)</\s*tool_call\s*>\s*', re.IGNORECASE | re.DOTALL)
 
 
 def _clean_html(text):
@@ -161,6 +162,29 @@ def _valid_search_url(url, query):
                     and (not sites or any(host == site or host.endswith('.' + site) for site in sites)))
     except ValueError:
         return False
+
+
+def _text_web_search_call(content):
+    """Recover only one complete, unambiguous web-search request."""
+    if not isinstance(content, str):
+        return None
+    match = _FULL_TEXT_TOOL_CALL.fullmatch(content)
+    if not match:
+        return None
+    try:
+        request = json.loads(match.group(1))
+        if not isinstance(request, dict) or set(request) != {'name', 'arguments'} or request['name'] != 'web_search':
+            return None
+        args = request['arguments']
+        if isinstance(args, str):
+            args = json.loads(args)
+        if (not isinstance(args, dict) or set(args) != {'query'} or
+                not isinstance(args['query'], str) or not args['query'].strip() or len(args['query']) > 400):
+            return None
+    except (ValueError, TypeError):
+        return None
+    return {'id': 'turnwave-' + uuid.uuid4().hex, 'type': 'function',
+            'function': {'name': 'web_search', 'arguments': json.dumps(args, ensure_ascii=False)}}
 
 
 def _clean_spoken_text(text):
@@ -887,6 +911,12 @@ class AgentClient:
                         max_tokens = 1200
                         continue
                 break
+            text_call = None
+            if not calls and self.search_enabled and tools and iteration < 3:
+                text_call = _text_web_search_call(message.get('content'))
+                if text_call is not None:
+                    calls = [text_call]
+                    message = {'role': 'assistant', 'content': None, 'tool_calls': calls}
             iter_s = round(time.perf_counter() - iter_t0, 3)
             trace['iterations'].append({
                 'iteration': iteration + 1,
@@ -894,6 +924,7 @@ class AgentClient:
                 'reasoning_effort': effort,
                 'tool_calls_count': len(calls),
                 'empty_retried': empty_retried,
+                'recovered_text_search': text_call is not None,
             })
             if not calls:
                 raw_answer = message.get('content')

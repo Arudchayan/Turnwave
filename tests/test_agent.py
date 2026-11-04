@@ -540,14 +540,66 @@ def test_version_claim_without_web_search_is_not_rewritten(monkeypatch):
 
 
 @pytest.mark.parametrize('body', [
-    '<tool_call>{"name":"web_search","arguments":{"query":"news"}}</tool_call>',
     'Searching now. <TOOL_CALL>{"name":"web_search"}',
+    '<tool_call>{"name":"remember","arguments":{"fact":"unwanted"}}</tool_call>',
+    '<tool_call>{"name":"web_search","arguments":{"query":"news","extra":1}}</tool_call>',
+    '<tool_call>{"name":"web_search","arguments":{"query":"news"}}</tool_call><tool_call>{}</tool_call>',
 ])
 def test_textual_tool_request_is_not_spoken_as_a_reply(monkeypatch, body):
     monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
         'choices': [{'message': {'content': body}}]}))
     with pytest.raises(AgentError, match='tool request as text'):
         AgentClient('key', search_provider='bing').respond('Find news', [], Turn())
+
+
+def test_well_formed_textual_search_is_executed_and_results_reach_model(monkeypatch):
+    client = AgentClient('key', search_provider='bing', local_tools=False)
+    requests, phases, queries = [], [], []
+    def model(req, turn, service):
+        payload = json.loads(req.data)
+        requests.append(payload)
+        if len(requests) == 1:
+            return {'choices': [{'message': {'content':
+                '<tool_call>{"name":"web_search","arguments":{"query":"latest news"}}</tool_call>'}}]}
+        assistant, tool = payload['messages'][-2:]
+        assert assistant['role'] == 'assistant' and assistant['content'] is None
+        assert assistant['tool_calls'][0]['id'] == tool['tool_call_id']
+        assert 'A source' in tool['content']
+        return {'choices': [{'message': {'content': 'Here is the news.'}}]}
+    monkeypatch.setattr(client, '_json', model)
+    def search(query, turn):
+        queries.append(query)
+        return [{'title': 'A source', 'url': 'https://example.org/news', 'description': 'A report'}]
+    monkeypatch.setattr(client, 'search', search)
+    answer, sources = client.respond('Search for news', [], Turn(), on_search=phases.append)
+    assert answer == 'Here is the news.' and sources[0]['url'] == 'https://example.org/news'
+    assert queries == ['latest news'] and phases == [True, False]
+    assert client.last_trace['iterations'][0]['recovered_text_search'] is True
+
+
+def test_textual_search_is_not_executed_when_search_is_disabled(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
+        'choices': [{'message': {'content':
+            '<tool_call>{"name":"web_search","arguments":{"query":"news"}}</tool_call>'}}]}))
+    with pytest.raises(AgentError, match='tool request as text'):
+        AgentClient('key', search_provider='none').respond('Find news', [], Turn())
+
+
+def test_cancellation_during_recovered_search_stops_followup(monkeypatch):
+    client = AgentClient('key', search_provider='bing', local_tools=False)
+    calls = []
+    def model(req, turn, service):
+        calls.append(1)
+        return {'choices': [{'message': {'content':
+            '<tool_call>{"name":"web_search","arguments":{"query":"news"}}</tool_call>'}}]}
+    def search(query, turn):
+        turn.abort()
+        return []
+    monkeypatch.setattr(client, '_json', model)
+    monkeypatch.setattr(client, 'search', search)
+    turn = Turn()
+    assert client.respond('Find news', [], turn) is None
+    assert len(calls) == 1 and turn.cancel.is_set()
 
 
 def test_search_warning_is_visible_and_cleared_on_reset():

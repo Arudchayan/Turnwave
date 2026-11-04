@@ -261,6 +261,9 @@ When a requested web search returns no usable evidence, the spoken reply says
 that verification failed instead of repeating an unsupported model answer.
 When only the Wikipedia fallback is available, the spoken reply identifies the
 limitation, and the interface shows the source links.
+If a model emits one complete web-search request as text instead of a structured
+tool call, Turnwave can execute that search and pass the results back to the
+model. Other textual tool requests and ambiguous markup are reported as errors.
 For answers after web search, a dotted version number absent from all returned
 titles and snippets is replaced by an uncertainty message. This narrow check
 does not verify other claims, and search snippets can be incomplete or stale.
