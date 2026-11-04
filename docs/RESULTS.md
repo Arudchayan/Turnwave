@@ -163,7 +163,8 @@ long on this machine; this is not a real-time CPU-utilization measurement.
 The app keeps the standard profile by default. Set
 `LOCALVOICE_ECHO_PROFILE=long` before launch to try the longer profile; it can
 improve long-tail suppression while delaying quiet interruptions. Reproduce the
-50-case probe with:
+50-case probe with (the output records whether the public clip or the generated
+fallback was used; the fallback is not a reproduction of these exact results):
 
 ```powershell
 python -m src.synth.echo_tail_probe --out outputs/echo-tail-probe.json
