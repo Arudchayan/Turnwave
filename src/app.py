@@ -633,8 +633,12 @@ class Assistant:
                     self._server_ok = True
                     self.status = 'speaking'
         def on_play(audio):
-            if not turn.cancel.is_set():
-                self.front.push_far(audio, rate=24000)
+            # Serialize reference delivery with interrupt/reset clearing.
+            # A callback that began before cancellation must not queue a
+            # stale reference after the new turn has cleared playback.
+            with self._lock:
+                if self._active is job and not turn.cancel.is_set():
+                    self.front.push_far(audio, rate=24000)
         def on_written(audio):
             # The blocking write may finish while cancellation arrives. Count
             # accepted samples even then; exclude writes that raised an error.
