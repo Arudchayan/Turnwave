@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Fixed cloud follow-up context when a device write completes just after an
+  interruption, while keeping reset conversations separate.
 - Kept web sources attached to their corresponding replies through follow-up
   turns, with safe links and reset behavior.
 - Added a capture-loop interruption benchmark and documented its false-cancel
