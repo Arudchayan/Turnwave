@@ -82,6 +82,26 @@ Keep the required shared libraries with the runner. Stop the server before
 applying the complete five-patch set using `src/apply_runner_fixes.sh`; that
 helper patches the same existing checkout and rebuilds the server.
 
+### Optional LFM3 Omni voice backend
+
+LFM3-Omni-2B can run with a recent compatible llama.cpp server instead of the
+pinned LFM2.5 runner. Obtain the Q4_K_M model and matching projector from the
+[LiquidAI GGUF release](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF)
+into `models/LFM3-Omni-2B-GGUF/`, and separately install a compatible
+`llama-server`. The launcher defaults to the b12032 CUDA build and matching
+runtime under `models/runner/llama-b12032-cuda/`. Set
+`LOCALVOICE_LFM3_RUNNER` and `LOCALVOICE_CUDA_LIB` **inside WSL** to use other
+compatible locations. With assets installed, run from the repository root:
+
+```powershell
+wsl -d Ubuntu bash src/server_lfm3_wsl.sh
+```
+
+In a second terminal set `$env:LOCALVOICE_BACKEND = 'lfm3'` before running
+`python src/app.py`. The default remains `lfm2`. The LFM3 backend is optional;
+its context resets after interruptions, and real-device conversation quality
+and long sessions need further validation. See [results](docs/RESULTS.md).
+
 From the repository root, start the backend:
 
 ```powershell

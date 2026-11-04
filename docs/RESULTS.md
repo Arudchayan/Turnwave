@@ -14,6 +14,19 @@ generated reply examples are public. Raw private logs and recordings are not.
 | Does selective extra pre-roll improve fresh capture? | Six frozen paired CPU cases, 12 arms | Events and captured bytes identical in every pair | Do not adopt; benefit unproven |
 | Does native generation follow content tasks? | Adapted 24-request VoiceBench slice | 18 normal completions, 6 length-limited | Diagnostic baseline only |
 
+## LFM3 local voice feasibility
+
+On November 2, one synthetic spoken phrase was submitted three times to each
+local backend on an RTX 3050 Laptop GPU. First decoded audio was 0.139–0.212 s
+for LFM2.5 Audio Q4 and 0.369–0.420 s for LFM3 Omni Q4. Generated replies
+were different lengths, and the test did not include microphone capture,
+endpointing, room acoustics, independent output ASR, or human listening. The
+measurements do not establish a general performance or quality ranking.
+
+One interruption trial stopped the LFM3 client 16 ms after abort and then
+generated a fresh-session response. That does not measure end-to-end device
+interruption latency or verify conversation context after interruption.
+
 ## Short-turn completion delay
 
 ![Additional capture-gate delay for 16 synthetic cases](assets/short-turn-delay.png)

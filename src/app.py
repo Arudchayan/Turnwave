@@ -160,6 +160,13 @@ class Assistant:
             for thread in list(self._threads):
                 if thread is not threading.current_thread():
                     thread.join(timeout=1)
+            for voice_client in (self.client, self.asr_client):
+                close_client = getattr(voice_client, 'close', None)
+                if callable(close_client):
+                    try:
+                        close_client()
+                    except Exception:
+                        pass
             self.diagnostics.event('shutdown')
             self.diagnostics.close()
 
@@ -829,6 +836,16 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def voice_client_type(backend):
+    """Resolve the configured local voice backend before opening devices."""
+    if backend == 'lfm3':
+        from lfm3_client import LFM3Client
+        return LFM3Client
+    if backend == 'lfm2':
+        return ServerClient
+    raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
+
+
 def main():
     asr_url = os.getenv('LOCALVOICE_ASR_SERVER')
     from pathlib import Path
@@ -842,7 +859,10 @@ def main():
             json.dump(dict(source_files_sha256=source_fingerprint(),
                            backend=os.getenv('LOCALVOICE_SERVER', 'http://127.0.0.1:8080'),
                            scope='App source and endpoint; native build/model identity must come from the experiment protocol.'), stream, indent=2)
-    assistant = Assistant(asr_client=ServerClient(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive)
+    backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()
+    client_type = voice_client_type(backend)
+    client = client_type(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+    assistant = Assistant(client=client, asr_client=client_type(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
     assistant.start()

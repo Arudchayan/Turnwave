@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added optional LFM3 Omni local voice-backend support with a separate WSL
+  launcher; the existing LFM2.5 backend remains the default.
 - Refined the conversation interface with responsive controls and clearer
   connection and processing status.
 - Added an adjustable pause before replying, with quick, balanced, and patient
