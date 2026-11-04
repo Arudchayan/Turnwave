@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added a capture-loop interruption benchmark and documented its false-cancel
+  and quiet-speech observations; interruption behavior is unchanged.
 - Preserve a cloud reply draft as possibly unheard context when playback is
   interrupted after audio has been accepted, improving follow-up continuity.
 - Added a reproducible synthetic spoken-search probe and recorded two live

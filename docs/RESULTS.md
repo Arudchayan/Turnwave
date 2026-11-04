@@ -1,5 +1,145 @@
 # Results and lessons
 
+## Capture-loop interruption replay
+
+On November 4, 2026, the app capture loop was replayed with one generated
+far-end clip, one public LibriSpeech dummy near-end clip, simulated direct and
+80 ms delayed echo, and instantaneous playback gain changes. Each policy ran
+eight cases: echo-only, a 220 ms speech fragment, a 900 ms sustained fragment,
+and two 400 ms fragments separated by 500 ms, each at full and half near-end
+gain. This was a clipped speech fragment, not an annotated acknowledgment.
+
+The current policy at main `326e6c0` canceled the full-gain 220 ms fragment
+at 3,180 ms on the audio clock, versus 1,900 ms for the draft reversible policy
+at `a0d75d3`. Neither detected the half-gain fragment. Both canceled the
+900 ms case at both gains: current at 3,080 and 3,140 ms; draft at 1,900 and
+2,400 ms. Near speech began at 1,500 ms. Neither canceled either echo-only
+case. The draft also split the full-gain paused case into two captures. These
+are individual diagnostics, not rates or evidence of headset performance.
+
+The simulation uses virtual devices, one speaker pair, a simplified acoustic
+path, and instant gain changes; real playback uses gain ramps. The two policies
+were tested in different source revisions; the experiment does not isolate the
+policy from all other branch differences. It does not assess recognition,
+semantic intent, human listening, or a real room. It cannot establish that a
+threshold change would improve real backchannels or quiet interruptions.
+
+With the optional public dataset dependencies installed, reproduce the current
+policy with `python -m src.synth.duplex_barge_probe --public-human --out outputs/barge.json`.
+The experimental branch also supports `--mode reversible`. For a supplied mono
+PCM16 WAV use `--near` instead of `--public-human`. Output records normalized
+fixture hashes and per-case capture and gain events. No microphone or backend is
+opened. The public near clip is fetched from an unpinned dataset revision, so
+compare its recorded hash when reproducing.
+
+### Synthetic acknowledgments and short commands
+
+A follow-up used Windows SAPI David Desktop and Zira Desktop to synthesize four
+fixed utterances each: “mm hmm” and “yes” as intended acknowledgments, and
+“stop” and “wait a moment” as intended commands. After trimming low-energy
+frames and normalizing each utterance, the current main capture loop replayed
+each at full and half gain: 16 trials total. Full gain canceled 3/4 intended
+acknowledgments and 3/4 intended commands; half gain canceled 1/4 intended
+acknowledgments and 0/4 intended commands. The actual trimmed utterances were
+420–780 ms long. “Yes” can signal different intent in conversation; its label
+here reflects this synthetic protocol, not acoustic proof of a backchannel.
+
+These data use generated speech and one simulated far-end/echo path, without a
+microphone or real speaker. The gains are relative to fixture normalization, not
+calibrated speech sound levels. They are not a natural conversation accuracy
+estimate. A single rerun of David's “mm hmm” reproduced both outcomes.
+
+The draft reversible policy, tested at `a0d75d3` on the same 16 fixtures,
+made the same cancel/no-cancel decisions in every case. For the three full-gain
+commands it did cancel, cancellation occurred at 1,900–2,200 ms on the audio
+clock instead of 3,020–3,080 ms for the current policy; near speech started at
+1,500 ms. It also canceled the same three full-gain acknowledgments sooner.
+The revisions differ beyond the floor policy, so this is not an isolated
+causal comparison. No candidate is promoted on these results.
+
+On Windows with the named voices installed, generate fixtures into a new folder
+and replay each file, for example:
+
+```powershell
+./src/synth/generate_interrupt_fixtures.ps1 -OutDir outputs/interrupt-fixtures
+python -m src.synth.duplex_barge_probe --near outputs/interrupt-fixtures/david-ack.wav --trim-silence --utterance --out outputs/david-ack.json
+```
+
+Windows voice versions can differ; retain generated fixture hashes and the
+report's normalized audio hashes when comparing runs. Do not publish recordings
+without reviewing their origin and privacy.
+
+### VAD sensitivity screen
+
+On the same 16 synthetic utterances, lowering the VAD probability threshold
+from 0.5 to 0.3 and onset confirmation from three frames to two recovered the
+previously missed full-gain Zira “stop.” The candidate still missed all four
+half-gain commands and canceled the same acknowledgments. It reported no
+cancel in two repetitions of the same echo-only signal. For detected full-gain
+cases, cancellation happened 60–100 ms later than the baseline because the
+capture endpoint was reached later. One rerun of the recovered command matched
+the original screen at both gains. This is a small in-sample diagnostic, not
+an estimate of recall, false-positive rate, or real-device latency; the two
+settings changed together and their effects were not isolated. The candidate
+was not adopted.
+
+The same replay can be run with `--vad-threshold 0.3 --start-chunks 2` added to
+the command above. These switches affect only the benchmark process.
+
+### Echo-correlation gate screen
+
+A frame trace of the half-gain synthesized Zira “stop” showed high speech
+probabilities during the utterance while the onset echo-correlation score stayed
+above the existing 0.6 gate. In a separate screen on the same 16 synthetic
+utterances, changing that gate alone to 0.9 increased half-gain command
+cancellations from 0/4 to 3/4, but increased half-gain acknowledgment
+cancellations from 1/4 to 4/4. At full gain, commands rose from 3/4 to 4/4 and
+acknowledgments from 3/4 to 4/4. One rerun of the half-gain David “stop”
+matched the candidate result. The gate cannot distinguish intent, so this
+candidate was not adopted.
+
+A separate 50-case frontend screen compared both gates on the earlier synthetic
+echo-tail fixture: both had 3/5 echo-only starts, detected 10/10 near-only
+cases, and had 4/10 overlap starts before near speech. Those are not independent
+natural-device samples: the screen uses one far/near pair and five artificial
+delays. It does not establish that the relaxed gate is safe against other echo.
+For the capture-loop probe, add `--echo-threshold 0.9` to the utterance command;
+the benchmark scales the correlation score to emulate that gate, leaving the
+production frontend unchanged. These are in-sample diagnostics, not a model of
+all voices, devices, rooms, or acknowledgment intents.
+
+### Local ASR screen for interruption intent
+
+One diagnostic transcribed the eight synthesized short utterances above, first
+clean and then after capture through the virtual echo-mixing loop with the
+experimental 0.9 echo gate at full gain. LFM3 Omni Q4 on CPU transcribed all
+eight clean inputs into recognizable intended words or vocalization. For the
+echo-mixed captures, it transcribed Zira's “stop” as “Yesterday” and Zira's
+“mm-hmm” as “M.M. Mr.”; the other six outputs resembled their intended
+utterances. The capture loop recorded all eight inputs. For these short samples,
+capture transcription took 0.78–1.78 seconds per request on that machine,
+after capture endpointing. Timings do not include a second server's setup and
+do not establish production latency.
+
+A second run of the checked-in probe again transcribed the echo-mixed “stop”
+as “Yesterday” and rendered the echo-mixed “mm-hmm” as “MMM, Mr.” The other
+six outputs again resembled their intended utterances. These are repetitions of
+the same fixtures and synthetic path, not independent speakers or rooms.
+
+This screen does not assess human speech, other devices, low-gain missed
+onsets, a turn-intent model, or whether “yes” is an acknowledgment in context.
+The errors can produce both missed and false decisions, so no semantic gate was
+added. To rerun, stop the app, start an isolated LFM3 backend and generate the
+fixtures as above, then run:
+
+```powershell
+python -m src.synth.semantic_interrupt_probe --fixtures outputs/interrupt-fixtures --url http://127.0.0.1:18085 --out outputs/interrupt-asr.json
+```
+
+The probe requests the backend ownership lock and records transcripts and
+fixture hashes. It cannot protect against unrelated clients that ignore that
+lock. Use a dedicated backend and generated or otherwise non-private material.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance
