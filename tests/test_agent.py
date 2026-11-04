@@ -1248,3 +1248,26 @@ def test_interrupt_clears_reference_after_inflight_callback():
     finally:
         release.set()
         app.close()
+
+
+def test_truncated_reply_speaks_retry_message_and_shows_warning(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen', lambda *args, **kwargs: response({
+        'choices': [{'finish_reason': 'length', 'message': {'content': 'An incomplete claim'}}]}))
+    class CheckingVoice(LocalVoice):
+        def tts(self, text, turn, max_tokens=128, on_audio=None):
+            assert text == 'My reply was cut short. Please ask me to try again.'
+            turn.audio_samples += 480
+            on_audio(np.ones(480, np.float32) * .1)
+            turn.done.set()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                    client=CheckingVoice(), agent=AgentClient('test-key'))
+    try:
+        job = app.submit_audio(np.ones(3200, np.float32) * .1)
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert 'length limit' in app.state()['warning']
+        assert 'assistant: My reply was cut short. Please ask me to try again.' in app.state()['transcript']
+        assert app._agent_history[-1]['content'] == 'My reply was cut short. Please ask me to try again.'
+        app.reset()
+        assert app.state()['warning'] is None
+    finally:
+        app.close()

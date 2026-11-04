@@ -950,7 +950,10 @@ class Assistant:
                         job.agent_trace = getattr(self.agent, 'last_trace', None)
                         with self._lock:
                             if self._active is job:
-                                self._agent_search_warning = (job.agent_trace or {}).get('search_warning')
+                                trace = job.agent_trace or {}
+                                self._agent_search_warning = '; '.join(
+                                    warning for warning in (trace.get('search_warning'), trace.get('response_warning'))
+                                    if warning) or None
                     if result is None or turn.cancel.is_set():
                         return
                     answer, job.sources = result

@@ -960,6 +960,12 @@ class AgentClient:
                               'their search snippets. Please check the sources shown.') if web_evidence else (
                               'I could not verify that version because the web search returned no usable sources.')
                     trace['search_warning'] = 'A version in the reply was not supported by the search snippets.'
+                truncated = choice.get('finish_reason') == 'length'
+                if truncated:
+                    # A nonempty fragment can end mid-claim or mid-instruction.
+                    # Do not present it as a complete spoken response.
+                    answer = 'My reply was cut short. Please ask me to try again.'
+                    trace['response_warning'] = 'The cloud response reached its length limit; please retry.'
                 trace['raw_answer_chars'] = len(raw_answer.strip())
                 trace['spoken_answer_chars'] = len(answer)
                 trace['sources_count'] = len(sources)
@@ -970,6 +976,7 @@ class AgentClient:
                     'tool_calls_succeeded': all(tc.get('ok', False) for tc in trace['tool_calls']),
                     'reply_non_empty': bool(answer),
                     'unsupported_version_blocked': bool(unsupported),
+                    'response_truncated': truncated,
                     'search_evidence_missing': missing_evidence,
                 }
                 return answer, sources
