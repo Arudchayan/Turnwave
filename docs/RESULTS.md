@@ -86,6 +86,28 @@ was not adopted.
 The same replay can be run with `--vad-threshold 0.3 --start-chunks 2` added to
 the command above. These switches affect only the benchmark process.
 
+### Echo-correlation gate screen
+
+A frame trace of the half-gain synthesized Zira “stop” showed high speech
+probabilities during the utterance while the onset echo-correlation score stayed
+above the existing 0.6 gate. In a separate screen on the same 16 synthetic
+utterances, changing that gate alone to 0.9 increased half-gain command
+cancellations from 0/4 to 3/4, but increased half-gain acknowledgment
+cancellations from 1/4 to 4/4. At full gain, commands rose from 3/4 to 4/4 and
+acknowledgments from 3/4 to 4/4. One rerun of the half-gain David “stop”
+matched the candidate result. The gate cannot distinguish intent, so this
+candidate was not adopted.
+
+A separate 50-case frontend screen compared both gates on the earlier synthetic
+echo-tail fixture: both had 3/5 echo-only starts, detected 10/10 near-only
+cases, and had 4/10 overlap starts before near speech. Those are not independent
+natural-device samples: the screen uses one far/near pair and five artificial
+delays. It does not establish that the relaxed gate is safe against other echo.
+For the capture-loop probe, add `--echo-threshold 0.9` to the utterance command;
+the benchmark scales the correlation score to emulate that gate, leaving the
+production frontend unchanged. These are in-sample diagnostics, not a model of
+all voices, devices, rooms, or acknowledgment intents.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance
