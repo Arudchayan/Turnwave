@@ -26,7 +26,7 @@ const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared
  }
  requests.push({path,body:options.body?JSON.parse(options.body):null});
  if(input.scenario==='retry'&&requests.length===1)return {ok:false,status:409,json:async()=>({error:'First attempt failed'})};
- if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause')return {ok:true,status:200,json:async()=>({ok:true})};
+ if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='settings')return {ok:true,status:200,json:async()=>({ok:true})};
  if(path==='/api/interrupt')return {ok:true,status:200,json:async()=>({ok:true})};
  if(input.scenario==='http_error')return {ok:false,status:409,json:async()=>({error:'Microphone unavailable'})};
  if(input.scenario==='network_error')throw Error('connection lost');
@@ -36,7 +36,15 @@ const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared
 (async()=>{
  vm.runInNewContext(input.script,context);
  await new Promise(setImmediate);
- if(input.scenario==='pause'){
+ if(input.scenario==='settings'){
+  nodes.agentsel.value='opencode-go';nodes.agentsel.onchange();
+  nodes.agentmodel.value='chosen-model';nodes.agentmodel.oninput();
+  await context.tick();
+  const retained=[nodes.agentsel.value,nodes.agentmodel.value];
+  await nodes.agentapply.onclick();
+  nodes.searchsel.value='bing';await nodes.searchsel.onchange({target:nodes.searchsel});
+  process.stdout.write(JSON.stringify({requests,retained}));
+ }else if(input.scenario==='pause'){
   await nodes.pausesel.onchange({target:{value:'800'}});
   process.stdout.write(JSON.stringify({requests,value:nodes.pausesel.value}));
  }else if(input.scenario==='stale_poll'){
@@ -130,3 +138,11 @@ def test_pause_selection_sends_requested_duration():
     result=run_browser('pause')
     assert result['requests']==[{'path':'/api/pause','body':{'milliseconds':800}}]
     assert str(result['value'])=='800'
+
+
+def test_conversation_settings_send_mode_and_search_without_credentials():
+    result=run_browser('settings')
+    assert result['retained']==['opencode-go','chosen-model']
+    assert result['requests']==[
+        {'path':'/api/agent','body':{'mode':'opencode-go','model':'chosen-model'}},
+        {'path':'/api/search-provider','body':{'provider':'bing'}}]
