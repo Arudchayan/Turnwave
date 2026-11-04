@@ -569,11 +569,29 @@ The interface exposes `/api/prompt` (`POST /api/prompt`), allowing typed prompts
 to enter the turn cycle without microphone capture. Replies are processed through
 the standard conversation context and played through the audio device.
 
-For answers exceeding 110 characters, `Assistant._speak_answer` segments text
-at punctuation boundaries with a 120-character cap on the opening sentence and ~220-character units thereafter. The first sentence is submitted
-immediately to the TTS engine, allowing audio playback to begin in 50–90 ms while subsequent
-sentences continue to stream. In synthetic unit tests, pipelining reduced initial
-playback wait while preserving single-stream audio ordering across sentence boundaries.
+For answers exceeding 110 characters, the draft `Assistant._speak_answer`
+groups sentences into separate TTS requests. The size limits are grouping
+targets, not hard caps on an individual sentence. Synthesis for the first
+group begins before the remaining groups are requested; tests exercise ordering
+but do not establish audio quality or an end-to-end speed improvement.
+
+An isolated LFM3 Omni Q4 CPU comparison on November 4 used one fixed
+three-sentence text, in single/segmented/segmented/single order, with no
+playback. First synthesized audio arrived at 1.287 and 0.616 seconds in the
+single-call runs and 0.643 and 0.502 seconds in the segmented runs. Total
+synthesis took 15.577 and 15.741 seconds versus 14.345 and 15.286 seconds,
+respectively. The first single run was cold, and generated output lengths
+varied. Two runs of one text do not establish a general speedup, naturalness,
+audible gaps, content completeness, interruption behavior, or response time
+including cloud generation and a physical device. The draft is not promoted
+on this result. With a dedicated LFM3 server and the app stopped, reproduce
+the protocol with:
+
+```powershell
+python -m src.synth.tts_segmentation_probe --url http://127.0.0.1:18086 --out outputs/tts-segmentation.json
+```
+
+The probe does not record or assess speech quality.
 
 ### Exploratory LFM3 model modification
 
