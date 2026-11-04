@@ -6,6 +6,9 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Added conversation mode, model, and search controls. Changing mode or model
+  starts a fresh conversation to avoid sending old context to another provider.
+
 - Added an experimental opt-in longer echo tail for delayed playback feedback.
   Quiet interruptions can be delayed; real-device validation is still needed.
 

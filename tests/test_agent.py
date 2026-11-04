@@ -274,7 +274,7 @@ def test_sources_remain_attached_to_their_reply_across_followups_and_reset():
         assert next(m for m in messages if m['id'] == first.reply_id)['sources'][0]['title'] == 'First source'
         assert next(m for m in messages if m['id'] == second.reply_id)['sources'] == []
         app.set_agent_mode('local')
-        assert next(m for m in app.state()['messages'] if m['id'] == first.reply_id)['sources']
+        assert app.state()['messages'] == []  # Switching mode starts a new conversation.
         app.reset()
         assert app.state()['messages'] == []
     finally:
@@ -997,3 +997,19 @@ def test_assistant_persona_switching_text_prompt_and_notes_lifecycle():
 
 
 
+
+
+def test_switching_provider_clears_context_and_busy_switch_is_rejected():
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=LocalVoice(),
+                    agent=AgentClient('key', provider='go', local_tools=False))
+    try:
+        app._agent_history.append({'role': 'user', 'content': 'private prior text'})
+        app.status = 'recording'
+        with pytest.raises(RuntimeError, match='current conversation turn'):
+            app.set_agent_mode('opencode-zen', 'kimi-k3')
+        assert app._agent_history and app.agent.provider == 'go'
+        app.status = 'listening'
+        app.set_agent_mode('opencode-zen', 'kimi-k3')
+        assert app._agent_history == [] and app.agent.provider == 'zen'
+    finally:
+        app.close()

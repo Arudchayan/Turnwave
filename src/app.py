@@ -1159,6 +1159,10 @@ class Assistant:
                 raise RuntimeError('Finish speaking before changing the pause')
             return self.front.set_end_silence(milliseconds)
 
+    def _require_idle_settings(self):
+        if self.status == 'recording' or self._active is not None or self._pending_jobs:
+            raise RuntimeError('Wait until the current conversation turn finishes before changing settings.')
+
     def set_agent_mode(self, mode, model=None):
         if not isinstance(mode, str):
             raise ValueError('Invalid agent mode')
@@ -1170,7 +1174,19 @@ class Assistant:
         if mode != 'local' and not callable(getattr(self.client, 'asr_text', None)):
             raise ValueError('This voice transport supports local conversation only; restart with HTTP transport to use a cloud agent')
         with self._lock:
-            self.interrupt('mode change', announce=False)
+            self._require_idle_settings()
+            target_provider = ('custom' if mode == 'custom' else 'zen' if mode in ('opencode-zen', 'zen') else 'go')
+            target_model = (model.strip() if model else
+                            getattr(self._saved_agent, 'model', None) if self._saved_agent is not None and
+                            getattr(self._saved_agent, 'provider', 'go') == target_provider else None)
+            target_model = target_model or os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or ('local-model' if target_provider == 'custom' else 'kimi-k3')
+            if mode == 'local' and self.agent is None:
+                return {'ok': True, 'agent_mode': False}
+            if (mode != 'local' and self.agent is not None and
+                    getattr(self.agent, 'provider', 'go') == target_provider and
+                    getattr(self.agent, 'model', None) == target_model):
+                return {'ok': True, 'agent_mode': True, 'provider': getattr(self.agent, 'label', None), 'model': target_model}
+            self.reset()
             self._local_recovery_wav = b''
             self._local_recovery_reply = ''
             if mode == 'local':
@@ -1218,6 +1234,7 @@ class Assistant:
         if provider not in ('none', 'ddg', 'bing', 'brave'):
             raise ValueError('Unsupported search provider')
         with self._lock:
+            self._require_idle_settings()
             if self.agent is None:
                 raise ValueError('Select a cloud agent before configuring web search')
             if provider == 'brave' and not getattr(self.agent, '_search_key', None):
@@ -1698,7 +1715,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self._send('{"error":"Not found"}', 404)
             self._send('{"ok":true}')
-        except ArchiveSealedError as exc:
+        except (ArchiveSealedError, RuntimeError) as exc:
             self._send(json.dumps({'error': str(exc)}), 409)
         except (ValueError, KeyError):
             self._send('{"error":"Invalid request"}', 400)

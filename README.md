@@ -229,6 +229,8 @@ stop the app before running tests that use its backend, even while muted.
 
 ### Optional cloud conversation and web search
 
+Changing the conversation mode or model starts a new conversation.
+
 By default Turnwave uses the local speech-to-speech model. To use an OpenCode Zen
 chat-completions model instead, configure these environment variables before
 starting `src/app.py`:

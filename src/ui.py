@@ -230,7 +230,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <option value="opencode-zen:kimi-k3">Cloud Agent · OpenCode Zen (kimi-k3)</option>
 <option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
 </select>
-<p class=ctrl-lbl>Cloud models have different data policies. <a href="https://opencode.ai/v2/docs/console/go/#privacy" target="_blank" rel="noopener noreferrer">Review OpenCode Go privacy terms</a>.</p>
+<p class=ctrl-lbl>Changing the mode or model starts a new conversation. Cloud models have different data policies. <a href="https://opencode.ai/v2/docs/console/go/#privacy" target="_blank" rel="noopener noreferrer">Review OpenCode Go privacy terms</a>.</p>
 </div>
 <div class=field-row>
 <label class=ctrl-lbl for=searchsel>Web search provider</label>
