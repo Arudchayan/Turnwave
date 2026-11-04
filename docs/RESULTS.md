@@ -108,6 +108,38 @@ the benchmark scales the correlation score to emulate that gate, leaving the
 production frontend unchanged. These are in-sample diagnostics, not a model of
 all voices, devices, rooms, or acknowledgment intents.
 
+### Local ASR screen for interruption intent
+
+One diagnostic transcribed the eight synthesized short utterances above, first
+clean and then after capture through the virtual echo-mixing loop with the
+experimental 0.9 echo gate at full gain. LFM3 Omni Q4 on CPU transcribed all
+eight clean inputs into recognizable intended words or vocalization. For the
+echo-mixed captures, it transcribed Zira's “stop” as “Yesterday” and Zira's
+“mm-hmm” as “M.M. Mr.”; the other six outputs resembled their intended
+utterances. The capture loop recorded all eight inputs. For these short samples,
+capture transcription took 0.78–1.78 seconds per request on that machine,
+after capture endpointing. Timings do not include a second server's setup and
+do not establish production latency.
+
+A second run of the checked-in probe again transcribed the echo-mixed “stop”
+as “Yesterday” and rendered the echo-mixed “mm-hmm” as “MMM, Mr.” The other
+six outputs again resembled their intended utterances. These are repetitions of
+the same fixtures and synthetic path, not independent speakers or rooms.
+
+This screen does not assess human speech, other devices, low-gain missed
+onsets, a turn-intent model, or whether “yes” is an acknowledgment in context.
+The errors can produce both missed and false decisions, so no semantic gate was
+added. To rerun, stop the app, start an isolated LFM3 backend and generate the
+fixtures as above, then run:
+
+```powershell
+python -m src.synth.semantic_interrupt_probe --fixtures outputs/interrupt-fixtures --url http://127.0.0.1:18085 --out outputs/interrupt-asr.json
+```
+
+The probe requests the backend ownership lock and records transcripts and
+fixture hashes. It cannot protect against unrelated clients that ignore that
+lock. Use a dedicated backend and generated or otherwise non-private material.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance
