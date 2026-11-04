@@ -21,6 +21,7 @@ from duplex import DuplexFrontend
 from diagnostics import Diagnostics, HistoryFileHandler, source_fingerprint
 from floor import FloorPolicy
 from ui import PAGE
+from test_ui import TEST_PAGE
 from session_archive import ArchiveSealedError
 import logging
 
@@ -1534,6 +1535,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(json.dumps(self.server.assistant.traces(20)))
         elif self.path == '/':
             self._send(PAGE, ctype='text/html')
+        elif self.path == '/testing':
+            self._send(TEST_PAGE, ctype='text/html')
         else:
             self._send('{"error":"Not found"}', 404)
 

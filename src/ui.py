@@ -300,7 +300,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 </form>
 </section>
 </div>
-<footer><span>Voice uses your configured server · headphones improve interruption handling</span><span>Local audio capture &amp; synthesis</span></footer>
+<footer><span>Voice uses your configured server · headphones improve interruption handling</span><span><a href="/testing">Guided testing</a> · Local audio capture &amp; synthesis</span></footer>
 </main><script>
 let lv=[],lastRevision=-1,pollDelay=300;
 const STLBL={st_heard:'heard',st_under:'understanding',st_voice:'voicing'};

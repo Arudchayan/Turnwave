@@ -37,6 +37,9 @@ python src/app.py
 ```
 
 Do not run the backend-sharing tests while the app is open, even muted.
+The app's **Guided testing** link opens a local checklist at `/testing`. It
+stores each comparison arm separately in the browser and can export results.
+The configuration shown there must be applied before restarting the app.
 
 ## 2. Arms
 
@@ -67,16 +70,19 @@ App environment per arm:
 
 ```powershell
 # A
+$env:LOCALVOICE_BACKEND = "lfm2"
 $env:LOCALVOICE_TRANSPORT = "http"
 $env:LOCALVOICE_FLOOR_MODE = "hard"
 Remove-Item Env:LOCALVOICE_EOT_MODEL -ErrorAction SilentlyContinue
 
 # B
+$env:LOCALVOICE_BACKEND = "lfm2"
 $env:LOCALVOICE_TRANSPORT = "http"
 $env:LOCALVOICE_FLOOR_MODE = "reversible"
 Remove-Item Env:LOCALVOICE_EOT_MODEL -ErrorAction SilentlyContinue
 
 # C
+$env:LOCALVOICE_BACKEND = "lfm2"
 $env:LOCALVOICE_TRANSPORT = "http"
 $env:LOCALVOICE_FLOOR_MODE = "reversible"
 $env:LOCALVOICE_EOT_MODEL = "smart-turn"
@@ -85,6 +91,7 @@ $env:LOCALVOICE_EOT_FIRST_THRESHOLD = "0.9"
 $env:LOCALVOICE_EOT_THRESHOLD = "0.7"
 
 # D
+$env:LOCALVOICE_BACKEND = "lfm3"
 Remove-Item Env:LOCALVOICE_AGENT, Env:LOCALVOICE_ASR_SERVER -ErrorAction SilentlyContinue
 $env:LOCALVOICE_TRANSPORT = "realtime"
 $env:LOCALVOICE_REALTIME = "ws://127.0.0.1:8080/v1/realtime"
