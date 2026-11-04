@@ -15,7 +15,7 @@ HARNESS=r'''
 const vm=require('node:vm');
 const input=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
 const nodes={},requests=[],timers=[];
-const state={status:'listening',phase:'listening',mic_on:false,mic:'test',server_ok:true,mics:[],mic_index:1,transcript:[],transcript_revision:0,level:0,warning:'Recording warning'};
+const state={status:'listening',phase:'listening',mic_on:false,mic:'test',server_ok:true,mics:[],mic_index:1,transcript:[],transcript_revision:0,level:0,warning:'Recording warning',end_silence_ms:480};
 function element(){return {style:{},options:[],disabled:false,appendChild(){},getContext(){return {fillRect(){}}}};}
 let release,releaseState,stateRequests=0;
 const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared=true;},setTimeout(fn,ms){timers.push({fn,ms});return timers.length-1;},document:{getElementById(id){return nodes[id]??=element();},createElement:element},fetch:async(path,options={})=>{
@@ -26,7 +26,7 @@ const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared
  }
  requests.push({path,body:options.body?JSON.parse(options.body):null});
  if(input.scenario==='retry'&&requests.length===1)return {ok:false,status:409,json:async()=>({error:'First attempt failed'})};
- if(input.scenario==='retry'||input.scenario==='successive')return {ok:true,status:200,json:async()=>({ok:true})};
+ if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause')return {ok:true,status:200,json:async()=>({ok:true})};
  if(path==='/api/interrupt')return {ok:true,status:200,json:async()=>({ok:true})};
  if(input.scenario==='http_error')return {ok:false,status:409,json:async()=>({error:'Microphone unavailable'})};
  if(input.scenario==='network_error')throw Error('connection lost');
@@ -36,7 +36,10 @@ const context={AbortController,clearTimeout(id){if(timers[id])timers[id].cleared
 (async()=>{
  vm.runInNewContext(input.script,context);
  await new Promise(setImmediate);
- if(input.scenario==='stale_poll'){
+ if(input.scenario==='pause'){
+  await nodes.pausesel.onchange({target:{value:'800'}});
+  process.stdout.write(JSON.stringify({requests,value:nodes.pausesel.value}));
+ }else if(input.scenario==='stale_poll'){
   const first=nodes.micbtn.onclick();await new Promise(setImmediate);
   const poll=context.tick();await new Promise(setImmediate);
   release();await first;releaseState();await poll;
@@ -121,3 +124,9 @@ def test_successful_retry_clears_action_error_but_retains_recording_warning():
 def test_delayed_poll_started_during_action_cannot_reverse_next_mic_intent():
     result=run_browser('stale_poll')
     assert [r['body'] for r in result['requests']]==[{'enabled':True},{'enabled':False}]
+
+
+def test_pause_selection_sends_requested_duration():
+    result=run_browser('pause')
+    assert result['requests']==[{'path':'/api/pause','body':{'milliseconds':800}}]
+    assert str(result['value'])=='800'

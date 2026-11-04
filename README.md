@@ -98,6 +98,10 @@ python src/app.py
 Open **http://127.0.0.1:8000**, select the input device and unmute when ready.
 Headphones are the more predictable starting setup. Muted startup still opens
 an input stream but does not submit microphone turns.
+The “Pause before reply” control trades response speed for more time to pause
+while speaking. Changes apply between utterances; longer waits cannot guarantee
+that an unfinished sentence will remain together. The setting returns to the
+default when the app restarts.
 
 `LOCALVOICE_SERVER` changes the backend URL (default local port 8080).
 `LOCALVOICE_CHAT_SYSTEM` changes the chat instruction. Optional transcription

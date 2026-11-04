@@ -70,6 +70,16 @@ class DuplexFrontend:
             self._prob(np.zeros(512, np.float32))
             self.reset()
 
+    def set_end_silence(self, milliseconds):
+        """Change the end-of-turn wait between utterances, in 32 ms frames."""
+        if isinstance(milliseconds, bool) or not isinstance(milliseconds, int) or not 320 <= milliseconds <= 1600:
+            raise ValueError('Pause must be between 320 and 1600 milliseconds')
+        with self._lock:
+            if self.speaking:
+                raise RuntimeError('Finish speaking before changing the pause')
+            self.end_chunks = max(1, round(milliseconds / 32))
+            return self.end_chunks * 32
+
     def _vad_model(self):
         if self._model is None:
             from silero_vad import load_silero_vad

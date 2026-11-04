@@ -68,6 +68,7 @@ h1{font-size:1.65rem;letter-spacing:-.06em;font-weight:normal}
 #wavewrap{background:#e7e8dc;border-radius:4px;padding:14px;margin:20px 0}
 #lvl{font-size:.72rem;margin-top:4px}
 #controls{gap:8px;margin:24px 0 34px}
+#pause-control{display:flex;align-items:center;gap:8px;font:.8rem Segoe UI,sans-serif;color:var(--dim);white-space:nowrap}
 button,select{border-radius:4px;background:transparent;padding:.7em 1em;font-size:.85rem}
 button:hover{border-color:var(--green);background:#e8ebe0}
 button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #b47439;outline-offset:3px}
@@ -102,6 +103,8 @@ footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 <button id=newbtn>new conversation</button>
 <button id=tstbtn>test speaker</button>
 <select id=micsel aria-label="Input device"></select>
+<label id=pause-control for=pausesel>Pause before reply
+<select id=pausesel><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
 </div>
 <details id=metrics><summary>metrics</summary>
 <div id=cards>
@@ -123,6 +126,7 @@ e.textContent=(ts!=null?'✓ ':'')+STLBL[id];}
 const $=id=>document.getElementById(id);
 let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
 let lastDeviceIndex=null,deviceVersion=0;
+let lastPause=null,pauseVersion=0;
 const pendingActions=new Set();
 function renderAlerts(){
 let s=lastState;
@@ -162,6 +166,12 @@ if(pendingActions.has('micsel')||value===''||!Number.isSafeInteger(+value)||+val
 deviceVersion++;
 if(await action('micsel','/api/micdev',{index:+value}))lastDeviceIndex=value;
 sel.value=lastDeviceIndex??'';};
+$('pausesel').onchange=async e=>{
+let sel=$('pausesel'),value=Number(e.target.value);
+if(pendingActions.has('pausesel')||![480,800,1120].includes(value))return;
+pauseVersion++;
+if(await action('pausesel','/api/pause',{milliseconds:value}))lastPause=value;
+sel.value=lastPause??'';};
 function bubble(t){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();}
@@ -171,8 +181,13 @@ try{
 let observedMicVersion=micVersion;
 let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
+let observedPauseVersion=pauseVersion,observedPausePending=pendingActions.has('pausesel');
 let s=await(await fetch('/api/state')).json();
 lastState=s;
+let pause=$('pausesel');
+if(!observedPausePending&&observedPauseVersion===pauseVersion&&!pendingActions.has('pausesel')&&[480,800,1120].includes(s.end_silence_ms)){
+lastPause=s.end_silence_ms;pause.value=String(lastPause);}
+pause.disabled=lastPause===null||pendingActions.has('pausesel');
 let mode=$('mode');mode.textContent=s.agent_mode?
 ('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+' · web search '+(s.search_enabled?'enabled':'not configured')+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
