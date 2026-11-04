@@ -69,6 +69,23 @@ Windows voice versions can differ; retain generated fixture hashes and the
 report's normalized audio hashes when comparing runs. Do not publish recordings
 without reviewing their origin and privacy.
 
+### VAD sensitivity screen
+
+On the same 16 synthetic utterances, lowering the VAD probability threshold
+from 0.5 to 0.3 and onset confirmation from three frames to two recovered the
+previously missed full-gain Zira “stop.” The candidate still missed all four
+half-gain commands and canceled the same acknowledgments. It reported no
+cancel in two repetitions of the same echo-only signal. For detected full-gain
+cases, cancellation happened 60–100 ms later than the baseline because the
+capture endpoint was reached later. One rerun of the recovered command matched
+the original screen at both gains. This is a small in-sample diagnostic, not
+an estimate of recall, false-positive rate, or real-device latency; the two
+settings changed together and their effects were not isolated. The candidate
+was not adopted.
+
+The same replay can be run with `--vad-threshold 0.3 --start-chunks 2` added to
+the command above. These switches affect only the benchmark process.
+
 These are bounded engineering results from different frozen snapshots. They are
 not a whole-app acceptance score, an official leaderboard submission or evidence
 that conversation is consistently smooth. Numerical observations and provenance

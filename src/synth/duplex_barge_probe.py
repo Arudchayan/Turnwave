@@ -107,11 +107,12 @@ def build_tracks(kind, far, near):
     return playback, voice
 
 
-def run_case(kind, mode, gain, far, near):
+def run_case(kind, mode, gain, far, near, vad_threshold=.5, start_chunks=3):
     playback, voice = build_tracks(kind, far, near * gain)
     rendered = np.zeros_like(playback)
     noise = np.random.default_rng(20261028).normal(0, .0015, len(playback)).astype(np.float32)
-    front = DuplexFrontend(aec=True, holdoff_s=0)
+    front = DuplexFrontend(aec=True, holdoff_s=0, vad_thresh=vad_threshold,
+                           start_chunks=start_chunks)
     front.set_delay(80)
     front.warmup()
     mic, speaker = VirtualMic(), VirtualSpeaker()
@@ -154,8 +155,12 @@ def main():
     parser.add_argument('--mode', choices=('current', 'reversible'), default='current')
     parser.add_argument('--utterance', action='store_true', help='replay the full near-end utterance at two gains')
     parser.add_argument('--trim-silence', action='store_true', help='trim leading and trailing low-energy 20 ms frames')
+    parser.add_argument('--vad-threshold', type=float, default=.5, help='experimental speech probability threshold')
+    parser.add_argument('--start-chunks', type=int, default=3, help='experimental onset confirmation frame count')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
+    if not 0 < args.vad_threshold <= 1 or not 1 <= args.start_chunks <= 10:
+        parser.error('VAD threshold must be in (0, 1] and start chunks in [1, 10]')
     # Experiment mode is explicit and does not inherit application settings.
     os.environ.pop('LOCALVOICE_FLOOR_MODE', None)
     os.environ.pop('LOCALVOICE_EOT_MODEL', None)
@@ -177,11 +182,12 @@ def main():
             raise ValueError('Fixture contains no audio')
         signal *= target / rms
     cases = ('utterance',) if args.utterance else ('echo_only', 'short_fragment', 'sustained', 'mid_pause')
-    rows = [run_case(kind, args.mode, gain, far, near)
+    rows = [run_case(kind, args.mode, gain, far, near, args.vad_threshold, args.start_chunks)
             for kind in cases
             for gain in (1.0, .5)]
     report = {'scope': 'real app capture loop, virtual devices, one synthetic echo path and one speech pair',
               'mode': args.mode, 'near_source': 'librispeech-dummy' if args.public_human else 'supplied WAV',
+              'vad_threshold': args.vad_threshold, 'start_chunks': args.start_chunks,
               'near_duration_ms': round(len(near) / 16, 1), 'trimmed': args.trim_silence,
               'near_normalized_sha256': hashlib.sha256(near.tobytes()).hexdigest(),
               'far_normalized_sha256': hashlib.sha256(far.tobytes()).hexdigest(),
