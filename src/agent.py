@@ -318,7 +318,6 @@ class AgentClient:
                     turn._response = response
                 if response.status >= 400:
                     code = response.status
-                    response.release_conn()
                     hint = (' Check your provider account balance.' if code == 402 else
                             ' Check the API key and provider access.' if code in (401, 403) else
                             ' The provider rate or usage limit may have been reached; check the account or retry later.'
@@ -355,9 +354,11 @@ class AgentClient:
                     turn._response = None
             if response is not None:
                 try:
+                    # An unread response must be closed before its connection can
+                    # return to the pool, or a subsequent request may reuse it.
+                    response.close()
                     if hasattr(response, 'release_conn'):
                         response.release_conn()
-                    response.close()
                 except Exception:
                     # Cleanup cannot replace a completed reply or cancellation.
                     pass
