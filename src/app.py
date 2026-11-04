@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import numpy as np
 
@@ -255,6 +256,31 @@ class Assistant:
                     self.transcript_revision += 1
                     return True
             return False
+
+    def _attach_sources(self, message_id, sources):
+        """Attach only safe, public source links to their own reply."""
+        safe = []
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            url = source.get('url')
+            if not isinstance(url, str) or len(url) > 2048:
+                continue
+            try:
+                parsed = urlsplit(url)
+                if (parsed.scheme not in ('http', 'https') or not parsed.hostname or
+                        parsed.username is not None or parsed.password is not None):
+                    continue
+            except ValueError:
+                continue
+            safe.append({'title': str(source.get('title') or '')[:300], 'url': url})
+        with self._lock:
+            for message in self._messages:
+                if message['id'] == message_id:
+                    message['sources'] = safe
+                    self.transcript_revision += 1
+                    return [dict(source) for source in safe]
+            return []
 
     def _remember_agent_input(self, job):
         """Keep a recognized request once, even if its reply is interrupted.
@@ -557,6 +583,7 @@ class Assistant:
                     answer, job.sources = result
                     with self._lock:
                         if self._active is job:
+                            job.sources = self._attach_sources(job.reply_id, job.sources)
                             self._agent_phase = 'voicing'
                     turn.text_parts.append(answer)
                     turn.request_observer = lambda payload: self._archive_call(job, 'record_request', payload)
@@ -997,7 +1024,7 @@ class Assistant:
                         agent_model=getattr(self.agent, 'model', None),
                         search_enabled=bool(self.agent and self.agent.search_enabled),
                         search_provider=getattr(self.agent, 'search_provider', None),
-                        agent_sources=list(self._agent_sources),
+                        agent_sources=[dict(source) for source in self._agent_sources],
                         active_turn=self._active is not None,
                         pending_turns=len(self._pending_jobs),
                         playback_active=playing,
@@ -1011,6 +1038,9 @@ class Assistant:
                         mic_identity=dict(self._mic_identity) if self._mic_identity is not None else None,
                         server_ok=self._server_ok, level=self.front.level,
                         transcript=[m['text'] for m in self._messages if m['text']],
+                        messages=[{'id': m['id'], 'text': m['text'],
+                                   'sources': [dict(source) for source in m.get('sources', [])]}
+                                  for m in self._messages if m['text']],
                         transcript_revision=self.transcript_revision,
                         assistant_partial=partial, heard_at=self.heard_at,
                         gen_start=self.gen_start, first_audio_at=self.first_audio_at,
