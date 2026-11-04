@@ -6,6 +6,10 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Refined the conversation interface with responsive controls and clearer
+  connection and processing status.
+- Added an adjustable pause before replying, with quick, balanced, and patient
+  settings. The default remains 480 ms; longer pauses add latency.
 - Added a public change log and an experiment ledger with outcomes, decisions,
   reproduction references, and evidence limits.
 
