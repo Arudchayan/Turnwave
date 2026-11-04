@@ -261,7 +261,7 @@ titles and snippets is replaced by an uncertainty message. This narrow check
 does not verify other claims, and search snippets can be incomplete or stale.
 
 The local voice server still performs transcription and speech synthesis. The
-recognized text and recent conversation are sent to OpenCode Zen; the model is
+recognized text and recent conversation are sent to the selected provider; the model is
 told whether the current input was transcribed speech or typed text, but does
 not receive the raw audio. If configured,
 search queries go to the configured search provider (Brave, DuckDuckGo or Bing,
@@ -276,6 +276,11 @@ Keep keys in your process environment, never in tracked files. The cloud path
 requires network access and provider accounts; it is not covered by the local
 model's privacy guarantees. The interface reports missing configuration and
 request failures. Agent context is kept in memory and reset with the conversation.
+Provider terms vary by model and can change. As documented by OpenCode on
+November 4, 2026, Go's `iceman-contributor-free` uses prompts and completions to
+improve the model, and `beam-free` has 30-day data retention. Review the current
+[OpenCode Go privacy terms](https://opencode.ai/v2/docs/console/go/#privacy)
+before choosing a model. Availability of these free models can be limited.
 
 ### Jarvis voice intermediary and local capabilities
 

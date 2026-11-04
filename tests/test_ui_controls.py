@@ -85,7 +85,13 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
   Object.assign(state,{agent_mode:true,agent_provider:'OpenCode Go',agent_model:'beam-free',search_enabled:true,search_provider:'ddg',agent_phase:'searching',agent_sources:[{title:'Valid Source',url:'https://example.org/item'},{title:'Bad',url:'javascript:alert(1)'}],audio_diagnostics:{input_gain:1,input_drops:0,echo_score:0.12,residual_rejections:2,playback:{underflows:0,max_gap_ms:4.5}}});
   await context.tick();
   const links=nodes.sources.children.slice(1).map(row=>({href:row.children[0].href,text:row.children[0].textContent}));
-  process.stdout.write(JSON.stringify({mode:nodes.mode.textContent,links,diag:nodes.diag.textContent}));
+  const beamMode=nodes.mode.textContent;
+  Object.assign(state,{agent_model:'iceman-contributor-free'});
+  await context.tick();
+  const icemanMode=nodes.mode.textContent;
+  Object.assign(state,{agent_mode:false});
+  await context.tick();
+  process.stdout.write(JSON.stringify({mode:beamMode,icemanMode,localMode:nodes.mode.textContent,links,diag:nodes.diag.textContent}));
  }else if(input.scenario==='stale_poll'){
   const first=nodes.micbtn.onclick();await new Promise(setImmediate);
   const poll=context.tick();await new Promise(setImmediate);
@@ -182,9 +188,18 @@ def test_pause_selection_sends_requested_duration():
 def test_agent_mode_sources_and_diagnostics_render_safely():
     result=run_browser('agent_privacy')
     assert 'OpenCode Go (beam-free)' in result['mode']
+    assert '30-day data retention' in result['mode']
+    assert 'uses prompts and responses to improve this model' in result['icemanMode']
+    assert 'improve this model' not in result['localMode']
     assert 'enabled (ddg)' in result['mode'] and 'searching' in result['mode']
     assert result['links']==[{'href':'https://example.org/item','text':'Valid Source'}]
     assert 'underflows 0' in result['diag'] and 'residual rejections 2' in result['diag']
+
+
+def test_model_choices_disclose_provider_data_terms_before_selection():
+    assert 'Go Beam Free (30-day retention)' in PAGE
+    assert 'Go Iceman Free (data used to improve model)' in PAGE
+    assert 'https://opencode.ai/v2/docs/console/go/#privacy' in PAGE
 
 
 def test_prompt_submission_trims_text_dispatches_api_and_clears_input():

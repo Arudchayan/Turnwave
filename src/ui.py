@@ -221,12 +221,13 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <label class=ctrl-lbl for=agentsel>Processing &amp; reasoning model</label>
 <select id=agentsel aria-label="Processing mode and model">
 <option value="local">Local Direct · LFM Speech-to-Speech</option>
-<option value="opencode-go:beam-free">Cloud Agent · OpenCode Go (beam-free)</option>
-<option value="opencode-go:iceman-contributor-free">Cloud Agent · OpenCode Go (iceman-contributor-free)</option>
+<option value="opencode-go:beam-free">Cloud Agent · Go Beam Free (30-day retention)</option>
+<option value="opencode-go:iceman-contributor-free">Cloud Agent · Go Iceman Free (data used to improve model)</option>
 <option value="opencode-go:kimi-k3">Cloud Agent · OpenCode Go (kimi-k3)</option>
 <option value="opencode-zen:kimi-k3">Cloud Agent · OpenCode Zen (kimi-k3)</option>
 <option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
 </select>
+<p class=ctrl-lbl>Cloud models have different data policies. <a href="https://opencode.ai/v2/docs/console/go/#privacy" target="_blank" rel="noopener noreferrer">Review OpenCode Go privacy terms</a>.</p>
 </div>
 <div class=field-row>
 <label class=ctrl-lbl for=searchsel>Web search provider</label>
@@ -464,6 +465,8 @@ let toolsInfo=Array.isArray(s.agent_tools)&&s.agent_tools.length?(' · tools ('+
 let mode=$('mode');mode.textContent=s.agent_mode?
 ('Cloud conversation: recognized speech is sent to '+(s.agent_provider||'OpenCode')+(s.agent_model?' ('+s.agent_model+')':'')+' · web search '+(s.search_enabled?('enabled'+(s.search_provider?' ('+s.search_provider+')':'')):'not configured')+toolsInfo+(s.agent_phase?' · '+s.agent_phase:'')+(s.agent_provider==='OpenCode Go'?' · Go is intended for coding-agent traffic':'')):
 'Voice conversation · processed by your configured voice server';
+if(s.agent_mode&&s.agent_provider==='OpenCode Go'&&s.agent_model==='iceman-contributor-free')mode.textContent+=' · provider uses prompts and responses to improve this model';
+if(s.agent_mode&&s.agent_provider==='OpenCode Go'&&s.agent_model==='beam-free')mode.textContent+=' · provider lists 30-day data retention';
 let notes=$('notes');
 if(notes){notes.innerHTML='';
 if(Array.isArray(s.agent_notes)&&s.agent_notes.length){
