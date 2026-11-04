@@ -70,6 +70,26 @@ def test_realtime_turn_streams_text_and_audio():
     assert 'response.create' in kinds
 
 
+def test_realtime_typed_turn_sends_text_and_receives_spoken_response():
+    ws = FakeSocket([{'type': 'response.output_text.delta', 'delta': 'Four.'},
+                     pcm_event(2400),
+                     {'type': 'response.done', 'response': {'status': 'completed'}}])
+    turn = Turn()
+    client_with(ws).chat_text('What is two plus two?', turn, first=True)
+    assert ws.sent[0]['item']['content'][0]['text'] == 'What is two plus two?'
+    assert not any(e['type'] == 'input_audio_buffer.commit' for e in ws.sent)
+    assert turn.text == 'Four.' and turn.audio_samples == 2400 and turn.error is None
+
+
+def test_cancelled_typed_turn_does_not_connect_or_send():
+    client = RealtimeClient('ws://127.0.0.1:8090/v1/realtime')
+    client._connect = lambda *args, **kwargs: pytest.fail('Unexpected connection')
+    turn = Turn()
+    turn.abort()
+    client.chat_text('A cancelled question', turn, first=True)
+    assert turn.done.is_set() and client._ws is None
+
+
 def test_first_turn_closes_a_previous_socket():
     old, new = FakeSocket(), FakeSocket([
         {'type': 'response.done', 'response': {'status': 'completed'}}])

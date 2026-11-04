@@ -147,7 +147,7 @@ class LFM3Client:
         return False
 
     def chat_turn(self, wav_bytes, turn, first, max_tokens=512, on_audio=None, require_audio=True,
-                  recovery_wav=None, recovery_reply=''):
+                  recovery_wav=None, recovery_reply='', _text_input=None):
         context = ''
         if first and recovery_wav and not turn.cancel.is_set():
             try:
@@ -182,12 +182,21 @@ class LFM3Client:
                 self._chat.send(json.dumps({'type': 'conversation.item.create', 'item': {
                     'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': prior}]}}))
             if turn.request_observer:
-                turn.request_observer({'protocol': 'realtime', 'wav_base64': base64.b64encode(wav_bytes).decode('ascii'),
-                                       'reset_context': bool(first), 'max_tokens': max_tokens})
+                payload = {'protocol': 'realtime', 'reset_context': bool(first), 'max_tokens': max_tokens}
+                if _text_input is None:
+                    payload['wav_base64'] = base64.b64encode(wav_bytes).decode('ascii')
+                else:
+                    payload['text'] = _text_input
+                turn.request_observer(payload)
             if turn.cancel.is_set():
                 return
             turn.t_req = time.perf_counter()
-            self._append(self._chat, self._pcm(wav_bytes), turn)
+            if _text_input is None:
+                self._append(self._chat, self._pcm(wav_bytes), turn)
+            else:
+                self._chat.send(json.dumps({'type': 'conversation.item.create', 'item': {
+                    'type': 'message', 'role': 'user',
+                    'content': [{'type': 'input_text', 'text': _text_input}]}}))
             if turn.cancel.is_set():
                 return
             self._chat.send(json.dumps({'type': 'response.create', 'response': {'max_output_tokens': max_tokens}}))
@@ -236,6 +245,11 @@ class LFM3Client:
                     self._close_chat()
                 self.request_lock.release()
             turn.done.set()
+
+    def chat_text(self, text, turn, first, max_tokens=512, on_audio=None, require_audio=True,
+                  recovery_wav=None, recovery_reply=''):
+        return self.chat_turn(b'', turn, first, max_tokens, on_audio, require_audio,
+                              recovery_wav, recovery_reply, _text_input=text)
 
     def asr_text(self, wav_bytes, max_tokens=128, turn=None):
         turn = turn if turn is not None else Turn()

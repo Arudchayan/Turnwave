@@ -210,6 +210,17 @@ improve long-tail suppression while delaying quiet interruptions. Reproduce the
 python -m src.synth.echo_tail_probe --out outputs/echo-tail-probe.json
 ```
 
+## Typed local conversation smoke check
+
+On November 4, typed prompts were sent directly to each local conversation
+backend without opening a microphone or playing audio through a device. Both
+LFM3 Omni Q4 and LFM2.5 Audio Q4 generated text and audio for “What is two plus
+two?” and returned a correct text answer. In a separate two-turn name-recall
+check, LFM3's generated text said “Your name is Alex,” while LFM2.5 said “I'm
+Alex,” misattributing the name. This small check verifies the typed request
+path and exposes a model-quality failure; it does not establish that generated
+speech matches text or that conversation memory is reliable.
+
 ## What remains open
 
 On November 4, a live OpenCode Go `kimi-k3` search request returned HTTP 429,

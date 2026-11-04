@@ -50,6 +50,43 @@ def test_realtime_chat_streams_and_reuses_context(monkeypatch):
     assert sock.closed
 
 
+def test_text_prompt_uses_conversation_not_speech_synthesis(monkeypatch):
+    pcm = np.array([500, -500], dtype='<i2').tobytes()
+    sock = Socket(initial_events() + [
+        {'type': 'response.output_text.delta', 'delta': 'Four.'},
+        {'type': 'response.output_audio.delta', 'delta': base64.b64encode(pcm).decode()},
+        {'type': 'response.done', 'response': {'status': 'completed'}}])
+    monkeypatch.setattr('lfm3_client.websocket.create_connection', lambda *a, **k: sock)
+    client = LFM3Client()
+    turn, requests = Turn(), []
+    turn.request_observer = requests.append
+    client.chat_text('What is two plus two?', turn, first=True)
+    sent = next(x for x in sock.sent if x['type'] == 'conversation.item.create')
+    assert sent['item']['content'][0]['text'] == 'What is two plus two?'
+    assert requests[0]['text'] == 'What is two plus two?'
+    assert turn.text == 'Four.' and turn.audio_samples == 2 and turn.error is None
+
+
+def test_typed_and_spoken_turns_share_the_lfm3_conversation(monkeypatch):
+    pcm = base64.b64encode(np.array([500], dtype='<i2').tobytes()).decode()
+    output = [{'type': 'response.output_text.delta', 'delta': 'Answer.'},
+              {'type': 'response.output_audio.delta', 'delta': pcm},
+              {'type': 'response.done', 'response': {'status': 'completed'}}]
+    sock = Socket(initial_events() + output + output)
+    connections = []
+    monkeypatch.setattr('lfm3_client.websocket.create_connection',
+                        lambda *a, **k: connections.append(sock) or sock)
+    client = LFM3Client()
+    typed, spoken = Turn(), Turn()
+    client.chat_text('Remember my name.', typed, first=True)
+    client.chat_turn(wav16k_bytes(np.ones(800, np.float32)), spoken, first=False)
+    assert len(connections) == 1
+    assert typed.error is None and spoken.error is None
+    assert [event['type'] for event in sock.sent].count('response.create') == 2
+    assert any(event['type'] == 'conversation.item.create' for event in sock.sent)
+    assert any(event['type'] == 'input_audio_buffer.append' for event in sock.sent)
+
+
 def test_transcription_uses_separate_session(monkeypatch):
     sock = Socket(initial_events() + [{'type': 'conversation.item.input_audio_transcription.completed',
                                       'transcript': 'Hello there'}])

@@ -282,3 +282,9 @@ class ServerClient:
         if require_audio and not turn.cancel.is_set() and not turn.error and not turn.audio_samples:
             turn.error = ('The reply reached its length limit before producing audio.' if turn.truncated
                           else 'The server returned no audio. Please try again.')
+
+    def chat_text(self, text, turn, first, max_tokens=512, on_audio=None, require_audio=True):
+        self._stream(self._payload(CHAT_SYS, text, first, max_tokens), turn, on_audio)
+        if require_audio and not turn.cancel.is_set() and not turn.error and not turn.audio_samples:
+            turn.error = ('The reply reached its length limit before producing audio.' if turn.truncated
+                          else 'The server returned no audio. Please try again.')

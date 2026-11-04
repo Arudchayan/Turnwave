@@ -181,27 +181,40 @@ class RealtimeClient:
         return pcm
 
     def chat_turn(self, wav_bytes, turn, first, max_tokens=None,
-                  on_audio=None, require_audio=True, _attempt=1):
-        pcm = self._audio_input(wav_bytes)
+                  on_audio=None, require_audio=True, _attempt=1, _text_input=None):
+        pcm = self._audio_input(wav_bytes) if _text_input is None else None
         with self.request_lock:
             ws = None
             try:
-                if turn.request_observer is not None:
-                    turn.request_observer(dict(
-                        transport='realtime', url=self.url,
-                        audio_bytes=len(wav_bytes),
-                        max_tokens=int(max_tokens or self.max_output_tokens)))
-                turn.t_req = time.perf_counter()
-                ws = self._ensure(first)
-                for offset in range(0, len(pcm), 6400):
-                    if turn.cancel.is_set():
-                        return
-                    chunk = pcm[offset:offset + 6400]
-                    self._send(ws, {'type': 'input_audio_buffer.append',
-                                    'audio': base64.b64encode(chunk).decode()})
                 if turn.cancel.is_set():
                     return
-                self._send(ws, {'type': 'input_audio_buffer.commit'})
+                if turn.request_observer is not None:
+                    payload = dict(transport='realtime', url=self.url,
+                                   max_tokens=int(max_tokens or self.max_output_tokens))
+                    if _text_input is None:
+                        payload['audio_bytes'] = len(wav_bytes)
+                    else:
+                        payload['text'] = _text_input
+                    turn.request_observer(payload)
+                turn.t_req = time.perf_counter()
+                ws = self._ensure(first)
+                if turn.cancel.is_set():
+                    return
+                if _text_input is None:
+                    for offset in range(0, len(pcm), 6400):
+                        if turn.cancel.is_set():
+                            return
+                        chunk = pcm[offset:offset + 6400]
+                        self._send(ws, {'type': 'input_audio_buffer.append',
+                                        'audio': base64.b64encode(chunk).decode()})
+                else:
+                    self._send(ws, {'type': 'conversation.item.create', 'item': {
+                        'type': 'message', 'role': 'user',
+                        'content': [{'type': 'input_text', 'text': _text_input}]}})
+                if turn.cancel.is_set():
+                    return
+                if _text_input is None:
+                    self._send(ws, {'type': 'input_audio_buffer.commit'})
                 self._send(ws, {'type': 'response.create', 'response': {
                     'output_modalities': ['text', 'audio'],
                     'max_output_tokens': int(max_tokens or self.max_output_tokens)}})
@@ -220,6 +233,10 @@ class RealtimeClient:
                     # response. Close it so the next first=True turn is clean.
                     self.close()
                 turn.done.set()
+
+    def chat_text(self, text, turn, first, max_tokens=None, on_audio=None, require_audio=True):
+        return self.chat_turn(b'', turn, first, max_tokens, on_audio, require_audio,
+                              _text_input=text)
 
     def tts(self, text, turn, max_tokens=128, on_audio=None):
         """One-shot speech synthesis; does not touch the conversation socket."""

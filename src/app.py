@@ -739,7 +739,12 @@ class Assistant:
             self.interrupt('text prompt', announce=False)
             self.error = None
             self._job_id += 1
-            job = Job(epoch=self._epoch, first=self.first, wav=b'', id=self._job_id, agent_input=clean_text)
+            recovery = self._local_recovery_wav if not self.agent and self.first else b''
+            recovery_reply = self._local_recovery_reply if recovery else ''
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
+            job = Job(epoch=self._epoch, first=self.first, wav=b'', id=self._job_id,
+                      agent_input=clean_text, recovery_wav=recovery, recovery_reply=recovery_reply)
             if self.agent:
                 self._agent_sources = []
                 self._agent_notes = []
@@ -938,8 +943,14 @@ class Assistant:
                     elif not turn.error and not turn.cancel.is_set() and turn.truncated:
                         turn.error = 'Speech synthesis reached its length limit; the spoken reply may be incomplete.'
                 elif job.agent_input and not job.wav:
-                    turn.text_parts.append(job.agent_input)
-                    self._speak_answer(job.agent_input, turn, receive)
+                    chat_text = getattr(self.client, 'chat_text', None)
+                    if not callable(chat_text):
+                        raise RuntimeError('This voice backend does not support typed conversation.')
+                    if job.recovery_wav and getattr(self.client, 'supports_context_recovery', False):
+                        chat_text(job.agent_input, turn, job.first, on_audio=receive,
+                                  recovery_wav=job.recovery_wav, recovery_reply=job.recovery_reply)
+                    else:
+                        chat_text(job.agent_input, turn, job.first, on_audio=receive)
                 else:
                     if job.recovery_wav and getattr(self.client, 'supports_context_recovery', False):
                         self.client.chat_turn(job.wav, turn, job.first, on_audio=receive,
