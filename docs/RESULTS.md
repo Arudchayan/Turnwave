@@ -935,3 +935,20 @@ attempt in 40.67 seconds. The initial working branch remained unchanged, and
 the run’s request, model event logs, test log, candidate diff and worktree were
 retained locally. This is a single narrowly scoped task, not evidence that
 arbitrary model-written code or tests are correct or safe.
+
+
+## Search intent screen
+
+A small live text-only screen on November 5, 2026 used eight authored queries
+covering entertainment, official downloads, weather, astronomy, exchange
+rates, population, health and developer documentation. The prior lexical
+screen let through a Basel city page for a weather forecast and returned no
+results for a GitHub documentation query. The updated screen checks an
+additional query term when one exists and recognizes common “docs” and
+“statistics” variants. In a later, non-identical live run, all eight returned
+at least one result matching a manually chosen subject or intent keyword; the
+weather case returned forecast pages and the GitHub case returned documentation
+pages. Seven used the DuckDuckGo fallback. Search results are live and may
+change between runs. These small keyword checks are not relevance ratings,
+factual accuracy checks, or a measurement across users and languages. Strict
+lexical matching may discard relevant results.

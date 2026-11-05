@@ -525,3 +525,16 @@ def test_unrelated_fallback_does_not_become_evidence(monkeypatch):
     result = client.search('Vision Quest episodes', Turn())
     assert not result
     assert 'could not be verified' in result.notice
+
+
+def test_search_screen_rejects_city_page_without_requested_forecast():
+    from agent import _search_matches_query
+    query = 'Basel Switzerland weather forecast'
+    assert not _search_matches_query(query, {'title': 'Basel - Wikipedia', 'description': 'A city in Switzerland', 'url': 'https://example.org/basel'})
+    assert _search_matches_query(query, {'title': 'Basel weather', 'description': 'Forecast for Basel, Switzerland', 'url': 'https://example.org/weather'})
+
+
+def test_search_screen_accepts_common_documentation_abbreviation():
+    from agent import _search_matches_query
+    assert _search_matches_query('GitHub documentation merge conflict', {
+        'title': 'Resolving a merge conflict - GitHub Docs', 'description': 'Help with merge conflicts', 'url': 'https://docs.github.com/'})
