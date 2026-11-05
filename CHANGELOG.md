@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Check more of a search query when screening unrelated results.
+
 - Retry obviously unrelated Bing results with DuckDuckGo and disclose the fallback.
 
 - Retry an empty cloud reply once using the existing search results.
