@@ -286,7 +286,9 @@ Each run starts from the currently committed revision in a detached worktree
 under `outputs/self-improvement/`. It retains `request.json`, `opencode-*.jsonl`,
 `pytest-*.log`, `review.diff`, `result.json` and the worktree for review.
 If tests fail, one repair attempt sends the last part of the test output to the
-model and reruns the suite; each attempt retains its own log. The assistant can edit
+model and reruns the suite; each attempt retains its own log. Test runs omit `LOCALVOICE_*`, `OPENCODE_*`, Brave credentials and pytest
+plugin overrides so the app’s active profile does not silently change the test
+baseline. Other user environment and filesystem access still apply. The assistant can edit
 source, tests, docs and README; it does not merge its changes. A policy blocks
 shell commands and external directory access in OpenCode, but this is not an
 OS sandbox: generated tests run with your user permissions and may access files
