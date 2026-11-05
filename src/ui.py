@@ -115,6 +115,8 @@ letter-spacing:.06em;user-select:none
 }
 .vgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
 .vfield{display:flex;flex-direction:column;gap:3px;font-size:.73rem;color:var(--dim)}
+.vhelp{font:.72rem/1.4 "Segoe UI",sans-serif;color:var(--dim);margin:0}
+.vfield .vhelp{margin-top:2px}
 .vfield input{
 font:inherit;font-size:.82rem;border-radius:7px;border:1px solid var(--line-strong);
 background:var(--bg-elev);color:var(--txt);padding:.42em .65em;font-variant-numeric:tabular-nums
@@ -274,23 +276,25 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 </div>
 </div>
 <details id=voicetune open><summary>voice &amp; sampling tuning</summary>
+<p class=vhelp id=tuning-intro style="margin-top:9px">Presets fill the values below. Choose a preset or edit them, then select Apply tuning. These settings affect compatible local speech generation, not the cloud agent’s answer; support varies by backend.</p>
 <div class=field-row style="border-top:0;margin-top:8px">
 <label class=ctrl-lbl for=vpreset>Acoustic preset</label>
-<select id=vpreset aria-label="Acoustic preset">
+<select id=vpreset aria-label="Acoustic preset" aria-describedby=tuning-intro>
 <option value="natural">Natural RVQ · temp 0.70 / k=40 / p=0.90</option>
 <option value="crisp">Crisp Studio · temp 0.45 / k=25 / p=0.85</option>
 <option value="expressive">Warm Expressive · temp 0.85 / k=60 / p=0.94</option>
 <option value="deterministic">Deterministic · temp 0.00 / k=1 / p=1.00</option>
 <option value="custom">Custom Values</option>
 </select>
+<p class=vhelp>Natural is balanced; Crisp is more constrained; Warm allows more variation; Deterministic sets temperature to zero. The sound can vary by model.</p>
 </div>
 <div class=vgrid>
-<label class=vfield for=v_temp>Temperature (0–2)<input id=v_temp type=number step=0.05 min=0 max=2 value=0.7></label>
-<label class=vfield for=v_topk>Top-K (1–200)<input id=v_topk type=number step=1 min=1 max=200 value=40></label>
-<label class=vfield for=v_topp>Top-P (0.05–1)<input id=v_topp type=number step=0.01 min=0.05 max=1 value=0.9></label>
-<label class=vfield for=v_minp>Min-P (0–1)<input id=v_minp type=number step=0.01 min=0 max=1 value=0.05></label>
-<label class=vfield for=v_rep>Repeat penalty<input id=v_rep type=number step=0.01 min=0.8 max=2 value=1.05></label>
-<label class=vfield for=v_voice>Voice ID (optional)<input id=v_voice type=text maxlength=64 placeholder="default"></label>
+<label class=vfield for=v_temp>Temperature (0–2)<input id=v_temp type=number step=0.05 min=0 max=2 value=0.7 aria-describedby=v_temp_help><small class=vhelp id=v_temp_help>Higher values vary more; lower values are more consistent.</small></label>
+<label class=vfield for=v_topk>Top-K (1–200)<input id=v_topk type=number step=1 min=1 max=200 value=40 aria-describedby=v_topk_help><small class=vhelp id=v_topk_help>Keeps only this many possible next choices. Lower values narrow the range.</small></label>
+<label class=vfield for=v_topp>Top-P (0.05–1)<input id=v_topp type=number step=0.01 min=0.05 max=1 value=0.9 aria-describedby=v_topp_help><small class=vhelp id=v_topp_help>Keeps likely choices up to this combined probability. Lower values narrow the range.</small></label>
+<label class=vfield for=v_minp>Min-P (0–1)<input id=v_minp type=number step=0.01 min=0 max=1 value=0.05 aria-describedby=v_minp_help><small class=vhelp id=v_minp_help>Filters choices unlikely relative to the most likely one. Zero turns it off.</small></label>
+<label class=vfield for=v_rep>Repeat penalty<input id=v_rep type=number step=0.01 min=0.8 max=2 value=1.05 aria-describedby=v_rep_help><small class=vhelp id=v_rep_help>Above 1 discourages repetition; 1 leaves it unchanged.</small></label>
+<label class=vfield for=v_voice>Voice ID (optional)<input id=v_voice type=text maxlength=64 placeholder="default" aria-describedby=v_voice_help><small class=vhelp id=v_voice_help>Optional backend-supported voice identifier; blank uses the backend default.</small></label>
 </div>
 <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px">
 <button id=vapplybtn type=button>apply tuning</button>
