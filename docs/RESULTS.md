@@ -913,3 +913,25 @@ reply. Disney+ listed episode seven on November 4 and episode eight on November
 11 in the UK. These are in-sample observations on a single question and do not
 prove factual correctness, general search quality, spoken behavior or stable
 provider availability.
+
+
+## App-driven follow-up checks (draft)
+
+After the search fallback and test-environment isolation were integrated, one
+synthetic prompt asking how many VisionQuest episodes had been released passed
+through the LFM3 input synthesizer, local transcription, live Go `beam-free`
+and web search, and local speech synthesis. The recognized prompt matched the
+requested question, the agent returned seven on-topic source links and a
+seven-episode answer, and 8.48 seconds of output were captured. The same LFM3
+model family transcribed the captured output as the same answer. This was one
+generated input, a fake output device and a same-model recognition check; it
+does not establish what a person heard or general factual reliability. The
+answer matched Disney+’s November 5 schedule for episodes released by then.
+
+A separate app-driven development run asked DeepSeek V4.1 Flash Free to add a
+short `DuplexFrontend` docstring in a detached worktree. The candidate added
+the docstring and two tests; the test subprocess passed 666 tests on its first
+attempt in 40.67 seconds. The initial working branch remained unchanged, and
+the run’s request, model event logs, test log, candidate diff and worktree were
+retained locally. This is a single narrowly scoped task, not evidence that
+arbitrary model-written code or tests are correct or safe.
