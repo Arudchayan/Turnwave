@@ -24,7 +24,9 @@ def repo_fixture(tmp_path):
     return repo
 
 
-def test_development_run_preserves_worktree_diff_and_test_log(tmp_path):
+def test_development_run_preserves_worktree_diff_and_test_log(tmp_path, monkeypatch):
+    monkeypatch.setenv('LOCALVOICE_FLOOR_MODE', 'reversible')
+    monkeypatch.setenv('OPENCODE_GO_API_KEY', 'secret')
     repo = repo_fixture(tmp_path)
     phases = []
     def runner(argv, **kwargs):
@@ -39,6 +41,8 @@ def test_development_run_preserves_worktree_diff_and_test_log(tmp_path):
             kwargs['stdout'].write('{"type":"text"}\n')
         else:
             phases.append('test')
+            assert 'LOCALVOICE_FLOOR_MODE' not in kwargs['env']
+            assert 'OPENCODE_GO_API_KEY' not in kwargs['env']
             kwargs['stdout'].write('tests passed\n')
         return SimpleNamespace(returncode=0)
     worker = self_improve.SelfImprover(repo, runner=runner)

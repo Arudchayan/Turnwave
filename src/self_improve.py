@@ -72,11 +72,11 @@ class SelfImprover:
         thread.start()
         return self.state()
 
-    def _command(self, argv, cwd, timeout, log):
+    def _command(self, argv, cwd, timeout, log, env=None):
         with log.open('w', encoding='utf-8', newline='\n') as output:
             return self.runner(argv, cwd=str(cwd), stdin=subprocess.DEVNULL,
                                stdout=output, stderr=subprocess.STDOUT, timeout=timeout,
-                               text=True, encoding='utf-8', errors='replace', check=False)
+                               text=True, encoding='utf-8', errors='replace', check=False, env=env)
 
     def _git_output(self, tree, *args):
         return subprocess.check_output(['git', '-C', str(tree), *args],
@@ -132,7 +132,13 @@ class SelfImprover:
                 (run_dir / 'review.diff').write_text(diff, encoding='utf-8', newline='\n')
                 self._set(status='testing', changed_files=paths, run_dir=str(run_dir))
                 test_log = run_dir / f'pytest-{attempt}.log'
-                result = self._command([sys.executable, '-m', 'pytest', 'tests', '-q'], tree, 600, test_log)
+                # App runtime settings and credentials must not silently alter
+                # baseline tests in a newly created worktree.
+                test_env = {key: value for key, value in os.environ.items()
+                            if not key.upper().startswith(('LOCALVOICE_', 'OPENCODE_'))
+                            and key.upper() not in ('BRAVE_SEARCH_API_KEY', 'PYTEST_ADDOPTS', 'PYTEST_PLUGINS')}
+                result = self._command([sys.executable, '-m', 'pytest', 'tests', '-q'], tree, 600, test_log,
+                                       env=test_env)
                 if result.returncode == 0:
                     self._set(status='ready', test_exit_code=0,
                               message='Tests passed; review the worktree and review.diff.')
