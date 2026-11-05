@@ -175,12 +175,21 @@ def _search_matches_query(query, result):
     without_sites = re.sub(r'(?i)\bsite\s*:\s*[^\s]+', ' ', query)
     tokens = [t for t in re.findall(r'[^\W_]+', without_sites.casefold())
               if len(t) >= 4 and not t.isdigit() and t not in _QUERY_GENERIC]
-    anchors = list(dict.fromkeys(tokens))[:2]
+    anchors = list(dict.fromkeys(tokens))[:4]
     if not anchors:
         return True
     text = ' '.join(str(result.get(k) or '') for k in ('title', 'description', 'url')).casefold()
     words = re.findall(r'[^\W_]+', text)
-    return all(any(anchor in word for word in words) for anchor in anchors)
+    def matches(anchor):
+        variants = {'documentation': ('documentation', 'docs', 'document'),
+                    'statistics': ('statistics', 'statistical', 'stats')}.get(anchor, (anchor,))
+        return any(variant in word for variant in variants for word in words)
+    # Match the leading topic and at least one later intent term when the
+    # query has one. This keeps a generic city or company homepage from
+    # looking relevant to a weather, forecast or technical question.
+    if not all(matches(anchor) for anchor in anchors[:2]):
+        return False
+    return len(anchors) <= 2 or any(matches(anchor) for anchor in anchors[2:])
 
 
 def _text_web_search_call(content):
