@@ -1689,7 +1689,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(desired, dict) or set(desired) != {'task', 'model'}:
                     raise ValueError('Expected development task and model')
                 trace = assistant.state().get('last_trace')
-                result = self.server.improver.start(desired['task'], desired['model'], trace)
+                try:
+                    result = self.server.improver.start(desired['task'], desired['model'], trace)
+                except ValueError as exc:
+                    self._send(json.dumps({'error': str(exc)}), 400)
+                    return
                 self._send(json.dumps(result))
                 return
             elif self.path == '/api/mic':
