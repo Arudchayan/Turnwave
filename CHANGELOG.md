@@ -6,6 +6,8 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+- Retry obviously unrelated Bing results with DuckDuckGo and disclose the fallback.
+
 - Retry an empty cloud reply once using the existing search results.
 
 - Interrupt pooled cloud response reads when a conversation turn is canceled.

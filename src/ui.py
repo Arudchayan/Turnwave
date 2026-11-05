@@ -248,9 +248,10 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <select id=searchsel aria-label="Web search provider" disabled>
 <option value="none">Off</option>
 <option value="ddg">DuckDuckGo · Wikipedia fallback</option>
-<option value="bing">Bing · RSS search</option>
+<option value="bing">Bing · DuckDuckGo fallback</option>
 <option value="brave">Brave · API key required</option>
 </select>
+<p class=ctrl-lbl style="display:block">Bing may retry queries with DuckDuckGo and, if needed, Wikipedia.</p>
 </div>
 <div class=field-row>
 <label class=ctrl-lbl for=personasel>Voice persona &amp; intermediary style</label>

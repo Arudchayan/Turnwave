@@ -890,3 +890,26 @@ python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --o
 
 The report includes fixture and normalized-audio hashes. Voice versions can
 differ, and the active gate is confined to the benchmark process.
+
+
+## Search relevance and release schedules
+
+On November 5, 2026, a live spoken question about the number of VisionQuest
+episodes returned Bing RSS links about unrelated topics in three search calls.
+The response acknowledged it could not determine the answer, but the links
+were still displayed. Direct replay of the same query reproduced unrelated
+Bing results, while DuckDuckGo returned episode-guide results. The change
+screens Bing hits for the first two non-generic topic words and falls back to
+DuckDuckGo if none match; fallback results are screened too. This is a lexical
+heuristic, not semantic or factual verification, and can discard relevant
+results. Bing mode now discloses that it can also send the query to DuckDuckGo
+and, if needed, Wikipedia.
+
+One live `beam-free` replay after retrieval filtering but before the revised
+release-schedule instruction produced relevant links but incorrectly answered
+five. After the instruction to count multiple releases per date, three further
+live text-only calls produced two correct answers of seven and one truncated
+reply. Disney+ listed episode seven on November 4 and episode eight on November
+11 in the UK. These are in-sample observations on a single question and do not
+prove factual correctness, general search quality, spoken behavior or stable
+provider availability.
