@@ -43,17 +43,21 @@ def test_development_run_preserves_worktree_diff_and_test_log(tmp_path, monkeypa
             phases.append('test')
             assert 'LOCALVOICE_FLOOR_MODE' not in kwargs['env']
             assert 'OPENCODE_GO_API_KEY' not in kwargs['env']
+            assert kwargs['env']['PYTHONDONTWRITEBYTECODE'] == '1'
+            assert 'no:cacheprovider' in argv
             kwargs['stdout'].write('tests passed\n')
         return SimpleNamespace(returncode=0)
     worker = self_improve.SelfImprover(repo, runner=runner)
     worker._run('test-run', 'Improve the value', self_improve.MODELS[0], 'fake-opencode', {'status': 'error'})
     result = worker.state()
     assert result['status'] == 'ready'
-    assert phases == ['edit', 'test']
+    assert phases == ['test', 'edit', 'test']
     assert (repo / 'src' / 'value.py').read_text() == 'VALUE = 1\n'
     run_dir = Path(result['run_dir'])
     assert 'VALUE = 2' in (run_dir / 'review.diff').read_text(encoding='utf-8')
     assert 'new_tool.py' in (run_dir / 'review.diff').read_text(encoding='utf-8')
+    assert (run_dir / 'baseline-pytest.log').read_text() == 'tests passed\n'
+    assert result['baseline_exit_code'] == 0
     assert (run_dir / 'pytest-1.log').read_text() == 'tests passed\n'
     assert (run_dir / 'opencode-1.jsonl').exists()
     assert json.loads((run_dir / 'result.json').read_text())['status'] == 'ready'
@@ -65,7 +69,10 @@ def test_disallowed_changes_are_preserved_without_running_tests(tmp_path):
     def runner(argv, **kwargs):
         if argv[0] == 'git':
             return subprocess.run(argv, **kwargs)
-        assert argv[0] == 'fake-opencode', 'Tests must not run for rejected changes'
+        if argv[0] == sys.executable:
+            assert kwargs['stdout'].name.endswith('baseline-pytest.log'), 'Candidate tests must not run for rejected changes'
+            return SimpleNamespace(returncode=0)
+        assert argv[0] == 'fake-opencode'
         (Path(kwargs['cwd']) / 'outside.txt').write_text('preserved', encoding='utf-8')
         return SimpleNamespace(returncode=0)
     worker = self_improve.SelfImprover(repo, runner=runner)
@@ -133,15 +140,36 @@ def test_failing_tests_trigger_one_repair_with_separate_logs(tmp_path):
                 (tree / 'src' / 'value.py').write_text('VALUE = 3\n', encoding='utf-8')
             return SimpleNamespace(returncode=0)
         phases.append('test')
-        if phases.count('test') == 1:
+        if phases.count('test') == 2:
             kwargs['stdout'].write('example failure')
             return SimpleNamespace(returncode=1)
         return SimpleNamespace(returncode=0)
     worker = self_improve.SelfImprover(repo, runner=runner)
     worker._run('retry', 'Improve the value', self_improve.MODELS[0], 'fake-opencode', {})
-    assert phases == ['edit', 'test', 'edit', 'test']
+    assert phases == ['test', 'edit', 'test', 'edit', 'test']
     assert worker.state()['status'] == 'ready'
     run_dir = Path(worker.state()['run_dir'])
     assert (run_dir / 'pytest-1.log').read_text() == 'example failure'
     assert (run_dir / 'pytest-2.log').exists()
     assert 'VALUE = 3' in (run_dir / 'review.diff').read_text(encoding='utf-8')
+
+
+def test_existing_baseline_failure_is_recorded_and_does_not_block_a_fix(tmp_path):
+    repo = repo_fixture(tmp_path)
+    phases = []
+    def runner(argv, **kwargs):
+        if argv[0] == 'git':
+            return subprocess.run(argv, **kwargs)
+        if argv[0] == 'fake-opencode':
+            phases.append('edit')
+            (Path(kwargs['cwd']) / 'src' / 'value.py').write_text('VALUE = 2\n', encoding='utf-8')
+            return SimpleNamespace(returncode=0)
+        phases.append('test')
+        return SimpleNamespace(returncode=1 if phases.count('test') == 1 else 0)
+    worker = self_improve.SelfImprover(repo, runner=runner)
+    worker._run('baseline-fail', 'Fix existing tests', self_improve.MODELS[0], 'fake-opencode', {})
+    assert phases == ['test', 'edit', 'test']
+    assert worker.state()['status'] == 'ready'
+    assert worker.state()['baseline_exit_code'] == 1
+    assert 'baseline tests failed' in worker.state()['message']
+    assert (Path(worker.state()['run_dir']) / 'baseline-pytest.log').exists()

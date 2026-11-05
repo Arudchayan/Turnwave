@@ -282,9 +282,11 @@ small summary of recent diagnostic status and tool/check names; it does not
 receive the transcript automatically. OpenCode and tests may create their own
 local logs. Keep credentials out of the repository.
 
-Each run starts from the currently committed revision in a detached worktree
+Each run starts from the currently committed revision, checks baseline tests,
+and works in a detached worktree
 under `outputs/self-improvement/`. It retains `request.json`, `opencode-*.jsonl`,
-`pytest-*.log`, `review.diff`, `result.json` and the worktree for review.
+`baseline-pytest.log`, `pytest-*.log`, `review.diff`, `result.json` and the
+worktree for review.
 If tests fail, one repair attempt sends the last part of the test output to the
 model and reruns the suite; each attempt retains its own log. Test runs omit `LOCALVOICE_*`, `OPENCODE_*`, Brave credentials and pytest
 plugin overrides so the app’s active profile does not silently change the test
