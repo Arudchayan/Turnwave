@@ -246,6 +246,13 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <p class=ctrl-lbl>Changing the mode or model starts a new conversation. Cloud models have different data policies. <a href="https://opencode.ai/v2/docs/console/go/#privacy" target="_blank" rel="noopener noreferrer">Review OpenCode Go privacy terms</a>.</p>
 </div>
 <div class=field-row>
+<label class=ctrl-lbl for=voicevariant>Local voice model</label>
+<select id=voicevariant aria-describedby=varianthelp disabled>
+<option value="">Not verified</option><option value="standard">Standard</option><option value="research">Research</option>
+</select>
+<p class=ctrl-lbl id=varianthelp style="display:block">Configure a research server to enable switching.</p>
+</div>
+<div class=field-row>
 <label class=ctrl-lbl for=searchsel>Web search provider</label>
 <select id=searchsel aria-label="Web search provider" disabled>
 <option value="none">Off</option>
@@ -343,6 +350,7 @@ let actionError=null,lastState=null,lastMicOn=null,micVersion=0;
 let lastDeviceIndex=null,deviceVersion=0;
 let lastPause=null,pauseVersion=0;
 let lastAgentVal=null,agentVersion=0;
+let lastVariant='',variantVersion=0;
 let lastSearch=null,searchVersion=0;
 let lastPersona=null,personaVersion=0;
 let voiceVersion=0,voiceDirty=false;
@@ -404,6 +412,12 @@ agentVersion++;
 let body=val==='local'?{mode:'local'}:{mode:val.split(':')[0],model:val.split(':').slice(1).join(':')};
 if(await action('agentsel','/api/agent',body))lastAgentVal=val;
 sel.value=lastAgentVal??'local';};
+$('voicevariant').onchange=async e=>{
+let sel=$('voicevariant'),val=String(e.target.value);
+if(pendingActions.has('voicevariant')||!['standard','research'].includes(val))return;
+variantVersion++;
+if(await action('voicevariant','/api/voice-variant',{variant:val}))lastVariant=val;
+sel.value=lastVariant;};
 if($('searchsel'))$('searchsel').onchange=async e=>{
 let sel=$('searchsel'),val=String(e.target.value);
 if(pendingActions.has('searchsel')||!['none','ddg','bing','brave'].includes(val))return;
@@ -480,6 +494,7 @@ let observedMicPending=pendingActions.has('micbtn');
 let observedDeviceVersion=deviceVersion,observedDevicePending=pendingActions.has('micsel');
 let observedPauseVersion=pauseVersion,observedPausePending=pendingActions.has('pausesel');
 let observedAgentVersion=agentVersion,observedAgentPending=pendingActions.has('agentsel');
+let observedVariantVersion=variantVersion,observedVariantPending=pendingActions.has('voicevariant');
 let observedSearchVersion=searchVersion,observedSearchPending=pendingActions.has('searchsel');
 let observedPersonaVersion=personaVersion,observedPersonaPending=pendingActions.has('personasel');
 let observedVoiceVersion=voiceVersion,observedVoicePending=pendingActions.has('vapplybtn');
@@ -499,6 +514,14 @@ let cur=s.agent_mode?((s.agent_provider==='Custom Endpoint'?'custom':s.agent_pro
 if(!Array.from(agsel.options).some(o=>o.value===cur)&&s.agent_mode){
 let o=document.createElement('option');o.value=cur;o.textContent='Cloud Agent · '+(s.agent_provider||'OpenCode')+' ('+(s.agent_model||'custom')+')';agsel.appendChild(o);}
 lastAgentVal=cur;agsel.value=cur;}
+let variant=$('voicevariant');
+if(variant){
+if(!observedVariantPending&&observedVariantVersion===variantVersion&&!pendingActions.has('voicevariant')){
+lastVariant=s.voice_variant||'';variant.value=lastVariant;}
+variant.disabled=!s.voice_variant_enabled||!!s.archive_session||s.active_turn||s.pending_turns>0||s.status==='recording'||s.status==='starting'||s.status==='error'||pendingActions.has('voicevariant');
+$('varianthelp').textContent=s.archive_session?'Switching is unavailable during a recorded session.':s.voice_variant_error?('Not verified: '+s.voice_variant_error):s.voice_variant_enabled?
+('Switching starts a new conversation. Server reports: '+(s.voice_model_id||'not verified')+'. A reported name is not a file hash.'):
+'Configure a research server to enable switching.';}
 let search=$('searchsel');
 if(search){
 if(!observedSearchPending&&observedSearchVersion===searchVersion&&!pendingActions.has('searchsel')&&

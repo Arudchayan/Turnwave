@@ -28,7 +28,7 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
  requests.push({path,body:options.body?JSON.parse(options.body):null});
  if(input.scenario==='search_failure'&&path==='/api/search-provider')return {ok:false,status:400,json:async()=>({error:'Brave search requires an API key'})};
  if(input.scenario==='retry'&&requests.length===1)return {ok:false,status:409,json:async()=>({error:'First attempt failed'})};
- if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes'||input.scenario==='voice_tuning'||input.scenario==='search_selection')return {ok:true,status:200,json:async()=>({ok:true})};
+ if(input.scenario==='retry'||input.scenario==='successive'||input.scenario==='pause'||input.scenario==='prompt'||input.scenario==='agent_persona_notes'||input.scenario==='voice_tuning'||input.scenario==='voice_variant'||input.scenario==='search_selection')return {ok:true,status:200,json:async()=>({ok:true})};
  if(path==='/api/interrupt')return {ok:true,status:200,json:async()=>({ok:true})};
  if(input.scenario==='http_error')return {ok:false,status:409,json:async()=>({error:'Microphone unavailable'})};
  if(input.scenario==='network_error')throw Error('connection lost');
@@ -76,6 +76,14 @@ const context={AbortController,URL,clearTimeout(id){if(timers[id])timers[id].cle
   await nodes.searchsel.onchange({target:{value:'bing'}});
   await nodes.agentsel.onchange({target:{value:'opencode-zen:kimi-k3'}});
   process.stdout.write(JSON.stringify({requests,searchValue:nodes.searchsel.value,disabled:nodes.searchsel.disabled}));
+ }else if(input.scenario==='voice_variant'){
+  Object.assign(state,{voice_variant_enabled:true,voice_variant:'standard',voice_model_id:'/models/standard.gguf',active_turn:false,pending_turns:0});
+  await context.tick();
+  const initiallyDisabled=nodes.voicevariant.disabled;
+  await nodes.voicevariant.onchange({target:{value:'research'}});
+  state.active_turn=true;
+  await context.tick();
+  process.stdout.write(JSON.stringify({requests,initiallyDisabled,busyDisabled:nodes.voicevariant.disabled}));
  }else if(input.scenario==='voice_tuning'){
   await nodes.vpreset.onchange({target:{value:'crisp'}});
   nodes.v_temp.value='0.65';
@@ -276,6 +284,12 @@ def test_search_selection_error_preserves_previous_provider():
     result = run_browser('search_failure')
     assert result['value'] == 'ddg'
     assert 'requires an API key' in result['banner']
+
+
+def test_voice_variant_selector_dispatches_and_disables_when_busy():
+    result=run_browser('voice_variant')
+    assert {'path':'/api/voice-variant','body':{'variant':'research'}} in result['requests']
+    assert not result['initiallyDisabled'] and result['busyDisabled']
 
 
 def test_voice_tuning_preset_and_manual_apply_dispatch_api():
