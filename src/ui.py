@@ -47,7 +47,7 @@ border-radius:10px;padding:.75em 1.05em;margin:0 0 18px;font-size:.86rem;line-he
 }
 .workspace{display:grid;grid-template-columns:minmax(310px,390px) minmax(0,1fr);gap:22px;align-items:start}
 .panel{
-background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)
+background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow);min-width:0
 }
 .status-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
 #st{
@@ -91,7 +91,7 @@ canvas{width:100%;height:64px;display:block;border-radius:4px}
 #lvl{font-size:.73rem;color:var(--dim);margin-top:6px;display:flex;justify-content:space-between}
 #controls{display:flex;flex-direction:column;gap:10px;margin:0}
 .btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-button,select{
+button,select,textarea{
 border-radius:8px;border:1px solid var(--line-strong);background:var(--bg-elev);color:var(--txt);
 padding:.68em .95em;font-size:.84rem;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,transform .06s
 }
@@ -106,10 +106,10 @@ button.big:hover{background:#234f39;border-color:#234f39}
 display:flex;align-items:center;justify-content:space-between;gap:10px;
 font-size:.78rem;color:var(--dim)
 }
-#controls select{width:100%;max-width:100%;background:var(--card)}
+#controls select{width:100%;min-width:0;max-width:100%;background:var(--card)}
 #pause-control select{width:auto;min-width:165px}
-details#metrics,details#voicetune{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
-details#metrics summary,details#voicetune summary{
+details#metrics,details#voicetune,details#improve{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+details#metrics summary,details#voicetune summary,details#improve summary{
 cursor:pointer;color:var(--dim);font-size:.78rem;font-weight:600;text-transform:uppercase;
 letter-spacing:.06em;user-select:none
 }
@@ -198,7 +198,7 @@ display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
 border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76rem;color:var(--dim)
 }
 @media(max-width:820px){
-.workspace{grid-template-columns:1fr}
+.workspace{grid-template-columns:minmax(0,1fr)}
 .conv-panel{min-height:340px}
 }
 @media(max-width:520px){
@@ -239,8 +239,6 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <option value="opencode-go:beam-free">Cloud Agent · Go Beam Free (30-day retention)</option>
 <option value="opencode-go:iceman-contributor-free">Cloud Agent · Go Iceman Free (data used to improve model)</option>
 <option value="opencode-zen:kimi-k3">Cloud Agent · OpenCode Zen (kimi-k3)</option>
-<option value="opencode-zen:deepseek-v4-flash-free">Cloud Agent · Zen DeepSeek V4 Flash Free</option>
-<option value="opencode-zen:deepseek-v4.1-flash-free">Cloud Agent · Zen DeepSeek V4.1 Flash Free</option>
 <option value="custom:local-model">Second Model · Custom Endpoint (127.0.0.1:8081)</option>
 </select>
 <p class=ctrl-lbl>Changing the mode or model starts a new conversation. Cloud models have different data policies. <a href="https://opencode.ai/v2/docs/console/go/#privacy" target="_blank" rel="noopener noreferrer">Review OpenCode Go privacy terms</a>.</p>
@@ -298,6 +296,16 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <span id=vstatus>temp 0.7 · k=40 · p=0.9 · min_p=0.05 · rep=1.05</span>
 </div>
 </details>
+<details id=improve><summary>development agent</summary>
+<div class=field-row>
+<label class=ctrl-lbl for=improve-model>Development model</label>
+<select id=improve-model><option value="opencode/deepseek-v4.1-flash-free">DeepSeek V4.1 Flash Free · OpenCode</option><option value="opencode/beam-free">Beam Free · OpenCode</option><option value="opencode-go/deepseek-v4.1-flash">DeepSeek V4.1 Flash · OpenCode Go</option></select>
+<label class=ctrl-lbl for=improve-task>What should it improve?</label>
+<textarea id=improve-task maxlength=1500 rows=3 placeholder="Describe a bug or improvement"></textarea>
+<p class=ctrl-lbl style="display:block">Starts OpenCode in a separate worktree. Source code, your request, diagnostic metadata and failing test output can be sent to the selected provider. Generated tests run on this computer with your permissions; review changes before merging.</p>
+<button id=improve-btn type=button>start development run</button>
+<div id=improve-status role=status aria-live=polite></div>
+</div></details>
 <details id=metrics><summary>diagnostics &amp; metrics</summary>
 <div id=cards>
 <div class=card><b id=m_ttft>—</b><span>time to first audio</span></div>
@@ -320,7 +328,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 </div>
 <footer><span>Voice uses your configured server · headphones improve interruption handling</span><span><a href="/testing">Guided testing</a> · Local audio capture &amp; synthesis</span></footer>
 </main><script>
-let lv=[],lastRevision=-1,pollDelay=300;
+let lv=[],lastRevision=-1,pollDelay=300,improvePollAt=0;
 const STLBL={st_heard:'heard',st_under:'understanding',st_voice:'voicing'};
 function setStage(id,ts,activePh,ph){let e=$(id);
 e.className=ts!=null?'done':(ph===activePh?'active':'');
@@ -439,6 +447,18 @@ e.preventDefault();
 let inp=$('promptin'),txt=(inp.value||'').trim();
 if(!txt||pendingActions.has('sendbtn'))return;
 if(await action('sendbtn','/api/prompt',{text:txt}))inp.value='';};
+$('improve-btn').onclick=async()=>{
+let task=$('improve-task').value.trim();if(!task){$('improve-status').textContent='Describe the change first.';return;}
+$('improve-btn').disabled=true;
+try{let response=await fetch('/api/improve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task,model:$('improve-model').value})});
+let data=await response.json();if(!response.ok)throw Error(data.error||'Could not start development run');
+$('improve-status').textContent='Preparing a separate worktree…';improvePollAt=0;
+}catch(e){$('improve-status').textContent=e.message;$('improve-btn').disabled=false;}};
+async function pollImprover(){
+try{let r=await fetch('/api/improve');if(!r.ok)return;let d=await r.json();
+let active=['preparing','editing','testing'].includes(d.status);$('improve-btn').disabled=active;
+if(d.status!=='idle')$('improve-status').textContent=({preparing:'Preparing worktree…',editing:'OpenCode is developing the change…',testing:'Running tests…',ready:'Tests passed. Review the candidate.',tests_failed:'Tests failed. Review the logs.',no_changes:'No changes were made.',error:'Development run failed.'}[d.status]||d.status)+(d.message?' '+d.message:'')+(d.run_dir?' Files: '+d.run_dir:'');
+}catch{}}
 function bubble(t,sourceItems=[]){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
 else if(t.startsWith('assistant:')){d.className='msg a';d.textContent=t.slice(10).trim();
@@ -459,6 +479,7 @@ let observedSearchVersion=searchVersion,observedSearchPending=pendingActions.has
 let observedPersonaVersion=personaVersion,observedPersonaPending=pendingActions.has('personasel');
 let observedVoiceVersion=voiceVersion,observedVoicePending=pendingActions.has('vapplybtn');
 let s=await(await fetch('/api/state')).json();
+if(Date.now()>=improvePollAt){improvePollAt=Date.now()+2000;pollImprover();}
 lastState=s;
 if(s.voice_params&&!voiceDirty&&!observedVoicePending&&observedVoiceVersion===voiceVersion&&!pendingActions.has('vapplybtn')){
 writeVoiceInputs(s.voice_params);}

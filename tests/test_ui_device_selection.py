@@ -35,6 +35,7 @@ function response(ok=true){return {ok,status:ok?200:409,json:async()=>ok?{ok:tru
 const context=vm.createContext({AbortController,document:{getElementById:node,createElement:tag=>new Element(tag)},
  clearTimeout(id){if(timers[id])timers[id].cleared=true;},setTimeout(fn,ms){timers.push({fn,ms});return timers.length-1;},
  fetch:async(path,options={})=>{
+  if(path==='/api/improve')return {ok:true,json:async()=>({status:'idle'})};
   if(path==='/api/state'){
    const snapshot=JSON.parse(JSON.stringify(nextState));
    const value={ok:true,json:async()=>snapshot};
