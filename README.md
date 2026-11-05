@@ -269,3 +269,7 @@ Models and dependencies have their own [licenses](docs/THIRD_PARTY.md).
 
 See [contributing](CONTRIBUTING.md), [security](SECURITY.md) and
 [publication guidance](docs/PUBLICATION.md).
+
+When Bing results do not match the leading topic words, the app retries the
+query with DuckDuckGo (and potentially its Wikipedia fallback). This simple
+lexical screen can miss relevant sources and does not verify factual accuracy.

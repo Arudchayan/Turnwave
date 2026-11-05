@@ -490,3 +490,38 @@ def test_complete_reply_does_not_report_truncation(monkeypatch):
     assert client.respond('Explain', [], Turn()) == ('A complete answer.', [])
     assert client.last_trace['checks']['response_truncated'] is False
     assert 'response_warning' not in client.last_trace
+
+
+def test_bing_unrelated_hits_trigger_relevant_fallback(monkeypatch):
+    from agent import SearchResults
+    page = b'''<rss><channel><item><title>Google Maps</title><link>https://maps.google.com/</link><description>Directions</description></item></channel></rss>'''
+    monkeypatch.setattr('urllib.request.urlopen', lambda req, timeout: io.BytesIO(page))
+    client = AgentClient('key', search_provider='bing')
+    queries = []
+    def fallback(query, turn):
+        queries.append(query)
+        return SearchResults([{'title': 'VisionQuest episode guide', 'url': 'https://example.org/visionquest', 'description': 'Release schedule'},
+                              {'title': 'Irrelevant directions', 'url': 'https://example.org/maps', 'description': 'Maps'}])
+    monkeypatch.setattr(client, '_search_ddg', fallback)
+    result = client.search('Vision Quest TV show episodes released so far', Turn())
+    assert queries == ['Vision Quest TV show episodes released so far']
+    assert [item['title'] for item in result] == ['VisionQuest episode guide']
+
+
+def test_bing_relevant_hits_do_not_send_query_to_fallback(monkeypatch):
+    page = b'''<rss><channel><item><title>VisionQuest episodes</title><link>https://example.org/visionquest</link><description>Release schedule</description></item></channel></rss>'''
+    monkeypatch.setattr('urllib.request.urlopen', lambda req, timeout: io.BytesIO(page))
+    client = AgentClient('key', search_provider='bing')
+    monkeypatch.setattr(client, '_search_ddg', lambda *args: pytest.fail('Unexpected fallback'))
+    assert len(client.search('Vision Quest TV show episodes', Turn())) == 1
+
+
+def test_unrelated_fallback_does_not_become_evidence(monkeypatch):
+    from agent import SearchResults
+    monkeypatch.setattr('urllib.request.urlopen', lambda req, timeout: io.BytesIO(b'<rss><channel></channel></rss>'))
+    client = AgentClient('key', search_provider='bing')
+    monkeypatch.setattr(client, '_search_ddg', lambda *args: SearchResults([
+        {'title': 'Travel directions', 'url': 'https://example.org/maps', 'description': 'Maps'}]))
+    result = client.search('Vision Quest episodes', Turn())
+    assert not result
+    assert 'could not be verified' in result.notice

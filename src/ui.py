@@ -124,8 +124,8 @@ footer{border-top:1px solid var(--line);padding-top:16px;margin-top:28px}
 <select id=agentsel disabled><option value=local>Local voice</option><option value=opencode-go>OpenCode Go</option><option value=opencode-zen>OpenCode Zen</option></select>
 <label for=agentmodel>Cloud model</label><input id=agentmodel maxlength=100 placeholder="kimi-k3" autocomplete=off>
 <button id=agentapply disabled>Apply conversation settings</button>
-<label for=searchsel>Web search</label><select id=searchsel disabled><option value=none>Off</option><option value=ddg>DuckDuckGo</option><option value=bing>Bing</option><option value=brave>Brave</option></select>
-</div><p>Search sends queries to the selected search provider. Provider API keys must be configured in the app environment.</p>
+<label for=searchsel>Web search</label><select id=searchsel disabled><option value=none>Off</option><option value=ddg>DuckDuckGo</option><option value=bing>Bing · DuckDuckGo fallback</option><option value=brave>Brave</option></select>
+</div><p>Search sends queries to the selected provider. Bing may also use DuckDuckGo and its Wikipedia fallback when its results do not match. Provider API keys must be configured in the app environment.</p>
 </details>
 <details id=metrics><summary>metrics</summary>
 <div id=cards>
