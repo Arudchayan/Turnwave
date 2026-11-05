@@ -461,8 +461,8 @@ $('improve-status').textContent='Preparing a separate worktree…';improvePollAt
 }catch(e){$('improve-status').textContent=e.message;$('improve-btn').disabled=false;}};
 async function pollImprover(){
 try{let r=await fetch('/api/improve');if(!r.ok)return;let d=await r.json();
-let active=['preparing','editing','testing'].includes(d.status);$('improve-btn').disabled=active;
-if(d.status!=='idle')$('improve-status').textContent=({preparing:'Preparing worktree…',editing:'OpenCode is developing the change…',testing:'Running tests…',ready:'Tests passed. Review the candidate.',tests_failed:'Tests failed. Review the logs.',no_changes:'No changes were made.',error:'Development run failed.'}[d.status]||d.status)+(d.message?' '+d.message:'')+(d.run_dir?' Files: '+d.run_dir:'');
+let active=['preparing','baseline','editing','testing'].includes(d.status);$('improve-btn').disabled=active;
+if(d.status!=='idle')$('improve-status').textContent=({preparing:'Preparing worktree…',baseline:'Checking the baseline tests…',editing:'OpenCode is developing the change…',testing:'Running tests…',ready:'Tests passed. Review the candidate.',tests_failed:'Tests failed. Review the logs.',no_changes:'No changes were made.',error:'Development run failed.'}[d.status]||d.status)+(d.message?' '+d.message:'')+(d.run_dir?' Files: '+d.run_dir:'');
 }catch{}}
 function bubble(t,sourceItems=[]){let d=document.createElement('div');
 if(t.startsWith('user:')){d.className='msg u';d.textContent=t.slice(5).trim();}
