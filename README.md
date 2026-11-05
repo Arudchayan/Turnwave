@@ -271,6 +271,28 @@ and the offline replay in [evaluation](docs/EVALUATION.md).
 The app and backend test entry points reserve exclusive context ownership;
 stop the app before running tests that use its backend, even while muted.
 
+### Development agent (experimental)
+
+Open **development agent** in the app to select an installed OpenCode model,
+including DeepSeek V4.1 Flash Free, describe an improvement and start a run.
+Install and authenticate the OpenCode CLI separately. Free-tier availability
+and limits can change; OpenCode serves free models through its own client.
+The selected model receives your request, repository files it reads, and a
+small summary of recent diagnostic status and tool/check names; it does not
+receive the transcript automatically. OpenCode and tests may create their own
+local logs. Keep credentials out of the repository.
+
+Each run starts from the currently committed revision in a detached worktree
+under `outputs/self-improvement/`. It retains `request.json`, `opencode-*.jsonl`,
+`pytest-*.log`, `review.diff`, `result.json` and the worktree for review.
+If tests fail, one repair attempt sends the last part of the test output to the
+model and reruns the suite; each attempt retains its own log. The assistant can edit
+source, tests, docs and README; it does not merge its changes. A policy blocks
+shell commands and external directory access in OpenCode, but this is not an
+OS sandbox: generated tests run with your user permissions and may access files
+or the network. Only start runs you are comfortable testing on this computer,
+and review both code and test changes before applying them.
+
 ### Optional cloud conversation and web search
 
 Changing the conversation mode or model starts a new conversation.
@@ -290,7 +312,8 @@ interface can also select a model explicitly. Returning from local mode to the
 same provider retains its last selected model for the current app session.
 
 Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
-preferred secret manager. When the cloud agent is enabled, web search defaults
+preferred secret manager. A missing Zen key or provider limit is
+reported in the interface. Selecting a model starts a new conversation. When the cloud agent is enabled, web search defaults
 to Brave if `BRAVE_SEARCH_API_KEY` is set, and otherwise to DuckDuckGo HTML
 search without a search API key. The interface can switch between DuckDuckGo,
 Bing RSS, Brave and off while an agent is selected; Brave requires a key in the

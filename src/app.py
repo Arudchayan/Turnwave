@@ -1651,6 +1651,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send('{"error":"Forbidden origin"}', 403)
         if self.path == '/api/state':
             self._send(json.dumps(self.server.assistant.state()))
+        elif self.path == '/api/improve':
+            self._send(json.dumps(self.server.improver.state()))
         elif self.path == '/api/diagnostics':
             self._send(json.dumps(self.server.assistant.diagnostics.recent(100)))
         elif self.path == '/api/traces':
@@ -1679,6 +1681,18 @@ class Handler(BaseHTTPRequestHandler):
                     result = assistant.seal_archive(desired['expected_session'])
                 except (RuntimeError, OSError) as exc:
                     self._send(json.dumps({'error': str(exc)}), 409)
+                    return
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/improve':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'task', 'model'}:
+                    raise ValueError('Expected development task and model')
+                trace = assistant.state().get('last_trace')
+                try:
+                    result = self.server.improver.start(desired['task'], desired['model'], trace)
+                except ValueError as exc:
+                    self._send(json.dumps({'error': str(exc)}), 400)
                     return
                 self._send(json.dumps(result))
                 return
@@ -1826,6 +1840,8 @@ def main():
     assistant = Assistant(client=client, asr_client=asr_client, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent, trace_path=trace_path)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
+    from self_improve import SelfImprover
+    server.improver = SelfImprover(Path(__file__).resolve().parents[1])
     assistant.start()
     print(f'Turnwave on http://localhost:{UI_PORT}', flush=True)
     try:
