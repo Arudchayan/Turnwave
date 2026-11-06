@@ -234,6 +234,81 @@ python -m pip install -r requirements-eot.txt
 python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
 ```
 
+
+## LFM3 standard and research model: paired text pilot
+
+On 2026-11-05 we compared two local Q4 GGUF models using the same CPU
+llama-server build `b12032-dde879bc4`, projector, settings and prompts. This
+is a bounded experiment, not evidence that either model is safe or generally
+more capable. The research model was produced in a Heretic experiment; the
+standard model is the unmodified comparison. The research candidate came from
+the second, rank-4, five-trial Heretic 2.0.0 study described in
+[results](RESULTS.md#exploratory-lfm3-model-modification), using the LFM3-Omni-2B
+checkpoint revision `5797d07c125503bd4f4c0e7f915ae2d3d703e8de`. The standard
+and modified checkpoints were converted and quantized separately to Q4_K_M;
+quantization and conversion may contribute to observed differences, so they
+cannot be attributed solely to Heretic. Model SHA-256 values:
+
+- Standard: `9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2`
+- Research: `55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`
+- Shared projector: `0a746c0794782a16d4456b230c2a0b5888a2d94a6677211edbed7d7a4177a39a`
+
+The primary sample used 20 harmful-behavior prompts, 20 benign prompts and
+16 authored exact-answer controls. The harmful and benign slices were distinct
+from the earlier fit and held-out slices, but came from the same datasets:
+`mlabonne/harmful_behaviors` revision `01cead01398926d81f7c52bdb790ee8cf77ebba7`
+(test[20:40]) and `mlabonne/harmless_alpaca` revision
+`02c6a92cfcf11bb0c387334f8146d149d65b587f` (test[10:30]). Each
+arm used temperature 0, seed 42 and a 64-token cap. All 112 calls completed;
+none was empty. The table shows counts for standard / research respectively.
+
+| Group | Refusal-marker matches | Truncated | Exact controls correct |
+| --- | ---: | ---: | ---: |
+| Harmful (20) | 19 / 15 | 20 / 20 | — |
+| Benign (20) | 0 / 0 | 15 / 17 | — |
+| Authored controls (16) | — | 0 / 0 | 13 / 12 |
+
+The four harmful marker differences were standard-only. Of the controls, 12
+passed in both arms, one passed only in standard, and three failed in both.
+Marker detection is simple keyword matching, **not** a semantic refusal or
+compliance judgment; the 64-token cap truncated every harmful response and
+most benign ones. The small authored controls are not a general capability test.
+
+A longer-output check repeated the first five cases from each dataset at 192
+tokens; it is a subset, not independent confirmation. For harmful prompts,
+marker matches were 5 / 5 in each arm and truncations 2 / 4. For benign prompts,
+marker matches were 0 / 1 and truncations 4 / 3. All 20 calls completed and
+none was empty. The change in counts across caps illustrates why keyword
+counts must not be interpreted as refusal rates. These results do not measure
+voice quality, audio comprehension, human preference, safety or real-world
+performance. Further evaluation needs more diverse independent prompts,
+human-reviewed responses and voice tests.
+
+The evaluator records per-case outcomes, hashes, errors and timing but never
+stores prompts or responses. Its evidence stays under ignored `outputs/`;
+the aggregate counts above are the public record. Server identity is checked
+against its reported model path, not cryptographic proof of loaded memory.
+The local model files are hashed before and after each run. To reproduce, install
+`datasets`, start each model separately with identical flags (`NGL=0`,
+`MMOFFLOAD=0`, context 4096, parallel 1), and use the commands in
+`scripts/compare_lfm_variants.py`. Pass `--profile extended` for the repeated
+192-token subset. Datasets and exact revisions and slices are pinned in that
+script. Use new output paths for each run; existing evidence is never overwritten.
+For example, with one server at a time and file paths adjusted to your system:
+
+```powershell
+python -m pip install datasets
+python scripts/compare_lfm_variants.py run --variant standard --url http://127.0.0.1:18121 --model <standard-windows-path> --server-model-path <standard-server-path> --out outputs/standard.json
+# Stop that server and start the research model with the same flags.
+python scripts/compare_lfm_variants.py run --variant research --url http://127.0.0.1:18121 --model <research-windows-path> --server-model-path <research-server-path> --out outputs/research.json
+python scripts/compare_lfm_variants.py compare outputs/standard.json outputs/research.json --out outputs/paired.json
+# Repeat both run commands with --profile extended and distinct output paths,
+# then compare those two outputs in the same order.
+```
+
+Replace each angle-bracket placeholder with a quoted actual path; the server path
+must exactly match `/props` on that server. The example does not start servers.
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
