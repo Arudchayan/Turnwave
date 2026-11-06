@@ -46,6 +46,10 @@ def test_expanded_profile_is_reproducible_stratified_and_disjoint(monkeypatch):
     assert len(expanded) == 36 and digest == repeat_digest and expanded == again
     assert all(sum(row['type'] == group for row in expanded) == 2 for group in groups)
     assert not {row['id'] for row in expanded} & {row['id'] for row in original + concise}
+    holdout, _ = module.load_cases('expanded_holdout')
+    assert len(holdout) == 36
+    assert all(sum(row['type'] == group for row in holdout) == 2 for group in groups)
+    assert not {row['id'] for row in holdout} & {row['id'] for row in original + concise + expanded}
 
 
 def test_existing_output_directory_is_not_replaced(tmp_path, monkeypatch):
