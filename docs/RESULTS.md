@@ -371,6 +371,38 @@ or backchannel handling on a real device.
 
 ## Adjustable pause between turns
 
+### Default update (2026-11-06)
+
+Turnwave now starts with the **Balanced** 800 ms pause instead of Quick 480 ms.
+Quick remains selectable; the setting is session-local and no persisted user
+preference is overwritten. This choice aims to reduce premature turn endings,
+not improve the transcription model itself, and adds 320 ms of nominal silence
+after finished speech. The earlier 400-row annotated pause screen below found
+105/850 mid-turn pauses crossing 800 ms versus 286/850 at 480 ms. Its limits
+remain important: those are annotations, not the app or real-device results.
+
+We additionally replayed 20 clean read-speech recordings from the pinned
+`hf-internal-testing/librispeech_asr_dummy` revision
+`5be91486e11a2d616f4ec5db8d3fd248585ac07a` through the actual Silero
+frontend, with echo cancellation and holdoff disabled. For each clip we inserted
+650 ms of silence at a low-energy point near its middle. Quick ended before the
+inserted pause finished in 20/20 clips; Balanced did so in 4/20 (16 Quick-only
+and zero Balanced-only). Multiple speech starts occurred in 20/20 versus
+11/20, so Balanced did not eliminate all splits. Median final-end time relative
+to the end of each source recording was 90 ms versus 397.5 ms, respectively;
+the source may itself contain end silence. This is a synthetic pause inserted
+into a small clean read-speech fixture, not a microphone, app-capture, ASR, or
+human-voice benchmark. It does not show a fix for this user's recognition
+errors or establish performance on other silence lengths, accents or rooms.
+
+The local aggregate and per-clip numerical evidence is kept under ignored
+`outputs/`; no speech or transcripts are saved. With `pandas`, `soundfile`,
+`pyarrow`, and `huggingface_hub` installed, reproduce with a fresh output path:
+
+```powershell
+python scripts/pause_frontend_bench.py --out outputs/pause-650-real-frontend.json
+```
+
 An additional annotation-only screen compared the three fixed pause presets
 on the first 400 English validation rows of [LiveKit's end-of-turn dataset](https://huggingface.co/datasets/livekit/eot-bench-data).
 Among 850 annotated mid-turn pauses, the 480 ms threshold crossed 286 (33.65%),
@@ -383,8 +415,8 @@ end-of-turn recall measurement.
 This screen uses per-pause observations from the first 400 rows, not a random
 or independent held-out sample. It does not run Turnwave's VAD, model,
 microphone, playback, or room acoustics. Longer waits can still split a longer
-pause and make completed turns feel slower. The default remains 480 ms; users
-can select the longer options. The source Parquet SHA-256 was
+pause and make completed turns feel slower. The default was 480 ms at the time
+of this screen; see the later default update above. The source Parquet SHA-256 was
 `e475d435c8e693912243e8a810bf7e34a59e01e208551ce5b362c9c778b0fdc4`.
 With `pandas` and a Parquet reader installed, reproduce against a local copy:
 
@@ -404,7 +436,7 @@ two clips came with 640 ms of additional final wait compared with 480 ms.
 The inserted silence is not the entire VAD-measured silence because the clips
 also contain quiet audio. This is one synthetic voice and does not establish
 word retention, false-interruption rates or a generally safe setting. The
-default remains 480 ms and the setting changes only between utterances.
+default was 480 ms at the time; the setting changes only between utterances.
 
 ## Delayed playback echo tail
 
@@ -568,7 +600,7 @@ two clips came with 640 ms of additional final wait compared with 480 ms.
 The inserted silence is not the entire VAD-measured silence because the clips
 also contain quiet audio. This is one synthetic voice and does not establish
 word retention, false-interruption rates or a generally safe setting. The
-default remains 480 ms and the setting changes only between utterances.
+default was 480 ms at the time; the setting changes only between utterances.
 
 ## Synthetic interruption with device playback
 
