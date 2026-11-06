@@ -59,7 +59,7 @@ class Job:
 
 class Assistant:
     """No import-time devices or threads; dependencies can be simulated in tests."""
-    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None, trace_path=None, floor_mode=None, eot=None):
+    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None, trace_path=None, floor_mode=None, eot=None, variant_config=None):
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
         self.pre_roll_ms = pre_roll_ms
@@ -98,6 +98,23 @@ class Assistant:
             else:
                 client = ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
         self.client = client
+        self.variant_config = variant_config
+        self._voice_variant = None
+        self._voice_model_id = None
+        self._voice_variant_error = None
+        if variant_config is not None:
+            if asr_client is not None:
+                raise ValueError('Voice variant switching requires the same local server for transcription')
+            if getattr(client, 'base', '').rstrip('/') != variant_config.endpoints['standard']:
+                raise ValueError('The initial voice client must use the standard variant endpoint')
+            try:
+                self._voice_model_id = variant_config.verify('standard')
+                self._voice_variant = 'standard'
+                from lfm3_variants import GuardedVoiceClient
+                self.client = GuardedVoiceClient(client, variant_config, 'standard', self._voice_model_id,
+                                                 self._invalidate_voice_model)
+            except ValueError as exc:
+                self._voice_variant_error = str(exc)
         self.asr_client = asr_client
         self.agent = agent
         self._saved_agent = agent
@@ -216,7 +233,7 @@ class Assistant:
             self.warning = getattr(self.front, 'aec_error', None)
             # Warmup finishes BEFORE listening can submit chat, so it cannot
             # reset an established conversation. No delayed background TTS.
-            if self.client.health() and not self._stop.is_set():
+            if (self.variant_config is None or self._voice_model_id is not None) and self.client.health() and not self._stop.is_set():
                 warm = Turn()
                 with self._lock:
                     self._warmup = warm
@@ -307,6 +324,8 @@ class Assistant:
             asr_s=job.asr_s if self.agent and not job.test else None,
             agent_s=job.agent_s if self.agent and not job.test else None,
             agent_trace=job.agent_trace,
+            voice_variant=self._voice_variant if self._voice_model_id else None,
+            reported_voice_model_id=self._voice_model_id,
             sources=list(job.sources),
             tts_first_audio_s=round(job.turn.ttft, 3) if job.turn.ttft is not None else None,
             generated_audio_s=round(job.turn.audio_samples / 24000, 3),
@@ -886,6 +905,22 @@ class Assistant:
         turn.request_observer = None if self.agent and not job.test else lambda payload: self._archive_call(job, 'record_request', payload)
         def produce():
             try:
+                if self.variant_config is not None:
+                    with self._lock:
+                        variant, expected_id = self._voice_variant, self._voice_model_id
+                    if variant is None or expected_id is None:
+                        raise RuntimeError('Select and verify a local voice model before starting a turn.')
+                    try:
+                        actual_id = self.variant_config.verify(variant)
+                        if actual_id != expected_id:
+                            raise ValueError('The voice server reported a different model identifier')
+                    except ValueError as exc:
+                        with self._lock:
+                            self._voice_model_id = None
+                            self._voice_variant_error = str(exc)
+                        raise RuntimeError('Voice model verification failed: ' + str(exc)) from exc
+                    if turn.cancel.is_set():
+                        return
                 with self._lock:
                     if self._active is job:
                         self.gen_start = time.time()
@@ -1198,6 +1233,56 @@ class Assistant:
     def _require_idle_settings(self):
         if self.status == 'recording' or self._active is not None or self._pending_jobs:
             raise RuntimeError('Wait until the current conversation turn finishes before changing settings.')
+
+    def _invalidate_voice_model(self, message):
+        with self._lock:
+            self._voice_model_id = None
+            self._voice_variant_error = message
+
+    def set_voice_variant(self, variant):
+        if self.variant_config is None:
+            raise ValueError('Configure a research voice server to enable model switching')
+        if variant not in ('standard', 'research'):
+            raise ValueError('Choose standard or research')
+        with self._lock:
+            self._require_idle_settings()
+            if self.session_archive is not None:
+                raise RuntimeError('Model switching is unavailable during a recorded session.')
+            if self.status in ('starting', 'error') or self._audio_warmup is not None:
+                raise RuntimeError('Wait for audio startup to finish before switching models.')
+            # Verify and prepare the new client before disturbing conversation.
+            try:
+                model_id = self.variant_config.verify(variant)
+            except ValueError as exc:
+                if self._voice_variant == variant:
+                    self._voice_model_id = None
+                    self._voice_variant_error = str(exc)
+                raise
+            if self._voice_variant == variant and self._voice_model_id == model_id:
+                return {'ok': True, 'voice_variant': variant, 'reported_model_id': model_id}
+            from lfm3_client import LFM3Client
+            from lfm3_variants import GuardedVoiceClient
+            candidate = LFM3Client(self.variant_config.endpoints[variant], timeout=self.client.timeout)
+            if getattr(self.client, '_custom_voice_params', False):
+                candidate.set_voice_params(**self._voice_params)
+            candidate = GuardedVoiceClient(candidate, self.variant_config, variant, model_id,
+                                           self._invalidate_voice_model)
+            previous = self.client
+            try:
+                self.reset()
+            except Exception:
+                candidate.close()
+                raise
+            self.client = candidate
+            self._voice_variant, self._voice_model_id = variant, model_id
+            self._voice_variant_error = None
+            self._server_ok = True
+            try:
+                previous.close()
+            except Exception:
+                pass
+            self.diagnostics.event('voice_variant_changed', variant=variant, reported_model_id=model_id)
+            return {'ok': True, 'voice_variant': variant, 'reported_model_id': model_id}
 
     def set_agent_mode(self, mode, model=None):
         if not isinstance(mode, str):
@@ -1568,6 +1653,10 @@ class Assistant:
                         agent_persona=getattr(self.agent, 'persona', None),
                         agent_tools=tools,
                         voice_params=dict(self._voice_params),
+                        voice_variant_enabled=self.variant_config is not None,
+                        voice_variant=self._voice_variant if self._voice_model_id else None,
+                        voice_model_id=self._voice_model_id,
+                        voice_variant_error=self._voice_variant_error,
                         search_enabled=bool(self.agent and self.agent.search_enabled),
                         search_provider=getattr(self.agent, 'search_provider', None),
                         agent_sources=[dict(source) for source in self._agent_sources],
@@ -1717,6 +1806,17 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._send(json.dumps({'ok': True, 'milliseconds': actual}))
                 return
+            elif self.path == '/api/voice-variant':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'variant'}:
+                    raise ValueError('Expected voice variant')
+                try:
+                    result = assistant.set_voice_variant(desired['variant'])
+                except ValueError as exc:
+                    self._send(json.dumps({'error': str(exc)}), 400)
+                    return
+                self._send(json.dumps(result))
+                return
             elif self.path == '/api/agent':
                 desired = json.loads(raw or b'{}')
                 if not isinstance(desired, dict) or 'mode' not in desired or not set(desired) <= {'mode', 'model'}:
@@ -1774,7 +1874,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def create_voice_clients(backend, transport, asr_url=None, agent_enabled=False):
+def create_voice_clients(backend, transport, asr_url=None, agent_enabled=False, variant_config=None):
     """Select the explicitly requested voice transport without opening devices."""
     if backend not in ('lfm2', 'lfm3'):
         raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
@@ -1791,7 +1891,8 @@ def create_voice_clients(backend, transport, asr_url=None, agent_enabled=False):
         client_type = LFM3Client
     else:
         client_type = ServerClient
-    return client_type(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080')), client_type(asr_url) if asr_url else None
+    base = variant_config.endpoints['standard'] if variant_config else os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080')
+    return client_type(base), client_type(asr_url) if asr_url else None
 
 
 def voice_context_endpoint():
@@ -1804,7 +1905,7 @@ def voice_context_endpoint():
     return ('https://' if parsed.scheme == 'wss' else 'http://') + parsed.netloc
 
 
-def main():
+def main(variant_config=None):
     asr_url = os.getenv('LOCALVOICE_ASR_SERVER')
     from pathlib import Path
     log_path = Path(__file__).resolve().parents[1] / 'outputs' / 'logs' / 'app.jsonl'
@@ -1836,8 +1937,8 @@ def main():
         raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
     backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()
     transport = os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower()
-    client, asr_client = create_voice_clients(backend, transport, asr_url, agent is not None)
-    assistant = Assistant(client=client, asr_client=asr_client, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent, trace_path=trace_path)
+    client, asr_client = create_voice_clients(backend, transport, asr_url, agent is not None, variant_config)
+    assistant = Assistant(client=client, asr_client=asr_client, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent, trace_path=trace_path, variant_config=variant_config)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
     from self_improve import SelfImprover
@@ -1853,13 +1954,36 @@ def main():
         server.server_close()
 
 
-if __name__ == '__main__':
-    from contextlib import ExitStack
-    from backend_session import backend_session, canonical_base
+def configured_voice_variants():
+    research_url = os.getenv('LOCALVOICE_LFM3_RESEARCH_SERVER', '').strip()
+    if not research_url:
+        return None
+    if (os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower() != 'lfm3'
+            or os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower() != 'http'
+            or os.getenv('LOCALVOICE_ASR_SERVER')):
+        raise ValueError('Voice variant switching requires LFM3 HTTP mode without a separate ASR server')
+    from lfm3_variants import VoiceVariants
+    return VoiceVariants(
+        voice_context_endpoint(), research_url,
+        os.getenv('LOCALVOICE_LFM3_STANDARD_MODEL_ID', 'LFM3-Omni-2B-Q4_K_M.gguf'),
+        os.getenv('LOCALVOICE_LFM3_RESEARCH_MODEL_ID', 'research-q4.gguf'))
+
+
+def voice_context_endpoints(variant_config=None):
+    from backend_session import canonical_base
     endpoints = {canonical_base(voice_context_endpoint())}
+    if variant_config is not None:
+        endpoints = set(variant_config.endpoints.values())
     if os.getenv('LOCALVOICE_ASR_SERVER'):
         endpoints.add(canonical_base(os.environ['LOCALVOICE_ASR_SERVER']))
+    return endpoints
+
+
+if __name__ == '__main__':
+    from contextlib import ExitStack
+    from backend_session import backend_session
+    variant_config = configured_voice_variants()
     with ExitStack() as sessions:
-        for endpoint in sorted(endpoints):
+        for endpoint in sorted(voice_context_endpoints(variant_config)):
             sessions.enter_context(backend_session(endpoint))
-        main()
+        main(variant_config=variant_config)

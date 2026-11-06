@@ -181,9 +181,8 @@ to 0.102 s, and avoids the flat pitch and metallic buzz caused by greedy (`--tem
 #### Optional model-modification research
 
 The original and a separately prepared research variant can be selected when
-starting an LFM3 backend. This is a server restart, not an in-app live switch;
-it changes the local voice model, not the remote cloud model. Model weights and
-native runners are not included in this repository.
+starting an LFM3 backend. Model weights and native runners are not included in
+this repository.
 
 For experiments, obtain the full-precision LFM3 Omni checkpoint separately,
 inspect its custom Python code, and install `heretic-llm==2.0.0` in a separate
@@ -221,6 +220,33 @@ the variant explicitly:
 Use `-Runner` to select an installed Windows server. Research mode requires
 explicit model and projector paths. The launcher does not check model-projector
 compatibility or validate the quality or behavior of the modified model.
+
+To switch from the app, start the standard and research servers independently
+on distinct loopback ports, with enough memory for both. For example, configure
+the research WSL server as described above and set `LOCALVOICE_LFM3_PORT=18087`
+before starting it. Then start the app with:
+
+```powershell
+$env:LOCALVOICE_BACKEND = 'lfm3'
+$env:LOCALVOICE_LFM3_RESEARCH_SERVER = 'http://127.0.0.1:18087'
+python src/app.py
+```
+
+The standard server defaults to port 8080 and may be changed with
+`LOCALVOICE_SERVER`. Both URLs must be loopback HTTP addresses with explicit
+ports. The app does not start or stop either server. It checks the identifier
+reported by each server's `/v1/models` endpoint before use. Expected names
+default to `LFM3-Omni-2B-Q4_K_M.gguf` and `research-q4.gguf`; override these
+with `LOCALVOICE_LFM3_STANDARD_MODEL_ID` and `LOCALVOICE_LFM3_RESEARCH_MODEL_ID`
+if the servers report different names. These are server-reported identifiers,
+not independently verified file hashes.
+
+The selector starts a new conversation when changed and cannot be used during
+an active turn or recorded session. In local mode it changes the model for the
+conversation; in cloud mode it changes local transcription and speech synthesis,
+while the selected cloud reasoning model stays the same. This option requires
+the LFM3 HTTP transport and does not support a separate ASR server. Both server
+contexts are reserved by the app while it runs.
 
 From the repository root, start the backend:
 
