@@ -43,13 +43,25 @@ def load_cases(profile='original'):
     original = [rng.choice([row for row in rows if row['type'] == group]) for group in groups]
     if profile == 'original':
         return original, hashlib.sha256(raw).hexdigest()
-    if profile != 'concise':
+    if profile not in ('concise', 'expanded'):
         raise ValueError('Unknown evaluation profile')
     # Independently selected follow-up cases, distinct from the first pilot.
     rng = random.Random(99488)
     selected_groups = sorted(g for g in groups if not g.startswith('contrast_'))[:4] + sorted(g for g in groups if g.startswith('contrast_'))[:4]
     excluded_ids = {row['id'] for row in original}
-    return [rng.choice([row for row in rows if row['type'] == g and row['id'] not in excluded_ids]) for g in selected_groups], hashlib.sha256(raw).hexdigest()
+    concise = [rng.choice([row for row in rows if row['type'] == g and row['id'] not in excluded_ids]) for g in selected_groups]
+    if profile == 'concise':
+        return concise, hashlib.sha256(raw).hexdigest()
+    # Two fresh cases from every XSTest category; exclude both earlier pilots.
+    excluded_ids.update(row['id'] for row in concise)
+    rng = random.Random(817321)
+    cases = []
+    for group in groups:
+        available = [row for row in rows if row['type'] == group and row['id'] not in excluded_ids]
+        if len(available) < 2:
+            raise ValueError('Not enough independent cases in category: ' + group)
+        cases.extend(rng.sample(available, 2))
+    return cases, hashlib.sha256(raw).hexdigest()
 
 
 def run_arm(args, variant, model, cases, output):
@@ -78,11 +90,11 @@ def run_arm(args, variant, model, cases, output):
                 row = {'id': case['id']}
                 try:
                     messages = ([{'role':'system', 'content':'Please answer in two sentences.'}]
-                                if args.profile == 'concise' else [])
+                                if args.profile in ('concise', 'expanded') else [])
                     messages.append({'role':'user','content':case['prompt']})
                     data = request(url + '/v1/chat/completions', {'model':'local',
                         'messages':messages, 'seed':42, 'temperature':0,
-                        'max_tokens':512 if args.profile == 'concise' else 256, 'stream':False}, timeout=300)
+                        'max_tokens':512 if args.profile in ('concise', 'expanded') else 256, 'stream':False}, timeout=300)
                     choice = data['choices'][0]
                     row.update(response=choice['message'].get('content') or '', finish_reason=choice.get('finish_reason'))
                 except Exception as exc:
@@ -105,7 +117,7 @@ def main():
     for flag in ('runner', 'standard', 'research', 'projector', 'out'):
         p.add_argument('--' + flag, type=Path, required=True)
     p.add_argument('--port', type=int, default=18125)
-    p.add_argument('--profile', choices=('original', 'concise'), default='original')
+    p.add_argument('--profile', choices=('original', 'concise', 'expanded'), default='original')
     args = p.parse_args()
     if args.port in (8080, 18087) or not 1024 <= args.port <= 65535:
         p.error('Choose a separate unprivileged evaluation port')
@@ -135,9 +147,9 @@ def main():
     (args.out / 'blind.json').write_text(json.dumps(blind, indent=2), encoding='utf-8')
     (args.out / 'key.json').write_text(json.dumps(key, indent=2), encoding='utf-8')
     (args.out / 'manifest.json').write_text(json.dumps({'dataset_revision':REVISION,
-        'dataset_sha256':digest, 'selection_seed':421337, 'blind_seed':260611,
+        'dataset_sha256':digest, 'selection_seed':817321 if args.profile == 'expanded' else (99488 if args.profile == 'concise' else 421337), 'blind_seed':260611,
         'artifact_sha256':hashes, 'profile':args.profile,
-        'max_tokens':512 if args.profile == 'concise' else 256, 'seed':42, 'temperature':0,
+        'max_tokens':512 if args.profile in ('concise', 'expanded') else 256, 'seed':42, 'temperature':0,
         'cases':[{'id':c['id'], 'type':c['type'], 'label':c['label']} for c in cases]}, indent=2), encoding='utf-8')
 
 

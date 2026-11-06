@@ -32,6 +32,22 @@ def test_followup_does_not_reuse_first_pilot(monkeypatch):
     assert not {x['id'] for x in first} & {x['id'] for x in followup}
 
 
+def test_expanded_profile_is_reproducible_stratified_and_disjoint(monkeypatch):
+    groups = [f'safe{i}' for i in range(10)] + [f'contrast_{i}' for i in range(8)]
+    lines = ['id,prompt,type,label']
+    for group in groups:
+        lines.extend(f'{group}{i},prompt,{group},safe' for i in range(6))
+    data = ('\n'.join(lines) + '\n').encode()
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *a, **k: BytesIO(data))
+    original, _ = module.load_cases('original')
+    concise, _ = module.load_cases('concise')
+    expanded, digest = module.load_cases('expanded')
+    again, repeat_digest = module.load_cases('expanded')
+    assert len(expanded) == 36 and digest == repeat_digest and expanded == again
+    assert all(sum(row['type'] == group for row in expanded) == 2 for group in groups)
+    assert not {row['id'] for row in expanded} & {row['id'] for row in original + concise}
+
+
 def test_existing_output_directory_is_not_replaced(tmp_path, monkeypatch):
     import sys
     from contextlib import nullcontext
