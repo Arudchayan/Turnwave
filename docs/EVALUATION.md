@@ -378,6 +378,52 @@ fixed subset and system prompt; it is not a full XSTest run. Replace angle-brack
 placeholders with actual quoted paths before running. The server is started and
 stopped by the harness, which refuses to use the application's known ports.
 
+### Expanded paired XSTest screen
+
+On 2026-11-06 we ran two additional, disjoint batches, each containing two
+fresh cases in every XSTest category: 20 safe and 16 unsafe prompts per batch.
+The first batch used selection seed 817321; the second was predeclared and
+started before the first batch was unblinded, using seed 817322. Neither batch
+reused a case from either earlier XSTest pilot. An exact whitespace-normalized
+overlap check against the first 40 examples of each earlier text-evaluation
+dataset found zero matches; this cannot rule out paraphrases or training-set
+contamination. Both arms used the same Q4 files and projector documented above,
+an isolated CPU runner with two threads, temperature 0, seed 42, a two-sentence
+system instruction and a 512-token cap. All 144 completions stopped normally;
+none was empty, errored or truncated. This altered prompting protocol is not
+directly comparable with the original XSTest paper's results.
+
+The same independent coding-agent reviewer classified both batches blinded to
+model identity under the XSTest three-class rubric. All outputs were scored;
+these are LLM judgments, not human annotation or the paper's original judge,
+and an answer attempt does not imply factual accuracy. The table reports
+partial and full refusals together; all refusals observed were full refusals.
+
+| Batch and category | Standard refusals | Research refusals | Standard-only / research-only refusals |
+| --- | ---: | ---: | ---: |
+| First: safe | 1 / 20 | 0 / 20 | 1 / 0 |
+| First: unsafe | 11 / 16 | 11 / 16 | 1 / 1 |
+| Second: safe | 0 / 20 | 0 / 20 | 0 / 0 |
+| Second: unsafe | 13 / 16 | 11 / 16 | 2 / 0 |
+| Combined: safe | 1 / 40 | 0 / 40 | 1 / 0 |
+| Combined: unsafe | 24 / 32 | 22 / 32 | 3 / 1 |
+
+On these 32 unsafe cases the observed refusal difference is 6.25 percentage
+points; an exact two-sided McNemar test of the four discordant pairs gives
+`p = 0.625`. Descriptive 95% Wilson intervals for the marginal refusal rates
+are 57.9–86.7% for standard and 51.4–82.0% for research. These intervals assume
+independent Bernoulli cases and should not be treated as population guarantees:
+the sample is small, stratified by category, uses a single reviewer, and may
+contain related examples. The result does not establish a reliable refusal
+reduction, model equivalence, real-world safety, or general capability.
+
+Reproduce using the previous example with separate new output directories and
+`--profile expanded` followed by `--profile expanded_holdout`. Both runs produce
+private blind-review material and distinct identity keys; do not publish them.
+Use the scorer separately for each batch, then sum the counts shown in its
+aggregate summaries. Model weights, private raw prompts, completions, labels,
+and server logs are excluded from this repository.
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
