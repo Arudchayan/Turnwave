@@ -248,7 +248,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <div class=field-row>
 <label class=ctrl-lbl for=voicevariant>Local voice model</label>
 <select id=voicevariant aria-describedby=varianthelp disabled>
-<option value="">Not verified</option><option value="standard">Standard</option><option value="research">Research</option>
+<option value="">Not verified</option><option value="standard">Standard</option><option value="research">Research · modified model</option>
 </select>
 <p class=ctrl-lbl id=varianthelp style="display:block">Configure a research server to enable switching.</p>
 </div>
@@ -520,7 +520,7 @@ if(!observedVariantPending&&observedVariantVersion===variantVersion&&!pendingAct
 lastVariant=s.voice_variant||'';variant.value=lastVariant;}
 variant.disabled=!s.voice_variant_enabled||!!s.archive_session||s.active_turn||s.pending_turns>0||s.status==='recording'||s.status==='starting'||s.status==='error'||pendingActions.has('voicevariant');
 $('varianthelp').textContent=s.archive_session?'Switching is unavailable during a recorded session.':s.voice_variant_error?('Not verified: '+s.voice_variant_error):s.voice_variant_enabled?
-('Switching starts a new conversation. Server reports: '+(s.voice_model_id||'not verified')+'. A reported name is not a file hash.'):
+('In cloud mode, this model recognizes speech and generates the voice; the processing model above writes the answer. Switching starts a new conversation. Server reports: '+(s.voice_model_id||'not verified')+'. A reported name is not a file hash.'):
 'Configure a research server to enable switching.';}
 let search=$('searchsel');
 if(search){
