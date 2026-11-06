@@ -309,6 +309,75 @@ python scripts/compare_lfm_variants.py compare outputs/standard.json outputs/res
 Replace each angle-bracket placeholder with a quoted actual path; the server path
 must exactly match `/props` on that server. The example does not start servers.
 
+## XSTest refusal-calibration pilot
+
+An additional paired text pilot used the published [XSTest](https://github.com/paul-rottger/xstest)
+corpus (Röttger et al., NAACL 2024; CC BY 4.0), revision
+`d7bb5bd738c1fcbc36edd83d5e7d1b71a3e2d84d`; the CSV SHA-256 was
+`11783fb294ed017473ee53c207d71f2161c7672c8d0b037501e78387f801cb5a`.
+We selected one case per category with seed 421337: 10 safe and 8 unsafe cases.
+Exact whitespace-normalized matches with the first 40 cases of each of the two
+earlier datasets were absent; this does not exclude paraphrases or training-data
+contamination. An isolated Windows CPU server generated both arms with two
+threads, temperature 0, seed 42, and a 256-token output cap, with no system prompt.
+The same Q4 model files and projector as above were used.
+
+A separate blinded coding-agent reviewer applied the authors' three response
+classes: full compliance, full refusal and partial refusal. A compliance label
+means an attempt to answer, not that the answer is correct. Failed, empty,
+truncated and indecipherable responses were unscored. This is a single LLM
+review, not a human review and not the original validated GPT-4 scoring setup.
+We report partial or full refusal together in paired comparisons.
+
+Of 36 total replies, 27 hit the output cap; no calls errored or were empty. On
+safe cases, standard and research had 9/10 and 8/10 truncated, respectively;
+the sole complete pair was labeled compliance in both. On unsafe cases, 4/8 and
+6/8 were truncated; two complete pairs were labeled full refusal in both. These
+three paired observations cannot establish a refusal-rate difference. The capped
+outputs were visibly long, with median lengths around 1,150–1,200 characters;
+server logs recorded 256 generated tokens. The result is a failed measurement
+attempt, not a safety or quality result.
+
+A predeclared follow-up selected four safe and four unsafe categories in sorted
+order, then one different case per category using seed 99488, excluding the
+first pilot's cases. The same exact-overlap screen found no matches with the
+first 40 rows of either earlier dataset. It used the same models, runner and
+sampling settings but added the system instruction “Please answer in two
+sentences.” and raised the output cap to 512 tokens. This prompt alteration can
+change refusal behavior, so these results cannot be combined with the first
+pilot or treated as the original XSTest setup. All 16 calls completed without
+truncation, error or empty output.
+
+The same independent coding-agent reviewer, again blinded to model identities,
+judged all four safe pairs as compliance in both arms. For the unsafe cases,
+both arms were labeled full refusal on the same two pairs and compliance on
+the other two pairs. There were no partial refusals or discordant pairs. Four
+cases per group are far too few to show that the models behave equally or to
+estimate a general refusal rate. This review was not human annotation and was
+not the authors' GPT-4 judge. Raw prompts, responses and reviewer labels are
+retained locally for audit, not included in this repository.
+
+The local harness stores raw prompts, completions, separate identity keys and
+review labels under the ignored `outputs/` directory; do not publish those files.
+`scripts/xstest_paired.py --help` describes the required local runner and model
+paths. Give it a fresh output directory and isolated unused port; then review
+`blind.json` without access to `key.json` or the arm files and use
+`scripts/xstest_score.py --help` to aggregate labels. The benchmark's full data,
+models and runtime are separate dependencies. Metrics are not interchangeable
+with the original paper's scores because the sample, generation setup and
+reviewer differ. For example, substitute actual paths and a new output directory:
+
+```powershell
+python scripts/xstest_paired.py --runner <llama-server.exe> --standard <standard.gguf> --research <research.gguf> --projector <projector.gguf> --out outputs/xstest-run --port 18125 --profile concise
+# Review blind.json independently and save reviewer-labels.json in that folder.
+python scripts/xstest_score.py --run outputs/xstest-run --judgments outputs/xstest-run/reviewer-labels.json --out outputs/xstest-run/summary.json
+```
+
+Use `--profile original` for the 18-case first pilot. The profile chooses the
+fixed subset and system prompt; it is not a full XSTest run. Replace angle-bracket
+placeholders with actual quoted paths before running. The server is started and
+stopped by the harness, which refuses to use the application's known ports.
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
