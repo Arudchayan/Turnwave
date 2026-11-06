@@ -1,4 +1,6 @@
 -r requirements.txt
 -r requirements-recording.txt
+-r requirements-realtime.txt
+-r requirements-eot.txt
 pytest>=8.3,<9
 urllib3>=2,<3

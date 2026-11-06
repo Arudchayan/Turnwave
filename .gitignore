@@ -30,6 +30,7 @@ outputs/experiments/
 !/docs/RECORDED_SESSIONS.md
 !/docs/RESULTS.md
 !/docs/EVALUATION.md
+!/docs/TESTING.md
 !/docs/THIRD_PARTY.md
 !/docs/assets/
 /docs/assets/*
@@ -47,6 +48,10 @@ outputs/experiments/
 !/research/results.json
 !/research/short-turn-cases.json
 !/research/candidate-screen-cases.json
+!/research/floor_replay_summary.json
+!/research/floor_acoustic_summary.json
+!/research/eot_bench_summary.json
+!/research/lfm3_asr_summary.json
 !/research/examples/
 /research/examples/*
 !/research/examples/README.md

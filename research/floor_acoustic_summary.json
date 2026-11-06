@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "evidence_class": "offline acoustic stress replay; public human near-end + generated far-end + synthetic echo",
+  "near_source": "librispeech-dummy",
+  "step_ms": 20,
+  "summary": {
+    "hard": {
+      "cases": 4,
+      "started": 3,
+      "ducked": 0,
+      "resumed": 0,
+      "cancelled": 3,
+      "false_cancels": 1,
+      "missed": 0
+    },
+    "reversible": {
+      "cases": 4,
+      "started": 3,
+      "ducked": 3,
+      "resumed": 0,
+      "cancelled": 3,
+      "false_cancels": 1,
+      "missed": 0
+    }
+  },
+  "cases": [
+    {
+      "id": "echo_only",
+      "mode": "hard",
+      "started": false,
+      "ducked": false,
+      "resumed": false,
+      "cancelled": false,
+      "cancel_at_ms": null,
+      "expected_cancel": false,
+      "false_cancel": false,
+      "missed": false,
+      "actions": []
+    },
+    {
+      "id": "backchannel",
+      "mode": "hard",
+      "started": true,
+      "ducked": false,
+      "resumed": false,
+      "cancelled": true,
+      "cancel_at_ms": 1660.0,
+      "expected_cancel": false,
+      "false_cancel": true,
+      "missed": false,
+      "actions": [
+        {
+          "kind": "commit",
+          "at_ms": 1660.0,
+          "speech_ms": 0.0,
+          "reason": "hard"
+        }
+      ]
+    },
+    {
+      "id": "floor_take",
+      "mode": "hard",
+      "started": true,
+      "ducked": false,
+      "resumed": false,
+      "cancelled": true,
+      "cancel_at_ms": 1660.0,
+      "expected_cancel": true,
+      "false_cancel": false,
+      "missed": false,
+      "actions": [
+        {
+          "kind": "commit",
+          "at_ms": 1660.0,
+          "speech_ms": 0.0,
+          "reason": "hard"
+        }
+      ]
+    },
+    {
+      "id": "mid_pause",
+      "mode": "hard",
+      "started": true,
+      "ducked": false,
+      "resumed": false,
+      "cancelled": true,
+      "cancel_at_ms": 1660.0,
+      "expected_cancel": true,
+      "false_cancel": false,
+      "missed": false,
+      "actions": [
+        {
+          "kind": "commit",
+          "at_ms": 1660.0,
+          "speech_ms": 0.0,
+          "reason": "hard"
+        }
+      ]
+    },
+    {
+      "id": "echo_only",
+      "mode": "reversible",
+      "started": false,
+      "ducked": false,
+      "resumed": false,
+      "cancelled": false,
+      "cancel_at_ms": null,
+      "expected_cancel": false,
+      "false_cancel": false,
+      "missed": false,
+      "actions": []
+    },
+    {
+      "id": "backchannel",
+      "mode": "reversible",
+      "started": true,
+      "ducked": true,
+      "resumed": false,
+      "cancelled": true,
+      "cancel_at_ms": 1880.0,
+      "expected_cancel": false,
+      "false_cancel": true,
+      "missed": false,
+      "actions": [
+        {
+          "kind": "duck",
+          "at_ms": 1660.0,
+          "speech_ms": 0.0,
+          "reason": "duck"
+        },
+        {
+          "kind": "commit",
+          "at_ms": 1880.0,
+          "speech_ms": 316.0,
+          "reason": "sustained-speech"
+        }
+      ]
+    },
+    {
+      "id": "floor_take",
+      "mode": "reversible",
+      "started": true,
+      "ducked": true,
+      "resumed": false,
+      "cancelled": true,
+      "cancel_at_ms": 1880.0,
+      "expected_cancel": true,
+      "false_cancel": false,
+      "missed": false,
+      "actions": [
+        {
+          "kind": "duck",
+          "at_ms": 1660.0,
+          "speech_ms": 0.0,
+          "reason": "duck"
+        },
+        {
+          "kind": "commit",
+          "at_ms": 1880.0,
+          "speech_ms": 316.0,
+          "reason": "sustained-speech"
+        }
+      ]
+    },
+    {
+      "id": "mid_pause",
+      "mode": "reversible",
+      "started": true,
+      "ducked": true,
+      "resumed": false,
+      "cancelled": true,
+      "cancel_at_ms": 1880.0,
+      "expected_cancel": true,
+      "false_cancel": false,
+      "missed": false,
+      "actions": [
+        {
+          "kind": "duck",
+          "at_ms": 1660.0,
+          "speech_ms": 0.0,
+          "reason": "duck"
+        },
+        {
+          "kind": "commit",
+          "at_ms": 1880.0,
+          "speech_ms": 316.0,
+          "reason": "sustained-speech"
+        }
+      ]
+    }
+  ],
+  "limits": "One speaker/model voice pair, synthetic echo, no real room, microphone, speaker or live model. Mid-pause is a known EOT limitation. Not a room acceptance test."
+}

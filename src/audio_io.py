@@ -357,35 +357,123 @@ class Player:
         self.device = device if device is not None else preferred_device('output')
         self.native_rate = rate
         self.native_channels = 1
-        try:
-            info = sd.query_devices(self.device, 'output')
-            self.native_rate = int(info['default_samplerate'])
-            self.native_channels = min(2, int(info['max_output_channels']))
-        except Exception:
-            pass
+        self._configure_device(self.device)
         self.stats = {}
         self._gen = 0
         self._lock = threading.Lock()
         self._stream = None
         self.playing = False
         self._target_gain = 1.0
+        self._gain = 1.0
+        self._gain_target = 1.0
+        self._gain_step = 0.0
 
-    def set_gain(self, level):
-        """Set the playback gain target (clamped to 0..1), effective next piece."""
-        level = float(level)
-        if not math.isfinite(level):
-            return self._target_gain
-        level = max(0.0, min(1.0, level))
+    def _configure_device(self, device):
+        try:
+            info = sd.query_devices(device, 'output')
+            self.device = device
+            self.native_rate = int(info['default_samplerate'])
+            self.native_channels = min(2, max(1, int(info['max_output_channels'])))
+            return True
+        except Exception:
+            return False
+
+    def refresh_device(self):
+        cand = preferred_device('output')
+        if cand is not None:
+            self._configure_device(cand)
+
+    def _open_stream(self):
+        try:
+            stream = sd.OutputStream(samplerate=self.native_rate, channels=self.native_channels,
+                                     dtype='float32', device=self.device,
+                                     blocksize=round(self.native_rate * .02), latency='low')
+            stream.start()
+            return stream
+        except sd.PortAudioError as primary_err:
+            candidates = []
+            pref = preferred_device('output')
+            if pref is not None:
+                candidates.append(pref)
+            try:
+                default_out = int(sd.default.device[1])
+                if default_out >= 0 and default_out not in candidates:
+                    candidates.append(default_out)
+            except Exception:
+                pass
+            try:
+                for idx, info in enumerate(sd.query_devices()):
+                    if int(info.get('max_output_channels', 0)) > 0 and idx not in candidates:
+                        candidates.append(idx)
+            except Exception:
+                pass
+            candidates.append(None)
+            for cand in candidates:
+                if cand == self.device and cand is not None:
+                    continue
+                try:
+                    info = sd.query_devices(cand, 'output')
+                    rate = int(info['default_samplerate'])
+                    channels = min(2, max(1, int(info['max_output_channels'])))
+                except Exception:
+                    rate, channels = self.rate, 1
+                stream = None
+                try:
+                    stream = sd.OutputStream(samplerate=rate, channels=channels,
+                                             dtype='float32', device=cand,
+                                             blocksize=round(rate * .02), latency='low')
+                    stream.start()
+                    self.device = cand
+                    self.native_rate = rate
+                    self.native_channels = channels
+                    return stream
+                except Exception:
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except Exception:
+                            pass
+            raise primary_err
+
+    def set_gain(self, gain, ramp_ms=20):
+        """Ramp output gain without clicks; return the clamped target."""
+        gain = float(gain)
+        ramp_ms = float(ramp_ms)
+        if not math.isfinite(gain) or not math.isfinite(ramp_ms):
+            return self._gain_target
+        gain = max(0.0, min(1.0, gain))
         with self._lock:
-            self._target_gain = level
-            return self._target_gain
+            self._gain_target = self._target_gain = gain
+            samples = max(1, round(self.rate * max(0.0, ramp_ms) / 1000))
+            if samples == 1:
+                self._gain, self._gain_step = gain, 0.0
+            else:
+                self._gain_step = (gain - self._gain) / (samples - 1)
+        return gain
+
+    def _render_gain(self, samples):
+        """Apply the gain envelope to the signal sent to playback and AEC."""
+        if not len(samples):
+            return samples
+        with self._lock:
+            gain, target, step = self._gain, self._gain_target, self._gain_step
+            if gain == target:
+                return samples if gain == 1.0 else samples * gain
+            envelope = gain + step * np.arange(len(samples), dtype=np.float32)
+            envelope = np.minimum(envelope, target) if step > 0 else np.maximum(envelope, target)
+            self._gain = float(envelope[-1])
+            if abs(self._gain - target) < 1e-6:
+                self._gain, self._gain_step = target, 0.0
+        return samples * envelope.astype(np.float32)
+
 
     def stop(self):
         with self._lock:
             self._gen += 1
             stream = self._stream
             self.playing = False
-            self._target_gain = 1.0
+            self._target_gain = self._gain_target = self._gain = 1.0
+            self._gain_step = 0.0
         if stream is not None:
             try:
                 stream.abort()
@@ -398,12 +486,13 @@ class Player:
         with self._lock:
             self._gen += 1
             generation = self._gen
-            # A new reply always begins at full gain; stale ducking from a
-            # previous candidate must not leak into it.
             self._target_gain = 1.0
+            self._gain = 1.0
+            self._gain_target = 1.0
+            self._gain_step = 0.0
+
         stream = None
         started = False
-        applied_gain = 1.0
         self.stats = dict(underflows=0, source_samples=0, device_samples=0, max_gap_ms=0.0, latency_s=None)
         previous_write = None
         previous_duration = 0.0
@@ -416,28 +505,16 @@ class Player:
                     if obsolete or (cancel is not None and cancel.is_set()):
                         return
                     if stream is None:
-                        stream = sd.OutputStream(samplerate=self.native_rate, channels=self.native_channels,
-                                                 dtype='float32', device=self.device,
-                                                 blocksize=round(self.native_rate * .02), latency='low')
+                        stream = self._open_stream()
                         with self._lock:
                             if generation != self._gen:
                                 return
                             self._stream = stream
                             self.playing = True
-                        stream.start()
                         self.stats['latency_s'] = float(getattr(stream, 'latency', 0))
-                    piece = audio[offset:offset + 480]
-                    with self._lock:
-                        target_gain = self._target_gain
-                    if applied_gain != 1.0 or target_gain != 1.0:
-                        if target_gain != applied_gain:
-                            fade = np.linspace(applied_gain, target_gain,
-                                               len(piece), endpoint=False,
-                                               dtype=np.float32)
-                        else:
-                            fade = np.full(len(piece), target_gain, np.float32)
-                        piece = piece * fade
-                    applied_gain = target_gain
+                    source = audio[offset:offset + 480]
+                    piece = self._render_gain(source)
+
                     if not started:
                         started = True
                         if on_start is not None:
@@ -452,9 +529,11 @@ class Player:
                         return
                     try:
                         device_audio = piece
-                        if self.native_rate != self.rate:
+                        if self.native_rate != self.rate and len(piece):
                             positions = np.arange(round(len(piece) * self.native_rate / self.rate)) * self.rate / self.native_rate
-                            device_audio = np.interp(positions, np.arange(len(piece)), piece).astype(np.float32)
+                            tail = np.clip(2.0 * float(piece[-1]) - float(piece[-2]), -1.0, 1.0) if len(piece) > 1 else float(piece[-1])
+                            ext = np.append(piece, np.float32(tail))
+                            device_audio = np.interp(positions, np.arange(len(ext)), ext).astype(np.float32)
                         if self.native_channels > 1:
                             device_audio = np.repeat(device_audio[:, None], self.native_channels, axis=1)
                         now = time.perf_counter()
@@ -466,10 +545,10 @@ class Player:
                             self.stats['underflows'] += 1
                         previous_write = now
                         previous_duration = len(piece) / self.rate
-                        self.stats['source_samples'] += len(piece)
+                        self.stats['source_samples'] += len(source)
                         self.stats['device_samples'] += len(device_audio)
                         if on_written is not None:
-                            on_written(piece)
+                            on_written(source)
                     except sd.PortAudioError:
                         with self._lock:
                             interrupted = generation != self._gen

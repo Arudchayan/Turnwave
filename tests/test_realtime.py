@@ -84,6 +84,22 @@ def test_first_audio_arrives_before_stream_end(streaming_server):
     assert turn.done.is_set() and turn.error is None
 
 
+def test_native_text_prompt_uses_chat_request(monkeypatch):
+    client = ServerClient()
+    captured = []
+    def stream(payload, turn, on_audio):
+        captured.append(payload)
+        turn.text_parts.append('Four.')
+        turn.audio_samples = 2
+        turn.done.set()
+    monkeypatch.setattr(client, '_stream', stream)
+    turn = Turn()
+    client.chat_text('What is two plus two?', turn, first=True)
+    assert captured[0]['messages'][-1]['content'] == 'What is two plus two?'
+    assert captured[0]['modalities'] == ['text', 'audio']
+    assert captured[0]['reset_context'] is True and turn.text == 'Four.'
+
+
 def test_abort_wakes_a_blocked_network_read(streaming_server):
     client, release, _, _ = streaming_server
     turn = Turn(); heard = threading.Event()
@@ -283,6 +299,45 @@ class FakeClient:
         self.chat_turn(b'', turn, True, on_audio)
 
 
+def test_local_typed_turn_gets_an_answer_and_preserves_context():
+    class TextClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.text_calls = []
+        def chat_text(self, text, turn, first, on_audio=None):
+            self.text_calls.append((text, first))
+            turn.text_parts.append('Four.' if first else 'Still four.')
+            turn.audio_samples = 480
+            on_audio(np.ones(480, np.float32) * .1)
+            turn.done.set()
+        def tts(self, *args, **kwargs):
+            raise AssertionError('Typed questions must not be echoed with TTS')
+    client = TextClient()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=client)
+    try:
+        first = app.submit_text('What is two plus two?')
+        wait_for(lambda: first.playback_closed.is_set() and app._active is None)
+        second = app.submit_text('And now?')
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        assert client.text_calls == [('What is two plus two?', True), ('And now?', False)]
+        assert 'assistant: Four.' in app.state()['transcript']
+        assert 'assistant: Still four.' in app.state()['transcript']
+    finally:
+        app.close()
+
+
+def test_local_typed_turn_reports_unsupported_backend_without_repeating_prompt():
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=FakeClient())
+    try:
+        job = app.submit_text('What is two plus two?')
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert job.turn.error == 'This voice backend does not support typed conversation.'
+        assert job.played_samples == 0
+        assert 'assistant: What is two plus two?' not in app.state()['transcript']
+    finally:
+        app.close()
+
+
 @pytest.fixture
 def assistant():
     a = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=FakeClient())
@@ -302,7 +357,8 @@ def test_long_echo_profile_is_opt_in_and_rejects_unknown_values(monkeypatch):
     monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'long')
     a = Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
     a.close()
-    assert options == [{}, {'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
+    assert options == [{'end_silence_ms': 800},
+                       {'end_silence_ms': 800, 'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
     monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'invalid')
     with pytest.raises(ValueError, match='LOCALVOICE_ECHO_PROFILE'):
         Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
@@ -390,6 +446,32 @@ def test_mic_processes_barge_in_during_app_playback(assistant):
     assert any(e['event'] == 'barge_confirm' for e in a.diagnostics.recent())
     end = next(e for e in a.diagnostics.recent() if e['event'] == 'speech_end')
     assert end['pre_roll_ms'] == 250 and 'end_silence_ms' in end
+
+
+def test_interrupted_local_question_is_carried_into_next_turn_and_reset_clears_it(monkeypatch):
+    monkeypatch.setenv('LOCALVOICE_CONTEXT_RECOVERY', '1')
+    class RecoveryClient(FakeClient):
+        supports_context_recovery = True
+        def __init__(self):
+            super().__init__()
+            self.recoveries = []
+        def chat_turn(self, wav, turn, first, on_audio=None, max_tokens=512,
+                      require_audio=True, recovery_wav=None, recovery_reply=''):
+            self.recoveries.append(recovery_wav)
+            super().chat_turn(wav, turn, first, on_audio, max_tokens, require_audio)
+    client = RecoveryClient()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=client)
+    try:
+        first = app.submit_audio(np.ones(8000, np.float32) * .1)
+        wait_for(lambda: app.status == 'speaking')
+        second = app.submit_audio(np.ones(8000, np.float32) * .2)
+        wait_for(lambda: len(client.recoveries) >= 2)
+        assert client.recoveries[:2] == [None, first.wav]
+        assert second.first and first.turn.cancel.is_set()
+        app.reset()
+        assert app._local_recovery_wav == b''
+    finally:
+        app.close()
 
 
 def test_short_blip_during_playback_restores_gain_without_cancelling(assistant):

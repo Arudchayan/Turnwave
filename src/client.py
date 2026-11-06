@@ -101,7 +101,6 @@ class Turn:
         self.text_parts = []
         self.audio_frames = 0
         self.audio_samples = 0
-        self.first_text = None
         self.error = None
         self.finish_reason = None
         self.request_observer = None
@@ -283,6 +282,12 @@ class ServerClient:
         # Never silently replay input into a stateful context. Missing audio
         # is surfaced to the app; the next turn can recover with a reset.
         self._stream(self._payload(CHAT_SYS, self._audio_input(wav_bytes), first, max_tokens), turn, on_audio)
+        if require_audio and not turn.cancel.is_set() and not turn.error and not turn.audio_samples:
+            turn.error = ('The reply reached its length limit before producing audio.' if turn.truncated
+                          else 'The server returned no audio. Please try again.')
+
+    def chat_text(self, text, turn, first, max_tokens=512, on_audio=None, require_audio=True):
+        self._stream(self._payload(CHAT_SYS, text, first, max_tokens), turn, on_audio)
         if require_audio and not turn.cancel.is_set() and not turn.error and not turn.audio_samples:
             turn.error = ('The reply reached its length limit before producing audio.' if turn.truncated
                           else 'The server returned no audio. Please try again.')

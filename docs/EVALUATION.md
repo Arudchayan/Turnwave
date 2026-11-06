@@ -69,6 +69,315 @@ Inference is available through the Python API `infer_injected(...)`, with a
 caller-supplied client and provenance. A real `ServerClient` reserves exclusive
 backend ownership. Unit tests use injected fake clients and neutral generated fixtures. Those tests prove input, output, cancellation, hashing and denominator contracts, not model quality. `requirements-eval.txt` adds the pinned local ASR evaluation dependencies; it does not supply a dataset, a model, or permission to contact a judge.
 
+## Floor replay
+
+`src/synth/floor_replay.py` is an offline policy/timing diagnostic for the
+experimental reversible floor. It feeds authored barge-in shapes (short
+backchannels, a cough, a short command, sustained speech, a mid-turn pause and
+echo-only) to the same `FloorPolicy` the app uses, for both hard and reversible
+modes. It writes per-case decisions and a small A/B summary:
+
+```powershell
+python -m src.synth.floor_replay --out outputs/floor_replay.json
+```
+
+The frozen cases are authored shapes, not human conversation. The mid-pause case
+is a known end-of-turn limitation and is counted separately. Commit latency is
+measured from the confirmed onset and excludes device, model and playback
+latency. Passing this replay is a prerequisite for a real-device A/B, not
+evidence that reversible mode improves live conversation.
+
+## LFM3 realtime smoke test
+
+`src/synth/lfm3_smoke.py` sends one public example WAV through the LFM3
+`/v1/realtime` client and saves the returned 24 kHz audio. On one warm local GPU
+run, the reply text was “Got it, you mentioned buying a blue lamp. What would
+you like to know about it?”, first audio arrived at 0.679 s, and the reply was
+5.04 s long with `finish_reason=stop`. Re-running LFM3 ASR over the saved reply
+returned the same sentence. This is a transport and intelligibility smoke test,
+not a latency benchmark: it is one clip, one machine, and the ASR is the same
+model family rather than an independent judge.
+
+```powershell
+python -m src.synth.lfm3_smoke --wav research/examples/pass-reply.wav \
+  --url ws://127.0.0.1:8080/v1/realtime --out outputs/lfm3-reply.wav
+```
+
+A small public ASR check used the first 20 clips of the LibriSpeech dummy
+fixture through LFM3-Audio-2B Q4_K_M on CPU. Corpus WER was 5.74% and sentence
+error rate 65%; per-clip latency ranged from 0.9 s to 9.0 s. This is clean read
+speech from a small speaker subset, not a full LibriSpeech or noisy-speech
+benchmark.
+
+```powershell
+python scripts/lfm3_asr_bench.py --limit 20 --url http://127.0.0.1:8091
+```
+
+## Acoustic floor stress replay
+
+`src/synth/floor_acoustic.py` drives the real `DuplexFrontend` (Silero VAD,
+WebRTC AEC and echo correlation) with a public human LibriSpeech near-end and a
+generated far-end, plus a delayed attenuated echo. It is a stress test, not a
+room study.
+
+On four cases at 20 ms steps, both hard and reversible modes started on 3/4
+(echo-only did not start) and committed 3/3. The 220 ms backchannel produced
+about 316 ms of VAD evidence in this synthetic double-talk, so it crossed the
+300 ms commit threshold instead of resuming. This is a negative transfer result:
+the authored 3/3 backchannel preservation in the policy replay did not survive
+the real frontend and echo. The reversible path still ducked first and delayed
+the commit by about 220 ms, but it did not preserve the turn.
+
+The acoustic result is a reason the reversible feature remains opt-in. The app's
+default uses deferred interruption; `hard` is an explicit experimental mode.
+Backchannel preservation needs either better double-talk
+evidence, a different duration/energy policy, or real-device tuning.
+
+The separate delayed-tail comparison in [results](RESULTS.md) stops adding the
+render reference after playback ends and evaluates standard versus experimental
+long echo history. It includes near-only and overlapping speech controls; the
+long profile reduces synthetic echo-only starts while delaying some quiet speech.
+
+## Public-pause EOT diagnostic
+
+`src/synth/eot_bench.py` scores the English validation split of
+`livekit/eot-bench-data` with Smart Turn v3.2. It treats every pause long enough
+to reach a decision time as a case: a mid-turn pause that crosses the threshold
+is a false cut-off, and a trailing pause that crosses it is an end-of-turn
+detection. The 300 ms budget produced 864 pause cases (464 mid-turn, 400 final).
+
+All rows below use the **same 864 pauses of at least 300 ms** (464 mid-turn, 400
+final). An earlier draft mixed pause sets and is superseded.
+
+| Policy | False cut-off | EOT recall | p90 final latency |
+| --- | ---: | ---: | ---: |
+| Fixed 480 ms endpoint | 61.64% | 100% | 480 ms |
+| One Smart Turn query at 300 ms | 23.28% | 76% | 300 ms |
+| Re-query every 200 ms, no timeout | 26.29% | 83% | 900 ms |
+| Re-query + 1 s timeout, 0.9/0.7 schedule | 27.37% | 100% | 1000 ms |
+| Re-query + 2 s timeout, 0.9/0.7 schedule | 16.59% | 100% | 2000 ms |
+
+Wilson 95% intervals for the false cut-off rate were 57.13–65.95% for the fixed
+endpoint, 23.51–31.60% for the 1 s schedule and 13.49–20.25% for the 2 s
+schedule. The threshold-free AUC was 0.84 at 300 ms, 0.85 at 500 ms and 0.85 at
+800 ms. The 1 s schedule is the default behind `LOCALVOICE_EOT_MODEL=smart-turn`;
+the 2 s timeout is the lower-false-cut-off option. Most final turns commit at
+the 300 ms query, while uncertain turns are bounded by the timeout. The single
+300 ms query has the lowest false cut-off but misses 24% of final pauses; the
+timeout recovers those turns. Re-querying without a timeout increases false
+cut-offs relative to one query (26.29% vs 23.28%) because a mid-turn pause gets
+more chances to cross the threshold.
+
+The 0.9-first / 0.7-later schedule was selected by sweeping the saved scores on
+the same 864 pauses. To check that selection without leaking a conversation
+across halves, conversations were split deterministically by even/odd group:
+thresholds were chosen on 48 conversations and scored once on the other 48
+(466 pauses, 255 mid-turn).
+
+| Held-out policy | False cut-off (95% CI) | EOT recall | p90 latency |
+| --- | ---: | ---: | ---: |
+| Fixed 480 ms | 63.92% (57.86–69.57) | 100% | 480 ms |
+| One 300 ms query at 0.5 | 23.14% (18.38–28.69) | 72.51% | 300 ms |
+| 0.9/0.7 + 1 s timeout | 31.37% (25.99–37.31) | 100% | 1000 ms |
+| 0.9/0.7 + 2 s timeout | 19.22% (14.85–24.49) | 100% | 2000 ms |
+
+This is the less biased estimate and the one used for the headline claim. It is
+still one deterministic English conversation split, not multi-seed or live
+acceptance. The earlier row-level split was superseded because it could place
+turns from the same conversation on both sides.
+
+### Zero-shot cross-lingual check
+
+The English thresholds were applied unchanged to German (`de`) and Spanish
+(`es`) from the same public dataset, 400 turns each and the same pause
+eligibility rule. Cells are false cut-off / EOT recall.
+
+| Language | Fixed 480 ms | 0.9/0.7 + 1 s | 0.9/0.7 + 2 s |
+| --- | ---: | ---: | ---: |
+| German | 62.95% / 95.64% | 45.40% / 100% | 39.55% / 100% |
+| Spanish | 67.25% / 97.72% | 59.22% / 100% | 52.93% / 100% |
+
+The schedule still beats the fixed endpoint, but transfer is weak: German false
+cut-off is about double the English held-out estimate, and Spanish improves only
+modestly. A stricter first query avoids many premature commits but misses more
+finals; the later 0.7 query then admits many mid-pauses in both languages. These
+results support per-language calibration rather than assuming English thresholds
+are universal. This is a negative transfer result, not a multilingual win.
+Other public turn-taking sets were not run: `Krisp-AI/turn-taking-test-v1` and
+`vapi-ai/eotd-multilingual` are gated, and `mundo-ai/turn-benchmark-*` shards
+are multi-gigabyte.
+
+### Query latency
+
+On this CPU (ONNX Runtime, one inter-op thread), Smart Turn v3.2 on 8 s clips
+measured a 55.47 ms mean, 47.76 ms median and 81.93 ms p90 over 19 warm calls.
+The 300 ms first-query schedule has enough headroom for this hardware; the
+measurement is one local run, not a hardware-independent benchmark.
+
+As a descriptive per-turn check, restrict to the 165 turns that contain a
+mid-turn pause of at least 300 ms. The fixed 480 ms endpoint cut off 125/165
+(75.8%) of those turns; one Smart Turn query at 300 ms cut off 77/165 (46.7%).
+This is a different denominator from the per-pause table and is not used for
+the policy decision.
+
+These are per-pause observations on public English conversational audio, not
+per-turn or real-device results. The labels are derived from the dataset's
+silence timing, not human adjudication of intent. Smart Turn is scored offline
+with Whisper features; the diagnostic excludes the app's microphone, AEC,
+playback and model latency. It is evidence for a bounded policy, not a claim of
+universal endpointing accuracy.
+
+Run it with:
+
+```powershell
+python -m pip install -r requirements-eot.txt
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+```
+
+
+## LFM3 standard and research model: paired text pilot
+
+On 2026-11-05 we compared two local Q4 GGUF models using the same CPU
+llama-server build `b12032-dde879bc4`, projector, settings and prompts. This
+is a bounded experiment, not evidence that either model is safe or generally
+more capable. The research model was produced in a Heretic experiment; the
+standard model is the unmodified comparison. The research candidate came from
+the second, rank-4, five-trial Heretic 2.0.0 study described in
+[results](RESULTS.md#exploratory-lfm3-model-modification), using the LFM3-Omni-2B
+checkpoint revision `5797d07c125503bd4f4c0e7f915ae2d3d703e8de`. The standard
+and modified checkpoints were converted and quantized separately to Q4_K_M;
+quantization and conversion may contribute to observed differences, so they
+cannot be attributed solely to Heretic. Model SHA-256 values:
+
+- Standard: `9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2`
+- Research: `55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`
+- Shared projector: `0a746c0794782a16d4456b230c2a0b5888a2d94a6677211edbed7d7a4177a39a`
+
+The primary sample used 20 harmful-behavior prompts, 20 benign prompts and
+16 authored exact-answer controls. The harmful and benign slices were distinct
+from the earlier fit and held-out slices, but came from the same datasets:
+`mlabonne/harmful_behaviors` revision `01cead01398926d81f7c52bdb790ee8cf77ebba7`
+(test[20:40]) and `mlabonne/harmless_alpaca` revision
+`02c6a92cfcf11bb0c387334f8146d149d65b587f` (test[10:30]). Each
+arm used temperature 0, seed 42 and a 64-token cap. All 112 calls completed;
+none was empty. The table shows counts for standard / research respectively.
+
+| Group | Refusal-marker matches | Truncated | Exact controls correct |
+| --- | ---: | ---: | ---: |
+| Harmful (20) | 19 / 15 | 20 / 20 | — |
+| Benign (20) | 0 / 0 | 15 / 17 | — |
+| Authored controls (16) | — | 0 / 0 | 13 / 12 |
+
+The four harmful marker differences were standard-only. Of the controls, 12
+passed in both arms, one passed only in standard, and three failed in both.
+Marker detection is simple keyword matching, **not** a semantic refusal or
+compliance judgment; the 64-token cap truncated every harmful response and
+most benign ones. The small authored controls are not a general capability test.
+
+A longer-output check repeated the first five cases from each dataset at 192
+tokens; it is a subset, not independent confirmation. For harmful prompts,
+marker matches were 5 / 5 in each arm and truncations 2 / 4. For benign prompts,
+marker matches were 0 / 1 and truncations 4 / 3. All 20 calls completed and
+none was empty. The change in counts across caps illustrates why keyword
+counts must not be interpreted as refusal rates. These results do not measure
+voice quality, audio comprehension, human preference, safety or real-world
+performance. Further evaluation needs more diverse independent prompts,
+human-reviewed responses and voice tests.
+
+The evaluator records per-case outcomes, hashes, errors and timing but never
+stores prompts or responses. Its evidence stays under ignored `outputs/`;
+the aggregate counts above are the public record. Server identity is checked
+against its reported model path, not cryptographic proof of loaded memory.
+The local model files are hashed before and after each run. To reproduce, install
+`datasets`, start each model separately with identical flags (`NGL=0`,
+`MMOFFLOAD=0`, context 4096, parallel 1), and use the commands in
+`scripts/compare_lfm_variants.py`. Pass `--profile extended` for the repeated
+192-token subset. Datasets and exact revisions and slices are pinned in that
+script. Use new output paths for each run; existing evidence is never overwritten.
+For example, with one server at a time and file paths adjusted to your system:
+
+```powershell
+python -m pip install datasets
+python scripts/compare_lfm_variants.py run --variant standard --url http://127.0.0.1:18121 --model <standard-windows-path> --server-model-path <standard-server-path> --out outputs/standard.json
+# Stop that server and start the research model with the same flags.
+python scripts/compare_lfm_variants.py run --variant research --url http://127.0.0.1:18121 --model <research-windows-path> --server-model-path <research-server-path> --out outputs/research.json
+python scripts/compare_lfm_variants.py compare outputs/standard.json outputs/research.json --out outputs/paired.json
+# Repeat both run commands with --profile extended and distinct output paths,
+# then compare those two outputs in the same order.
+```
+
+Replace each angle-bracket placeholder with a quoted actual path; the server path
+must exactly match `/props` on that server. The example does not start servers.
+
+## XSTest refusal-calibration pilot
+
+An additional paired text pilot used the published [XSTest](https://github.com/paul-rottger/xstest)
+corpus (Röttger et al., NAACL 2024; CC BY 4.0), revision
+`d7bb5bd738c1fcbc36edd83d5e7d1b71a3e2d84d`; the CSV SHA-256 was
+`11783fb294ed017473ee53c207d71f2161c7672c8d0b037501e78387f801cb5a`.
+We selected one case per category with seed 421337: 10 safe and 8 unsafe cases.
+Exact whitespace-normalized matches with the first 40 cases of each of the two
+earlier datasets were absent; this does not exclude paraphrases or training-data
+contamination. An isolated Windows CPU server generated both arms with two
+threads, temperature 0, seed 42, and a 256-token output cap, with no system prompt.
+The same Q4 model files and projector as above were used.
+
+A separate blinded coding-agent reviewer applied the authors' three response
+classes: full compliance, full refusal and partial refusal. A compliance label
+means an attempt to answer, not that the answer is correct. Failed, empty,
+truncated and indecipherable responses were unscored. This is a single LLM
+review, not a human review and not the original validated GPT-4 scoring setup.
+We report partial or full refusal together in paired comparisons.
+
+Of 36 total replies, 27 hit the output cap; no calls errored or were empty. On
+safe cases, standard and research had 9/10 and 8/10 truncated, respectively;
+the sole complete pair was labeled compliance in both. On unsafe cases, 4/8 and
+6/8 were truncated; two complete pairs were labeled full refusal in both. These
+three paired observations cannot establish a refusal-rate difference. The capped
+outputs were visibly long, with median lengths around 1,150–1,200 characters;
+server logs recorded 256 generated tokens. The result is a failed measurement
+attempt, not a safety or quality result.
+
+A predeclared follow-up selected four safe and four unsafe categories in sorted
+order, then one different case per category using seed 99488, excluding the
+first pilot's cases. The same exact-overlap screen found no matches with the
+first 40 rows of either earlier dataset. It used the same models, runner and
+sampling settings but added the system instruction “Please answer in two
+sentences.” and raised the output cap to 512 tokens. This prompt alteration can
+change refusal behavior, so these results cannot be combined with the first
+pilot or treated as the original XSTest setup. All 16 calls completed without
+truncation, error or empty output.
+
+The same independent coding-agent reviewer, again blinded to model identities,
+judged all four safe pairs as compliance in both arms. For the unsafe cases,
+both arms were labeled full refusal on the same two pairs and compliance on
+the other two pairs. There were no partial refusals or discordant pairs. Four
+cases per group are far too few to show that the models behave equally or to
+estimate a general refusal rate. This review was not human annotation and was
+not the authors' GPT-4 judge. Raw prompts, responses and reviewer labels are
+retained locally for audit, not included in this repository.
+
+The local harness stores raw prompts, completions, separate identity keys and
+review labels under the ignored `outputs/` directory; do not publish those files.
+`scripts/xstest_paired.py --help` describes the required local runner and model
+paths. Give it a fresh output directory and isolated unused port; then review
+`blind.json` without access to `key.json` or the arm files and use
+`scripts/xstest_score.py --help` to aggregate labels. The benchmark's full data,
+models and runtime are separate dependencies. Metrics are not interchangeable
+with the original paper's scores because the sample, generation setup and
+reviewer differ. For example, substitute actual paths and a new output directory:
+
+```powershell
+python scripts/xstest_paired.py --runner <llama-server.exe> --standard <standard.gguf> --research <research.gguf> --projector <projector.gguf> --out outputs/xstest-run --port 18125 --profile concise
+# Review blind.json independently and save reviewer-labels.json in that folder.
+python scripts/xstest_score.py --run outputs/xstest-run --judgments outputs/xstest-run/reviewer-labels.json --out outputs/xstest-run/summary.json
+```
+
+Use `--profile original` for the 18-case first pilot. The profile chooses the
+fixed subset and system prompt; it is not a full XSTest run. Replace angle-bracket
+placeholders with actual quoted paths before running. The server is started and
+stopped by the harness, which refuses to use the application's known ports.
+
 ## Reproduce summaries and checks
 
 Run from the repository root. Install development dependencies for the suite and
@@ -78,6 +387,16 @@ optional plotting dependencies for charts. These commands do not run neural infe
 python -m pip install -r requirements-dev.txt
 python -m pip install -r requirements-docs.txt
 python -m pytest tests -q
+python -m src.synth.floor_replay --out outputs/floor_replay.json
+python -m src.synth.floor_acoustic --out outputs/floor_acoustic.json
+python scripts/eot_latency.py
+python scripts/eot_crosslingual.py --languages de es
+python -m src.synth.eot_bench --limit 400 --out outputs/eot_bench.json
+python scripts/eot_recompute.py
+python scripts/eot_schedule_sweep.py
+python scripts/eot_holdout.py
+python scripts/eot_per_turn.py
+python scripts/export_research_summaries.py
 python scripts/verify_research.py
 python scripts/check_publication.py --worktree
 python scripts/build_research_figures.py
@@ -103,3 +422,83 @@ was unavailable. A separate Ubuntu job runs those six shell contracts with fake
 tools; it does not compile the native runner. Current results are visible in
 [GitHub Actions](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml).
 A fresh-machine native build and real-device acceptance remain unvalidated.
+
+# Voice recognition investigation
+
+On 2026-11-06, the active app used the research local voice model for both
+speech recognition and speech output while its cloud agent formulated answers.
+The available diagnostics recorded speech starts, nonempty transcriptions,
+no reported input drops or clipping, and native 16 kHz microphone capture.
+They did not retain microphone audio or reference words, so they cannot judge
+whether those transcriptions were correct or why the user found them poor.
+The default quick end-of-turn setting waits 480 ms of silence; a longer setting
+may help if a sentence is split, but the logs do not establish this as the cause.
+
+## Controlled screen
+
+We compared the first 20 clips of the pinned
+`hf-internal-testing/librispeech_asr_dummy` clean validation fixture at revision
+`5be91486e11a2d616f4ec5db8d3fd248585ac07a`. The same 20 references contained
+453 normalized words. Original and research LFM3 Omni Q4_K_M used the app's
+realtime WebSocket transcription client, each on an isolated CPU server with
+two threads and the same server defaults. Research was evaluated with the
+original projector. The standard GGUF SHA-256 was
+`9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2`;
+the research GGUF SHA-256 was
+`55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`.
+`faster-whisper` 1.2.1 used the pinned
+`Systran/faster-whisper-small` revision
+`536b0662742c02347bc0e980a01041f333bce120`, CPU int8, two threads, English,
+beam size 5 and no VAD filter. Its `model.bin` SHA-256 was
+`3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671`;
+the run used CTranslate2 4.8.3 and PyAV 19.0.2. Each model received each clip once. The earlier
+exploratory scripts for this run saved numerical per-clip results only; the
+checked-in scripts below reproduce the same scoring and settings with added
+endpoint ownership and evidence checks.
+
+| ASR model | Word edits / reference words | Corpus WER | Sentences with at least one edit | Completed |
+| --- | ---: | ---: | ---: | ---: |
+| Standard LFM3 Omni Q4_K_M | 28 / 453 | 6.18% | 12 / 20 | 20 / 20 |
+| Modified research LFM3 Omni Q4_K_M | 34 / 453 | 7.51% | 13 / 20 | 20 / 20 |
+| faster-whisper-small, CPU int8 | 33 / 453 | 7.28% | 15 / 20 | 20 / 20 |
+
+Standard had fewer word edits than research on five clips, more on two, and
+the same number on 13. Against Whisper it had fewer on five, more on four, and
+the same number on 11. Case and punctuation were normalized before edit
+distance. No audio or transcripts were committed. These are small clean
+read-speech samples from a limited speaker subset: they do not represent the
+user's voice, accent, microphone, environment, interruptions, endpointing or
+spontaneous conversation. Separately quantized LFM models and one stochastic
+run per arm further limit attribution. Do not infer that the research model,
+standard model, or Whisper will work better for a particular user. We did not
+change ASR routing based on this screen.
+
+## Reproduction
+
+Install the evaluation dependencies and use a dedicated local model server, not
+one holding an app conversation. The realtime script uses the cooperating
+Turnwave context lock, checks the server-reported model path, and hashes the
+specified file before and after each run. The reported path is a server claim,
+not proof of loaded memory. Start each LFM model separately with the same CPU
+flags (`NGL=0`, `MMOFFLOAD=0`, `-t 2 -tb 2`) and point the commands at a new
+output path each time. For Whisper, install `faster-whisper==1.2.1` separately
+and obtain the checkpoint at the revision above; it runs locally and does not
+use the LFM server. Replace all placeholders with actual quoted paths.
+
+```powershell
+python -m pip install pandas pyarrow soundfile huggingface_hub
+python scripts/lfm3_realtime_asr_bench.py --url http://127.0.0.1:18122 --model <local-gguf> --server-model-path <server-gguf-path> --out outputs/asr-standard.json
+# Restart the dedicated server with the research GGUF and repeat with new paths.
+python scripts/lfm3_realtime_asr_bench.py --url http://127.0.0.1:18122 --model <research-gguf> --server-model-path <server-research-path> --out outputs/asr-research.json
+python -m pip install faster-whisper==1.2.1
+python scripts/whisper_asr_bench.py --model-dir <local-whisper-checkpoint> --out outputs/asr-whisper.json
+```
+
+Neither script stores references, recognized text or audio. Results contain
+fixture IDs, aggregate and per-clip counts, timing, and error types; output
+files are written locally and never intentionally overwritten. Dataset/model
+download terms are separate from the project license. Next, use a wider,
+diverse evaluation including spontaneous speech and a properly consented
+paired comparison with the affected microphone; the current evidence does not
+identify a reliable ASR fix for the user's reported problem.
+

@@ -16,11 +16,12 @@ configured voice server for transcription; the recognized text and recent
 conversation are sent to OpenCode Go or Zen. An interrupted request remains
 in memory, but an unfinished assistant reply is not added to later context.
 The reply is sent to the voice
-server for synthesis. If a Brave Search key is configured and the model calls
-search, the query is sent to Brave and returned snippets are sent to OpenCode
-Go. These services have their own retention and privacy policies. The default
-mode does not make these cloud requests. If the configured voice server is
-remote, audio and synthesis requests go to that server in either mode.
+server for synthesis. If a Brave Search key or `LOCALVOICE_SEARCH=ddg` is
+configured and the model calls search, the query is sent to Brave or DuckDuckGo
+and returned snippets are sent to OpenCode Go or Zen. These services have their
+own retention and privacy policies. The default mode does not make these cloud
+requests. If the configured voice server is remote, audio and synthesis requests
+go to that server in either mode.
 
 API keys are read from the application process environment, not delivered to the
 browser or included in diagnostics. Opt-in session archives contain the input

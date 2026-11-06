@@ -3,14 +3,16 @@
 [![Tests](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml/badge.svg)](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml)
 
 An experimental local speech-to-speech assistant for Windows and WSL2, built
-around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner.
+around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner. An
+optional **LFM3-Audio-2B** path uses llama.cpp's `/v1/realtime` WebSocket for
+interleaved text and 24 kHz speech; the LFM2.5 path remains the default.
 
 The app listens while the model replies and can cancel playback when you speak.
 It adds interruption handling around a turn-based audio model. This is a research
 prototype: natural pauses, speaker echo and response quality remain limitations.
 
 [Architecture](docs/ARCHITECTURE.md) · [Results and lessons](docs/RESULTS.md) ·
-[Example audio](research/examples/README.md) ·
+[Real-device testing](docs/TESTING.md) · [Example audio](research/examples/README.md) ·
 [Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
 [Change log](CHANGELOG.md) · [Experiment ledger](EXPERIMENTS.md)
@@ -24,51 +26,6 @@ flowchart LR
     Player -->|render reference| Capture
 ```
 
-## Optional cloud conversation and web search
-
-Local voice remains the default. To use a cloud model, start the local voice
-backend as described below, then set environment variables in the application terminal
-before starting `python src/app.py`:
-
-```powershell
-$env:LOCALVOICE_AGENT = 'opencode-go' # or opencode-zen
-$env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # choose a model available to your provider
-$env:LOCALVOICE_SEARCH = 'ddg' # ddg, bing, brave, or none
-```
-
-Set `OPENCODE_GO_API_KEY` in the application environment (or
-`OPENCODE_ZEN_API_KEY` for Zen) before starting it. Brave search also requires
-`BRAVE_SEARCH_API_KEY`; without it Brave search is
-unavailable. The Conversation and search settings panel can switch modes, models,
-and search providers while the app is running. Changing the mode or model starts
-a new conversation; credentials remain in the application environment.
-Environment variables set startup defaults. Recognized speech and conversation history are sent to the
-chosen provider; search queries are sent to the selected search service. The
-local audio backend still handles transcription and speech synthesis. Check the
-provider's current terms: OpenCode Go is intended for coding-agent traffic.
-Search results can be incomplete, and provider limits can prevent responses.
-The voice-to-search flow has automated simulated coverage but has not yet passed
-a complete real-device spoken-search acceptance test.
-
-If a cloud reply is interrupted after playback starts, the next turn can use
-its generated text as context, explicitly marked as possibly unheard. Playback
-does not provide word-level alignment, so the model cannot know which words the
-listener actually heard. Interruptions before any audio is accepted retain only
-the recognized request.
-
-## Optional delayed echo protection
-
-If the microphone picks up a delayed copy of the assistant's speech, set the
-profile in PowerShell before starting the app:
-
-```powershell
-$env:LOCALVOICE_ECHO_PROFILE = 'long'
-```
-
-The standard profile remains the default. The longer profile reduced false starts in one synthetic
-comparison, but delayed one quiet interruption; it is experimental and has not
-been validated for a real headset or room. See [results](docs/RESULTS.md).
-
 ## What we tested
 
 | Work | Finding | Status |
@@ -78,6 +35,15 @@ been validated for a real headset or room. See [results](docs/RESULTS.md).
 | Selective opening capture | Six paired cases produced identical captured bytes | Not adopted |
 | Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
 | Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
+| LFM3 inference optimization | `--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 -np 1`: speaker TTFT 0.596 s → 0.102 s at 3,451 MiB VRAM | Configured in `src/server_lfm3_wsl.sh` |
+| Jarvis intermediary & tools | `get_time`, `get_weather`, `system_status`, `remember`/`recall`, `consult_expert`, `/api/prompt`, pipelined TTS | Integrated and tested |
+| Reversible floor replay | Authored: 3 non-limitation false cancels with hard vs 0 with duck/backchannel; 3/3 backchannels preserved. Acoustic stress: 220 ms backchannel produced ~316 ms VAD evidence and was committed | Opt-in; real-device A/B pending |
+| Public-pause EOT diagnostic | Conversation-grouped held-out: fixed 480 ms 63.92% per-pause false cut-off; 0.9/0.7 re-query + 1 s default 31.37% with 100% recall (2 s: 19.22%) | Opt-in Smart Turn sidecar; one deterministic English split |
+| Cross-lingual EOT | English 0.9/0.7 schedule: German 45.40% false cut-offs (fixed 62.95%); Spanish 59.22% (fixed 67.25%), 100% recall | Weak transfer; per-language calibration needed |
+| Smart Turn CPU latency | 55.47 ms mean, 47.76 ms median, 81.93 ms p90 per 8 s query | 300 ms schedule feasible on this CPU |
+| LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
+| LFM3 ASR check | 20 LibriSpeech dummy clips, Q4_K_M CPU: 5.74% corpus WER, 65% sentence error | Clean read-speech diagnostic |
+
 
 See [results](docs/RESULTS.md) for methods, per-case data and limitations.
 
@@ -127,32 +93,96 @@ Keep the required shared libraries with the runner. Stop the server before
 applying the complete five-patch set using `src/apply_runner_fixes.sh`; that
 helper patches the same existing checkout and rebuilds the server.
 
-### Optional LFM3 Omni voice backend
+### Optional LFM3 voice backend
 
-LFM3-Omni-2B can run with a recent compatible llama.cpp server instead of the
-pinned LFM2.5 runner. Obtain the Q4_K_M model and matching projector from the
-[LiquidAI GGUF release](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF)
-into `models/LFM3-Omni-2B-GGUF/`, and separately install a compatible
-`llama-server`. The launcher defaults to the b12032 CUDA build and matching
-runtime under `models/runner/llama-b12032-cuda/`. Set
-`LOCALVOICE_LFM3_RUNNER` and `LOCALVOICE_CUDA_LIB` **inside WSL** to use other
-compatible locations. With assets installed, run from the repository root:
+LFM3-Omni-2B can also be used with a recent llama.cpp server. It uses a different
+protocol, so it does not use the pinned LFM2.5 runner or its patches. Obtain the
+Q4_K_M model and projector from [LiquidAI's GGUF release](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF)
+into `models/LFM3-Omni-2B-GGUF/`, and a compatible llama.cpp build (b11960 or
+newer) separately. The default launcher looks for the b12032 CUDA build in
+`models/runner/llama-b12032-cuda/files/llama-b12032/`; set
+`LOCALVOICE_LFM3_RUNNER` inside WSL to choose another build. CUDA builds also
+need compatible runtime libraries. The launcher checks the matching b12032
+CUDA 13.4 runtime under `models/runner/llama-b12032-cuda/runtime/`; alternatively
+set `LOCALVOICE_CUDA_LIB` inside WSL to their directory. With those assets installed:
 
 ```powershell
 wsl -d Ubuntu bash src/server_lfm3_wsl.sh
 ```
 
-In a second terminal set `$env:LOCALVOICE_BACKEND = 'lfm3'` before running
-`python src/app.py`. The default remains `lfm2`. The LFM3 backend is optional;
-its context resets after interruptions, and real-device conversation quality
-and long sessions need further validation. See [results](docs/RESULTS.md).
+In a second terminal, set `$env:LOCALVOICE_BACKEND = 'lfm3'` before launching
+`python src/app.py`. The default remains `lfm2`. LFM3 uses a realtime WebSocket
+for speech conversation and transcription, and streaming PCM for synthesis.
+The tested configuration and its limits are recorded in [results](docs/RESULTS.md).
+
+To try an independently prepared LFM3 Omni research variant, stop the backend and
+start it again in WSL with all three variables set:
+
+```bash
+LOCALVOICE_LFM3_VARIANT=research \
+LOCALVOICE_LFM3_RESEARCH_MODEL=/path/to/research-model.gguf \
+LOCALVOICE_LFM3_RESEARCH_PROJECTOR=/path/to/matching-projector.gguf \
+bash src/server_lfm3_wsl.sh
+```
+
+On Windows, the optional CPU build of llama.cpp b12032 can be placed in
+`models/runner/llama-b12032-win-cpu/`. The local research study stores its
+candidate under `models/LFM3-Omni-2B-research-study/research-q4.gguf`. With
+those files installed, select either variant when starting the backend:
+
+```powershell
+./src/server_lfm3_windows.ps1 -Variant standard
+# Or, after stopping the standard backend:
+./src/server_lfm3_windows.ps1 -Variant research -Model path/to/research.gguf -Projector path/to/projector.gguf
+```
+
+The CPU build does not use GPU acceleration. A separately installed compatible
+runner can be selected with `-Runner`; custom research weights require both
+`-Model` and `-Projector` so their compatibility is explicit.
+
+Use a projector validated against that specific model. Restart the backend without
+these variables to return to the standard model. This selects weights at server
+startup; it is not a live toggle. The research files must be prepared separately:
+one small CPU compatibility probe was exported to GGUF and produced audio and a
+correct synthetic transcription, but did not improve the two refusal examples
+used in that probe. Speech quality and broader behavior have not been validated.
+This selection affects the local voice model, not the remote agent model.
+
+For experiments, obtain the original full-precision LFM3 Omni checkpoint and
+install `heretic-llm==2.0.0` in a separate Python environment. Inspect the
+checkpoint's custom Python code before allowing it to execute. The experimental
+adapter gives Heretic access to text logits and hidden states while preserving
+the speech model's saved architecture:
+
+```powershell
+.venv-heretic\Scripts\python scripts/heretic_lfm3.py --model-dir models/LFM3-Omni-2B-HF --trust-model-code -- --device-map cpu --batch-size 1 --study-checkpoint-dir outputs/maintenance/heretic-checkpoints
+```
+
+Pass additional Heretic 2.0 options after `--`. Its default optimization can be
+slow on a CPU. Save to a separate directory, convert the saved checkpoint and
+its projector with a compatible llama.cpp converter, quantize the main model,
+and test both files before using the research launcher. The adapter normalizes
+inactive text sampling values to satisfy Transformers' save validation; verify
+generation and speech after conversion. The model's license and Heretic's
+license apply separately. Model modifications can change behavior and quality.
+
+The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference and acoustic sampling optimizations
+tuned for 4 GiB GPU memory limits:
+- FlashAttention (`--flash-attn on`)
+- Symmetric 8-bit quantized KV caching (`--cache-type-k q8_0 --cache-type-v q8_0`)
+- Single parallel sequence slot (`-np 1`)
+- Natural RVQ acoustic sampling (`--temp 0.7 --top-k 40 --top-p 0.9 --min-p 0.05 --repeat-penalty 1.05`)
+
+On an NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB), this configuration keeps peak VRAM
+at 3,451 MiB, reduces speaker-check time-to-first-audio (`last_ttft`) from 0.596 s
+to 0.102 s, and avoids the flat pitch and metallic buzz caused by greedy (`--temp 0`) RVQ audio codec sampling. Environment overrides are
+`LOCALVOICE_FLASH_ATTN`, `LOCALVOICE_KV_TYPE`, `LOCALVOICE_PARALLEL`, `LOCALVOICE_TEMP`, `LOCALVOICE_TOP_K`, `LOCALVOICE_TOP_P`, `LOCALVOICE_MIN_P`, and `LOCALVOICE_REPEAT_PENALTY`. Optional voice conditioning overrides on the client side are `LOCALVOICE_VOICE` and `LOCALVOICE_SPEAKER_REF`.
 
 #### Optional model-modification research
 
 The original and a separately prepared research variant can be selected when
-starting an LFM3 backend. This is a server restart, not an in-app live switch;
-it changes the local voice model, not the remote cloud model. Model weights and
-native runners are not included in this repository.
+starting an LFM3 backend. Model weights and native runners are not included in
+this repository.
 
 For experiments, obtain the full-precision LFM3 Omni checkpoint separately,
 inspect its custom Python code, and install `heretic-llm==2.0.0` in a separate
@@ -191,6 +221,33 @@ Use `-Runner` to select an installed Windows server. Research mode requires
 explicit model and projector paths. The launcher does not check model-projector
 compatibility or validate the quality or behavior of the modified model.
 
+To switch from the app, start the standard and research servers independently
+on distinct loopback ports, with enough memory for both. For example, configure
+the research WSL server as described above and set `LOCALVOICE_LFM3_PORT=18087`
+before starting it. Then start the app with:
+
+```powershell
+$env:LOCALVOICE_BACKEND = 'lfm3'
+$env:LOCALVOICE_LFM3_RESEARCH_SERVER = 'http://127.0.0.1:18087'
+python src/app.py
+```
+
+The standard server defaults to port 8080 and may be changed with
+`LOCALVOICE_SERVER`. Both URLs must be loopback HTTP addresses with explicit
+ports. The app does not start or stop either server. It checks the identifier
+reported by each server's `/v1/models` endpoint before use. Expected names
+default to `LFM3-Omni-2B-Q4_K_M.gguf` and `research-q4.gguf`; override these
+with `LOCALVOICE_LFM3_STANDARD_MODEL_ID` and `LOCALVOICE_LFM3_RESEARCH_MODEL_ID`
+if the servers report different names. These are server-reported identifiers,
+not independently verified file hashes.
+
+The selector starts a new conversation when changed and cannot be used during
+an active turn or recorded session. In local mode it changes the model for the
+conversation; in cloud mode it changes local transcription and speech synthesis,
+while the selected cloud reasoning model stays the same. This option requires
+the LFM3 HTTP transport and does not support a separate ASR server. Both server
+contexts are reserved by the app while it runs.
+
 From the repository root, start the backend:
 
 ```powershell
@@ -215,8 +272,183 @@ default when the app restarts.
 `LOCALVOICE_SERVER` changes the backend URL (default local port 8080).
 `LOCALVOICE_CHAT_SYSTEM` changes the chat instruction. Optional transcription
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
+For devices with long playback delays, the experimental
+`LOCALVOICE_ECHO_PROFILE=long` keeps echo history longer after playback. It may
+reduce self-interruptions but can delay quiet speech while echo is present; see
+[the measured tradeoff](docs/RESULTS.md). Set `$env:LOCALVOICE_ECHO_PROFILE = 'long'`
+in PowerShell and restart the app to change profiles.
+`LOCALVOICE_FLOOR_MODE=reversible` enables the experimental duck/backchannel
+path: a short vocalisation during a reply no longer has to cancel it. The
+existing deferred interruption behavior remains the default; set `hard` explicitly
+to compare immediate cancellation.
+For LFM3 Omni, `LOCALVOICE_CONTEXT_RECOVERY=1` enables an experimental recovery
+after an interrupted local reply. It keeps the preceding user audio in memory,
+transcribes it locally on the next turn, and supplies it with an explicitly
+possibly unheard assistant draft as context. This adds latency, may misrecognize
+speech, and does not reconstruct what was actually heard. Resetting the
+conversation or changing mode clears the saved context. It is off by default.
+`LOCALVOICE_EOT_MODEL=smart-turn` enables the optional Smart Turn completion
+sidecar and extends the silence wait to `LOCALVOICE_EOT_TIMEOUT_MS` (default
+1000; 2000 lowers false cut-offs further at a longer worst-case wait).
+`LOCALVOICE_EOT_FIRST_THRESHOLD` defaults to 0.9 and
+`LOCALVOICE_EOT_THRESHOLD` (later queries) to 0.7. Install
+`requirements-eot.txt` first. See [architecture](docs/ARCHITECTURE.md)
+and the offline replay in [evaluation](docs/EVALUATION.md).
 The app and backend test entry points reserve exclusive context ownership;
 stop the app before running tests that use its backend, even while muted.
+
+### Development agent (experimental)
+
+Open **development agent** in the app to select an installed OpenCode model,
+including DeepSeek V4.1 Flash Free, describe an improvement and start a run.
+Install and authenticate the OpenCode CLI separately. Free-tier availability
+and limits can change; OpenCode serves free models through its own client.
+The selected model receives your request, repository files it reads, and a
+small summary of recent diagnostic status and tool/check names; it does not
+receive the transcript automatically. OpenCode and tests may create their own
+local logs. Keep credentials out of the repository.
+
+Each run starts from the currently committed revision, checks baseline tests,
+and works in a detached worktree
+under `outputs/self-improvement/`. It retains `request.json`, `opencode-*.jsonl`,
+`baseline-pytest.log`, `pytest-*.log`, `review.diff`, `result.json` and the
+worktree for review.
+If tests fail, one repair attempt sends the last part of the test output to the
+model and reruns the suite; each attempt retains its own log. Test runs omit `LOCALVOICE_*`, `OPENCODE_*`, Brave credentials and pytest
+plugin overrides so the app’s active profile does not silently change the test
+baseline. Other user environment and filesystem access still apply. The assistant can edit
+source, tests, docs and README; it does not merge its changes. A policy blocks
+shell commands and external directory access in OpenCode, but this is not an
+OS sandbox: generated tests run with your user permissions and may access files
+or the network. Only start runs you are comfortable testing on this computer,
+and review both code and test changes before applying them.
+
+### Optional cloud conversation and web search
+
+Changing the conversation mode or model starts a new conversation.
+
+By default Turnwave uses the local speech-to-speech model. To use an OpenCode Zen
+chat-completions model instead, configure these environment variables before
+starting `src/app.py`:
+
+```powershell
+$env:LOCALVOICE_AGENT = 'opencode-zen'
+$env:LOCALVOICE_AGENT_MODEL = 'kimi-k3' # optional; choose a compatible chat-completions model
+```
+
+Go and Zen use `kimi-k3` when no model is specified. `LOCALVOICE_AGENT_MODEL`
+sets the startup default and the default for a newly selected provider; the
+interface can also select a model explicitly. Returning from local mode to the
+same provider retains its last selected model for the current app session.
+
+Set `OPENCODE_ZEN_API_KEY` in the application process environment using your
+preferred secret manager. A missing Zen key or provider limit is
+reported in the interface. Selecting a model starts a new conversation. When the cloud agent is enabled, web search defaults
+to Brave if `BRAVE_SEARCH_API_KEY` is set, and otherwise to DuckDuckGo HTML
+search without a search API key. The interface can switch between DuckDuckGo,
+Bing RSS, Brave and off while an agent is selected; Brave requires a key in the
+app environment. Set `LOCALVOICE_SEARCH=bing` or `LOCALVOICE_SEARCH=none`
+before launch to choose the initial setting. Avoid saving any key in a script
+or committing it to the repository.
+
+```powershell
+$env:LOCALVOICE_SEARCH = 'bing' # set before launching the app
+```
+
+DuckDuckGo may block automated requests. If it returns no usable results,
+Turnwave marks its Wikipedia fallback as limited and warns that current web
+information could not be verified. Site-restricted queries do not use that
+fallback, because Wikipedia cannot honor the requested site restriction.
+When a requested web search returns no usable evidence, the spoken reply says
+that verification failed instead of repeating an unsupported model answer.
+When only the Wikipedia fallback is available, the spoken reply identifies the
+limitation, and the interface shows the source links.
+Links stay with the answer they supported during the current conversation,
+including after follow-up questions. Starting a new conversation clears them.
+If a model emits one complete web-search request as text instead of a structured
+tool call, Turnwave can execute that search and pass the results back to the
+model. Other textual tool requests and ambiguous markup are reported as errors.
+For answers after web search, a dotted version number absent from all returned
+titles and snippets is replaced by an uncertainty message. This narrow check
+does not verify other claims, and search snippets can be incomplete or stale.
+
+The local voice server still performs transcription and speech synthesis. The
+recognized text and recent conversation are sent to the selected provider; the model is
+told whether the current input was transcribed speech or typed text, but does
+not receive the raw audio. If configured,
+search queries go to the configured search provider (Brave, DuckDuckGo or Bing,
+and potentially Wikipedia as a DuckDuckGo fallback) and search results go to the model. The
+interface shows the active mode, model, search availability, and links returned
+by search. The model may choose whether to search. `LOCALVOICE_AGENT=opencode-go` selects Go
+and uses `OPENCODE_GO_API_KEY`. OpenCode describes Go as intended for
+coding-agent traffic, so general conversation may not be supported; choose Zen
+for general conversation. See [OpenCode Go model endpoints](https://opencode.ai/v2/docs/console/go/)
+and [Brave Search](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started).
+Keep keys in your process environment, never in tracked files. The cloud path
+requires network access and provider accounts; it is not covered by the local
+model's privacy guarantees. The interface reports missing configuration and
+request failures. Agent context is kept in memory and reset with the conversation.
+Provider terms vary by model and can change. As documented by OpenCode on
+November 4, 2026, Go's `iceman-contributor-free` uses prompts and completions to
+improve the model, and `beam-free` has 30-day data retention. Review the current
+[OpenCode Go privacy terms](https://opencode.ai/v2/docs/console/go/#privacy)
+before choosing a model. Availability of these free models can be limited.
+
+### Jarvis voice intermediary and local capabilities
+
+When an external agent backend is active (`LOCALVOICE_AGENT=opencode-go`, `opencode-zen`, or `custom` via `LOCALVOICE_CUSTOM_ENDPOINT`, defaulting to `http://127.0.0.1:8081/v1/chat/completions`),
+Turnwave operates as a voice intermediary ("Jarvis" persona) bridging the user with
+local tools, expert reasoning delegation, and search:
+
+- **Built-in local tools**:
+  - `get_time`: Queries remote IANA timezones (local clock, date, and weekday are pre-injected in the system prompt for zero-round-trip answers).
+  - `get_weather`: Live conditions and forecasts via Open-Meteo.
+  - `system_status`: Queries GPU model, VRAM utilization, temperature, and disk space via `nvidia-smi` and system utilities (with a 10-second cached snapshot injected into the system prompt).
+  - `remember` / `recall`: Retains session and persistent user preferences or facts across turns.
+- **Expert delegation (`consult_expert`)**: For complex programming, mathematical, or architectural questions, the intermediary delegates to a deep reasoning model (e.g. `kimi-k3`). The full structured technical brief is rendered in the web studio's Expert Notes cards, while the assistant speaks a concise 2–3 sentence takeaway.
+- **Persona switching (`set_persona`)**: Dynamically switches voice style between `jarvis` (composed intermediary), `direct` (zero-fluff operator), `natural`, `concise`, and `storyteller`.
+- **Typed conversation (`/api/prompt`)**: Type a question in the interface and receive a spoken answer. The selected local or cloud conversation backend handles the prompt and its context.
+- **Sentence-pipelined TTS**: Multi-sentence replies (>110 characters) are chunked into sentence segments (first sentence capped at 120 characters, subsequent segments ~220 characters) and pipelined sequentially to the TTS runner, delivering initial spoken audio in 50–90 ms without waiting for the complete multi-sentence paragraph to synthesize.
+
+## Optional LFM3-Audio-2B realtime path
+
+LFM3-Audio-2B is a newer 2B local audio model with 32K context, 18 speech
+languages, tool calling, and native streaming through llama.cpp's
+OpenAI-compatible `/v1/realtime` WebSocket. It needs llama.cpp **b11960 or
+newer**; the pinned LFM2.5 runner is not used for this path.
+
+Place these files in `models/LFM3-Audio-2B-GGUF/`:
+
+- `LFM3-Audio-2B-Q4_K_M.gguf`
+- `mmproj-LFM3-Audio-2B-Q8_0.gguf`
+
+Obtain a b11960+ `llama-server` and start it from WSL:
+
+```powershell
+wsl -d Ubuntu bash -c 'LOCALVOICE_MODEL_DIR="$PWD/models/LFM3-Audio-2B-GGUF" LM=LFM3-Audio-2B-Q4_K_M.gguf MM=mmproj-LFM3-Audio-2B-Q8_0.gguf bash src/server_lfm3_wsl.sh'
+```
+
+Then run the app with the realtime transport:
+
+```powershell
+python -m pip install -r requirements-realtime.txt
+$env:LOCALVOICE_TRANSPORT = "realtime"
+$env:LOCALVOICE_REALTIME = "ws://127.0.0.1:8080/v1/realtime"
+python src/app.py
+```
+
+Set `LOCALVOICE_LFM3_RUNNER` in WSL if the default runner is unavailable. This
+experimental transport supports local conversation only; cloud agents and a
+separate ASR server require the HTTP transport. Clear `LOCALVOICE_AGENT` and
+`LOCALVOICE_ASR_SERVER` before using the realtime path.
+
+The realtime client keeps one conversation socket between turns and opens a
+fresh one when the app resets context after an interruption. A local smoke test
+validated audio-in, interleaved text/audio-out, and `response.cancel`; controlled
+latency, long-session and real-device acceptance remain to be measured. LFM3
+model assets are not distributed here; review
+[their terms](docs/THIRD_PARTY.md).
+
 
 ## Tests
 
