@@ -241,7 +241,13 @@ On 2026-11-05 we compared two local Q4 GGUF models using the same CPU
 llama-server build `b12032-dde879bc4`, projector, settings and prompts. This
 is a bounded experiment, not evidence that either model is safe or generally
 more capable. The research model was produced in a Heretic experiment; the
-standard model is the unmodified comparison. Model SHA-256 values:
+standard model is the unmodified comparison. The research candidate came from
+the second, rank-4, five-trial Heretic 2.0.0 study described in
+[results](RESULTS.md#exploratory-lfm3-model-modification), using the LFM3-Omni-2B
+checkpoint revision `5797d07c125503bd4f4c0e7f915ae2d3d703e8de`. The standard
+and modified checkpoints were converted and quantized separately to Q4_K_M;
+quantization and conversion may contribute to observed differences, so they
+cannot be attributed solely to Heretic. Model SHA-256 values:
 
 - Standard: `9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2`
 - Research: `55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`
@@ -249,7 +255,10 @@ standard model is the unmodified comparison. Model SHA-256 values:
 
 The primary sample used 20 harmful-behavior prompts, 20 benign prompts and
 16 authored exact-answer controls. The harmful and benign slices were distinct
-from the earlier fit and held-out slices, but came from the same datasets. Each
+from the earlier fit and held-out slices, but came from the same datasets:
+`mlabonne/harmful_behaviors` revision `01cead01398926d81f7c52bdb790ee8cf77ebba7`
+(test[20:40]) and `mlabonne/harmless_alpaca` revision
+`02c6a92cfcf11bb0c387334f8146d149d65b587f` (test[10:30]). Each
 arm used temperature 0, seed 42 and a 64-token cap. All 112 calls completed;
 none was empty. The table shows counts for standard / research respectively.
 
@@ -285,6 +294,20 @@ The local model files are hashed before and after each run. To reproduce, instal
 `scripts/compare_lfm_variants.py`. Pass `--profile extended` for the repeated
 192-token subset. Datasets and exact revisions and slices are pinned in that
 script. Use new output paths for each run; existing evidence is never overwritten.
+For example, with one server at a time and file paths adjusted to your system:
+
+```powershell
+python -m pip install datasets
+python scripts/compare_lfm_variants.py run --variant standard --url http://127.0.0.1:18121 --model <standard-windows-path> --server-model-path <standard-server-path> --out outputs/standard.json
+# Stop that server and start the research model with the same flags.
+python scripts/compare_lfm_variants.py run --variant research --url http://127.0.0.1:18121 --model <research-windows-path> --server-model-path <research-server-path> --out outputs/research.json
+python scripts/compare_lfm_variants.py compare outputs/standard.json outputs/research.json --out outputs/paired.json
+# Repeat both run commands with --profile extended and distinct output paths,
+# then compare those two outputs in the same order.
+```
+
+Replace each angle-bracket placeholder with a quoted actual path; the server path
+must exactly match `/props` on that server. The example does not start servers.
 
 ## Reproduce summaries and checks
 
