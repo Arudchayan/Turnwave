@@ -76,7 +76,9 @@ class Assistant:
             if echo_profile not in ('standard', 'long'):
                 raise ValueError('LOCALVOICE_ECHO_PROFILE must be standard or long')
             options = {'echo_tail_ms': 1500, 'echo_history_ms': 1600} if echo_profile == 'long' else {}
-            self.front = DuplexFrontend(**options)
+            # A slightly longer default keeps more mid-sentence pauses in the
+            # same turn. The user can select Quick again in the pause control.
+            self.front = DuplexFrontend(end_silence_ms=800, **options)
         self.eot = eot
         self.eot_error = None
         if self.eot is None and os.getenv('LOCALVOICE_EOT_MODEL'):

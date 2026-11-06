@@ -357,7 +357,8 @@ def test_long_echo_profile_is_opt_in_and_rejects_unknown_values(monkeypatch):
     monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'long')
     a = Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
     a.close()
-    assert options == [{}, {'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
+    assert options == [{'end_silence_ms': 800},
+                       {'end_silence_ms': 800, 'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
     monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'invalid')
     with pytest.raises(ValueError, match='LOCALVOICE_ECHO_PROFILE'):
         Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
