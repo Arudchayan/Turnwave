@@ -353,3 +353,83 @@ was unavailable. A separate Ubuntu job runs those six shell contracts with fake
 tools; it does not compile the native runner. Current results are visible in
 [GitHub Actions](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml).
 A fresh-machine native build and real-device acceptance remain unvalidated.
+
+# Voice recognition investigation
+
+On 2026-11-06, the active app used the research local voice model for both
+speech recognition and speech output while its cloud agent formulated answers.
+The available diagnostics recorded speech starts, nonempty transcriptions,
+no reported input drops or clipping, and native 16 kHz microphone capture.
+They did not retain microphone audio or reference words, so they cannot judge
+whether those transcriptions were correct or why the user found them poor.
+The default quick end-of-turn setting waits 480 ms of silence; a longer setting
+may help if a sentence is split, but the logs do not establish this as the cause.
+
+## Controlled screen
+
+We compared the first 20 clips of the pinned
+`hf-internal-testing/librispeech_asr_dummy` clean validation fixture at revision
+`5be91486e11a2d616f4ec5db8d3fd248585ac07a`. The same 20 references contained
+453 normalized words. Original and research LFM3 Omni Q4_K_M used the app's
+realtime WebSocket transcription client, each on an isolated CPU server with
+two threads and the same server defaults. Research was evaluated with the
+original projector. The standard GGUF SHA-256 was
+`9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2`;
+the research GGUF SHA-256 was
+`55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`.
+`faster-whisper` 1.2.1 used the pinned
+`Systran/faster-whisper-small` revision
+`536b0662742c02347bc0e980a01041f333bce120`, CPU int8, two threads, English,
+beam size 5 and no VAD filter. Its `model.bin` SHA-256 was
+`3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671`;
+the run used CTranslate2 4.8.3 and PyAV 19.0.2. Each model received each clip once. The earlier
+exploratory scripts for this run saved numerical per-clip results only; the
+checked-in scripts below reproduce the same scoring and settings with added
+endpoint ownership and evidence checks.
+
+| ASR model | Word edits / reference words | Corpus WER | Sentences with at least one edit | Completed |
+| --- | ---: | ---: | ---: | ---: |
+| Standard LFM3 Omni Q4_K_M | 28 / 453 | 6.18% | 12 / 20 | 20 / 20 |
+| Modified research LFM3 Omni Q4_K_M | 34 / 453 | 7.51% | 13 / 20 | 20 / 20 |
+| faster-whisper-small, CPU int8 | 33 / 453 | 7.28% | 15 / 20 | 20 / 20 |
+
+Standard had fewer word edits than research on five clips, more on two, and
+the same number on 13. Against Whisper it had fewer on five, more on four, and
+the same number on 11. Case and punctuation were normalized before edit
+distance. No audio or transcripts were committed. These are small clean
+read-speech samples from a limited speaker subset: they do not represent the
+user's voice, accent, microphone, environment, interruptions, endpointing or
+spontaneous conversation. Separately quantized LFM models and one stochastic
+run per arm further limit attribution. Do not infer that the research model,
+standard model, or Whisper will work better for a particular user. We did not
+change ASR routing based on this screen.
+
+## Reproduction
+
+Install the evaluation dependencies and use a dedicated local model server, not
+one holding an app conversation. The realtime script uses the cooperating
+Turnwave context lock, checks the server-reported model path, and hashes the
+specified file before and after each run. The reported path is a server claim,
+not proof of loaded memory. Start each LFM model separately with the same CPU
+flags (`NGL=0`, `MMOFFLOAD=0`, `-t 2 -tb 2`) and point the commands at a new
+output path each time. For Whisper, install `faster-whisper==1.2.1` separately
+and obtain the checkpoint at the revision above; it runs locally and does not
+use the LFM server. Replace all placeholders with actual quoted paths.
+
+```powershell
+python -m pip install pandas pyarrow soundfile huggingface_hub
+python scripts/lfm3_realtime_asr_bench.py --url http://127.0.0.1:18122 --model <local-gguf> --server-model-path <server-gguf-path> --out outputs/asr-standard.json
+# Restart the dedicated server with the research GGUF and repeat with new paths.
+python scripts/lfm3_realtime_asr_bench.py --url http://127.0.0.1:18122 --model <research-gguf> --server-model-path <server-research-path> --out outputs/asr-research.json
+python -m pip install faster-whisper==1.2.1
+python scripts/whisper_asr_bench.py --model-dir <local-whisper-checkpoint> --out outputs/asr-whisper.json
+```
+
+Neither script stores references, recognized text or audio. Results contain
+fixture IDs, aggregate and per-clip counts, timing, and error types; output
+files are written locally and never intentionally overwritten. Dataset/model
+download terms are separate from the project license. Next, use a wider,
+diverse evaluation including spontaneous speech and a properly consented
+paired comparison with the affected microphone; the current evidence does not
+identify a reliable ASR fix for the user's reported problem.
+
