@@ -6,6 +6,28 @@ released default. No version numbers are assigned here without a release tag.
 
 ## Unreleased
 
+### Public preview
+
+- Recommend Standard LFM3-Omni-2B in Local Direct mode. Optional cloud
+  conversation and web search provide spoken replies and source links.
+- Use the Interrupt button to stop a reply. Hands-free interruption remains
+  experimental. Balanced waits 800 ms, with Quick and Patient also available.
+- Switch between independently running Standard and Research LFM3 servers.
+  Research uses separately prepared Heretic-modified weights.
+- Keep logs, transcripts, and checkpoints local with Git ignore rules and
+  publication checks.
+
+**Evaluation.** In a 20-clip replay with a 650 ms inserted pause, Balanced
+released 4/20 utterances early versus 20/20 with Quick. The median endpoint
+was 307.5 ms later. An initial headset session also exposed an unwanted
+hands-free interruption and a misunderstood spoken correction. On a paired
+72-prompt XSTest screen, Standard refused 24/32 unsafe prompts and Research
+refused 22/32. One blinded coding agent graded the outputs. The comparison
+does not establish reliable refusal reduction. See [evaluation methods](docs/EVALUATION.md)
+and [detailed results](docs/RESULTS.md).
+
+### Earlier changes
+
 - Check more of a search query when screening unrelated results.
 
 - Retry obviously unrelated Bing results with DuckDuckGo and disclose the fallback.
@@ -18,7 +40,7 @@ released default. No version numbers are assigned here without a release tag.
 - Added an optional LFM3 model-modification research adapter and explicit
   standard/research backend launch selection; weights remain separate.
 - Added an optional local Whisper comparison to the interruption research probe;
-  no additional recognizer is enabled in the app.
+  the comparison used a separate evaluation probe.
 - Report cloud replies that reach their length limit instead of speaking an
   incomplete fragment as a complete answer.
 - Clarified the pause control's response-delay tradeoff and added a
@@ -48,21 +70,13 @@ released default. No version numbers are assigned here without a release tag.
   real-device spoken-search validation remain outstanding.
 
 - Added optional LFM3 Omni local voice-backend support with a separate WSL
-  launcher; the existing LFM2.5 backend remains the default.
+  launcher; the app retains LFM2.5 as a fallback backend when none is configured.
 - Refined the conversation interface with responsive controls and clearer
   connection and processing status.
 - Added an adjustable pause before replying, with quick, balanced, and patient
-  settings. The default remains 480 ms; longer pauses add latency.
+  settings. The initial default was 480 ms. Balanced is the current default.
 - Added a public change log and an experiment ledger with outcomes, decisions,
   reproduction references, and evidence limits.
-
-## In development
-
-The [voice and agent development pull request](https://github.com/Arudchayan/Turnwave/pull/1)
-contains additional work on local voice, agent behavior, the interface, and
-research tooling. Some of that draft work is **not yet on the default branch**.
-Features remain experimental or opt-in and still need real-device validation. See [EXPERIMENTS.md](EXPERIMENTS.md) for measured outcomes and
-[known limitations](docs/KNOWN_LIMITATIONS.md) for the current baseline.
 
 ## Baseline
 

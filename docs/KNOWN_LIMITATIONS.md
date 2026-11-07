@@ -1,13 +1,13 @@
 # Known limitations
 
-This is a research prototype, not a claim of universally reliable conversation.
+The public preview targets local turn-based voice on Windows and WSL2.
 
 - A natural pause can end a turn too early. Current silence endpointing defaults
-  to 480 ms (adjustable to 800 or 1,120 ms between utterances), with a 20-second
+  to 800 ms (adjustable to 480 or 1,120 ms between utterances), with a 20-second
   capture cap and pre-roll. Longer waits add reply latency and still cannot
   guarantee that an unfinished sentence stays together. The experimental
   reversible floor addresses backchannels, but does not solve mid-turn pauses;
-  it remains opt-in pending real-device evaluation.
+  it remains opt-in. The preview uses the Interrupt button during replies.
 - Speaker echo, quiet speech, room acoustics and device routing affect genuine
   and false interruption detection. Headphones are more predictable.
 - The optional Smart Turn sidecar changes silence timing and was evaluated on
