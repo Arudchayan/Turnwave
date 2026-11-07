@@ -37,7 +37,8 @@ is insufficient to establish reliable refusal reduction.
 Only aggregate findings are published. Keep raw headset logs, generated
 audio, model outputs and reviewer material in ignored local output directories.
 The initial headset observations do not verify the preview's manual mode.
-See [real-device testing](TESTING.md) for the device protocol.
+See the [preview headset check](TESTING.md#public-preview-headset-check) for
+the acceptance protocol.
 
 ## Evidence map
 

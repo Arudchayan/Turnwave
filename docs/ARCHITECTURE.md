@@ -30,17 +30,18 @@ and silence endpointing. `app.py` owns the nominal 250 ms pre-roll, 20-second
 capture cap and cancellable request lifecycle. Queue bounds limit stale audio;
 generation fences prevent callbacks from a retired capture entering a new turn.
 
-Speaking during a reply can cancel it and begin a replacement turn. The native
-runner cannot truncate conversation state to the exact audio already heard, so
-interruption recovery resets model context. This sacrifices earlier memory.
+The preview uses manual interruption. The app suppresses automatic microphone
+turns while a reply is active. The Interrupt button stops playback and allows
+new capture. The native runner cannot truncate conversation state to the exact
+audio already heard, so interruption recovery resets model context and may lose
+earlier memory.
 An OS-backed exclusive backend lease prevents app and benchmark processes from
 sharing one stateful conversation, including when the app is muted.
 
 ## Reversible floor (experimental)
 
-The default barge-in path ducks playback and defers cancellation until speech is
-submitted. `LOCALVOICE_FLOOR_MODE=hard` selects immediate cancellation on a
-confirmed onset. `LOCALVOICE_FLOOR_MODE=reversible`
+Hands-free interruption requires an explicit startup setting.
+`LOCALVOICE_FLOOR_MODE=hard` selects immediate cancellation on a confirmed onset. `LOCALVOICE_FLOOR_MODE=reversible`
 separates the reversible action from the irreversible one. An onset first
 **ducks** playback (`Player.set_gain`, a short ramp applied to both the device
 signal and the echo reference). While ducked, the app keeps the candidate audio

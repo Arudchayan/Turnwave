@@ -1,8 +1,28 @@
 # Testing Turnwave
 
-This is the real-device protocol for the floor and end-of-turn changes. The
-offline suites are already green; this runbook is for the part they cannot
-prove: microphone, speaker, room, echo and human timing.
+## Public preview headset check
+
+Run this check on the exact release candidate. Stop the previous app, then use
+the [Standard LFM3 quick start](../README.md#quick-start-standard-lfm3) to
+restart it muted. Select Local Direct, Manual interruption, Balanced pause,
+and the soundcore R50i headset if available. Keep optional audio recording off
+unless everyone being recorded has agreed. Unmute only when ready.
+
+1. Speak a short sentence with a fictional name and room number. Confirm the
+   reply got both right.
+2. Say a sentence with a natural mid-sentence pause. Confirm the whole sentence
+   was understood. If Balanced splits it, repeat once with Patient and record
+   which preset passed.
+3. Ask for a reply long enough to overlap a short acknowledgment. Say the
+   acknowledgment during playback. Confirm playback continues and no new turn
+   is submitted.
+4. While a new reply plays, click **Interrupt**. Confirm playback stops. Then
+   make a fresh request and confirm it is understood.
+
+Record the device, preset, pass/fail outcomes, and timing if available. Keep
+diagnostics local and omit spoken text or recordings from public results. A
+pass applies to this candidate and device. Use the historical protocol below
+to compare hands-free and end-of-turn experiments separately.
 
 ## 0. Fast checks (no devices)
 
@@ -43,9 +63,9 @@ The configuration shown there must be applied before restarting the app.
 
 ## 2. Arms
 
-Run the same script with the current default first (unset `LOCALVOICE_FLOOR_MODE`
-and `LOCALVOICE_EOT_MODEL`, and use HTTP), then in the four experimental arms.
-Keep one variable between adjacent experimental arms.
+These four arms compare hands-free policies and the optional completion model.
+Set each arm explicitly. Use the separate headset check above for the manual
+preview default. Keep one variable between adjacent experimental arms.
 
 | Arm | Floor | EOT | Backend |
 | --- | --- | --- | --- |
@@ -90,7 +110,7 @@ $env:LOCALVOICE_EOT_TIMEOUT_MS = "1000"
 $env:LOCALVOICE_EOT_FIRST_THRESHOLD = "0.9"
 $env:LOCALVOICE_EOT_THRESHOLD = "0.7"
 
-# D
+# D (retain C's floor and EOT settings)
 $env:LOCALVOICE_BACKEND = "lfm3"
 Remove-Item Env:LOCALVOICE_AGENT, Env:LOCALVOICE_ASR_SERVER -ErrorAction SilentlyContinue
 $env:LOCALVOICE_TRANSPORT = "realtime"
