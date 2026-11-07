@@ -14,6 +14,19 @@ outputs/experiments/
 # Private runtime data and research artifacts (never publish).
 /outputs/
 /data/
+/checkpoints/
+# Private conversation and diagnostic artifacts may also be written elsewhere.
+logs/
+transcripts/
+recordings/
+traces/
+*.jsonl
+transcript*.json
+transcript*.txt
+transcript*.md
+transcript*.csv
+transcript*.srt
+transcript*.vtt
 /AGENTS.md
 /.ignore
 /.desloppify/
