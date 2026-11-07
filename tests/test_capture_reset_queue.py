@@ -41,7 +41,7 @@ class RecordingClient(FakeClient):
         turn.done.set()
 
 
-def capture_fixture():
+def capture_fixture(floor_mode=None):
     entered, release, barrier = (threading.Event() for _ in range(3))
 
     class BlockedFront(FakeFront):
@@ -56,7 +56,7 @@ def capture_fixture():
             return result
 
     assistant = Assistant(mic=FakeMic(), player=FakePlayer(), front=BlockedFront(),
-                          client=RecordingClient())
+                          client=RecordingClient(), floor_mode=floor_mode)
     assistant.status = 'listening'
     assistant._spawn(assistant._loop)
     assistant.mic.q.put(np.zeros(3200, np.float32))
@@ -117,7 +117,8 @@ def test_fresh_post_reset_speech_is_submitted_with_reset_context():
 
 
 def test_without_reset_the_same_queue_is_processed_normally():
-    assistant, release, barrier = capture_fixture()
+    # The neutral marker follows the submitted speech during the fake reply.
+    assistant, release, barrier = capture_fixture(floor_mode='deferred')
     try:
         release_to_barrier(assistant, release, barrier)
         expected = wav16k_bytes(np.concatenate((np.full(3200, .1, np.float32), np.zeros(3200, np.float32))))

@@ -205,7 +205,8 @@ def test_muting_a_processing_onset_does_not_interrupt_current_reply(tmp_path):
             assert release.wait(3)
             processed.set()
             return True,True,False,audio
-    a=Assistant(mic=FakeMic(),player=FakePlayer(),front=OnsetFront(),client=FakeClient())
+    a = Assistant(mic=FakeMic(), player=FakePlayer(), front=OnsetFront(),
+                  client=FakeClient(), floor_mode='deferred')
     try:
         job=a.submit_audio(np.full(8000,.1,np.float32))
         wait_for(lambda:a.status=='speaking')

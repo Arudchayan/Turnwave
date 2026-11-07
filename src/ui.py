@@ -229,10 +229,11 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 <div id=controls>
 <div class=btn-grid>
 <button id=micbtn disabled>checking mic…</button>
-<button id=intbtn class=big>interrupt</button>
+<button id=intbtn class=big aria-describedby=interrupt-mode>interrupt</button>
 <button id=newbtn>new conversation</button>
 <button id=tstbtn>test speaker</button>
 </div>
+<p id=interrupt-mode class=ctrl-lbl>Interruption mode loading…</p>
 <div class=field-row>
 <label class=ctrl-lbl for=agentsel>Processing &amp; reasoning model</label>
 <select id=agentsel aria-label="Processing mode and model">
@@ -501,6 +502,12 @@ let observedVoiceVersion=voiceVersion,observedVoicePending=pendingActions.has('v
 let s=await(await fetch('/api/state')).json();
 if(Date.now()>=improvePollAt){improvePollAt=Date.now()+2000;pollImprover();}
 lastState=s;
+$('interrupt-mode').textContent=({
+manual:'Manual interruption. Use Interrupt to stop a reply. The microphone listens again when the reply ends.',
+hard:'Experimental hands-free interruption · immediate',
+reversible:'Experimental hands-free interruption · reversible',
+deferred:'Experimental hands-free interruption · deferred'
+}[s.floor_mode]||'Interruption mode unavailable.');
 if(s.voice_params&&!voiceDirty&&!observedVoicePending&&observedVoiceVersion===voiceVersion&&!pendingActions.has('vapplybtn')){
 writeVoiceInputs(s.voice_params);}
 let psel=$('personasel');

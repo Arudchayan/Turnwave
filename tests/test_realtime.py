@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'src'))
 from app import Assistant, Handler, Job
-from audio_io import Player
+from audio_io import CaptureQueue, Player
 from client import ServerClient, Turn, extract_audio, sse_events, wav16k_bytes
 from duplex import DuplexFrontend
 
@@ -340,7 +340,8 @@ def test_local_typed_turn_reports_unsupported_backend_without_repeating_prompt()
 
 @pytest.fixture
 def assistant():
-    a = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=FakeClient())
+    a = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                  client=FakeClient(), floor_mode='deferred')
     yield a
     a.close()
 
@@ -426,6 +427,87 @@ def test_startup_audio_warmup_failure_does_not_block_microphone():
         assert any(e['event'] == 'audio_warmup_error' for e in a.diagnostics.recent())
     finally:
         a.close()
+
+
+@pytest.mark.parametrize('end_reply', ['complete', 'button', 'error'])
+def test_manual_mode_discards_overlapping_capture_and_resumes(monkeypatch, end_reply):
+    monkeypatch.delenv('LOCALVOICE_FLOOR_MODE', raising=False)
+    monkeypatch.delenv('LOCALVOICE_EOT_MODEL', raising=False)
+
+    class QueuedMic(FakeMic):
+        def __init__(self):
+            self.q = CaptureQueue()
+        def drain(self):
+            return self.q.invalidate()
+
+    class ControlledClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.allow_audio = threading.Event()
+            self.release = threading.Event()
+        def chat_turn(self, wav, turn, first, on_audio=None):
+            self.calls.append(first)
+            if not self.allow_audio.wait(2):
+                raise RuntimeError('test did not release audio')
+            turn.text_parts.append('hello')
+            turn.audio_samples += 1440
+            on_audio(np.full(1440, .1, np.float32))
+            if len(self.calls) == 1:
+                while not self.release.wait(.01) and not turn.cancel.is_set():
+                    pass
+                if end_reply == 'error':
+                    raise RuntimeError('simulated disconnect')
+
+    mic, client, front = QueuedMic(), ControlledClient(), FakeFront()
+    app = Assistant(mic=mic, player=FakePlayer(), front=front, client=client)
+    try:
+        assert app.state()['floor_mode'] == 'manual'
+        app._spawn(app._loop)
+        speech = np.full(3200, .1, np.float32)
+        silence = np.zeros(3200, np.float32)
+        first = app.submit_audio(speech)
+        wait_for(lambda: len(client.calls) == 1)
+        assert app.status == 'thinking'
+        mic.q.put(speech)
+        mic.q.put(silence)
+        wait_for(mic.q.empty)
+        assert front.calls == 0
+
+        client.allow_audio.set()
+        wait_for(lambda: app.player.playing)
+        overlap_generation = mic.q.generation
+        mic.q.put(speech)
+        mic.q.put(silence)
+        wait_for(mic.q.empty)
+        assert front.calls == 0
+        assert not first.turn.cancel.is_set()
+        assert app.player.playing
+        assert len(client.calls) == 1
+
+        if end_reply == 'button':
+            app.interrupt()
+            assert first.turn.cancel.is_set()
+            assert not app.player.playing
+        else:
+            client.release.set()
+        wait_for(lambda: first.playback_closed.is_set() and app._active is None)
+        assert mic.q.generation != overlap_generation
+        mic.q.offer(speech, overlap_generation)
+        assert mic.q.empty(), 'A delayed overlap callback must remain obsolete'
+        if end_reply == 'error':
+            assert 'simulated disconnect' in app.error
+        else:
+            assert app.error is None
+
+        mic.q.put(speech)
+        mic.q.put(silence)
+        wait_for(lambda: len(client.calls) == 2)
+        assert sum(event['event'] == 'turn_submit'
+                   for event in app.diagnostics.recent()) == 2
+    finally:
+        client.allow_audio.set()
+        client.release.set()
+        app.close()
 
 
 def test_mic_processes_barge_in_during_app_playback(assistant):
