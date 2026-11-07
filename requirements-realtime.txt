@@ -1,0 +1,3 @@
+# Optional transport for LFM3-Audio-2B's llama.cpp /v1/realtime WebSocket.
+-r requirements.txt
+websocket-client>=1.9

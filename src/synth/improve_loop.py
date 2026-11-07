@@ -63,8 +63,9 @@ def main():
                   ('regression',['-m','pytest','-q','tests'],120,None),
                   ('acoustics',['-u','src/synth/acoustic_stress.py'],120,'acoustic_stress.json')]
         if args.backend:
+            smoke_artifact=f'app_smoke-{folder.name}-{cycle+1}.json'
             commands += [('conversation',['-u','src/synth/conversation_suite.py','--rounds','3'],180,'conversation_suite.json'),
-                         ('application',['-u','src/synth/app_smoke.py'],90,'app_smoke.json'),
+                         ('application',['-u','src/synth/app_smoke.py','--output',str(ROOT/'outputs'/smoke_artifact)],90,smoke_artifact),
                          ('context',['-u','src/synth/context_soak.py','--turns','24'],180,'context_soak.json')]
         for name,arguments,timeout,artifact in commands:
             if args.backend and app_running():

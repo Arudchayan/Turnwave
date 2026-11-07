@@ -74,8 +74,10 @@ def test_audio_dequeued_before_boundary_is_rejected_but_fresh_speech_works(name)
             return self.delay(super().get_with_generation(*args, **kwargs))
 
     mic.q = DelayedQueue(maxsize=mic.q.maxsize)
+    # The neutral marker is delivered while the fake reply may still be
+    # active. This checks reset boundaries with continuous capture enabled.
     assistant = Assistant(mic=mic, player=FakePlayer(), front=observed_front(barrier),
-                          client=RecordingClient())
+                          client=RecordingClient(), floor_mode='deferred')
     assistant.status = 'listening'
     assistant._spawn(assistant._loop)
     try:
@@ -121,8 +123,10 @@ def test_first_fresh_block_after_reset_while_waiting_is_not_discarded(name):
             return super().get_with_generation(*args, **kwargs)
 
     mic.q = WaitingQueue(maxsize=mic.q.maxsize)
+    # The neutral marker is delivered while the fake reply may still be
+    # active. This checks reset boundaries with continuous capture enabled.
     assistant = Assistant(mic=mic, player=FakePlayer(), front=observed_front(barrier),
-                          client=RecordingClient())
+                          client=RecordingClient(), floor_mode='deferred')
     assistant.status = 'listening'
     assistant._spawn(assistant._loop)
     try:

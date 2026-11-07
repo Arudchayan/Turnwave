@@ -197,19 +197,8 @@ generated reply examples are public. Raw private logs and recordings are not.
 | Does adding a fixed audio detector solve that tradeoff? | First-endpoint screen on the same 16 development inputs | Completed positives 5→7/8, unfinished held 8→4/8 | Reject the fixed OR rule |
 | Does selective extra pre-roll improve fresh capture? | Six frozen paired CPU cases, 12 arms | Events and captured bytes identical in every pair | Do not adopt; benefit unproven |
 | Does native generation follow content tasks? | Adapted 24-request VoiceBench slice | 18 normal completions, 6 length-limited | Diagnostic baseline only |
-
-## LFM3 local voice feasibility
-
-On November 2, one synthetic spoken phrase was submitted three times to each
-local backend on an RTX 3050 Laptop GPU. First decoded audio was 0.139–0.212 s
-for LFM2.5 Audio Q4 and 0.369–0.420 s for LFM3 Omni Q4. Generated replies
-were different lengths, and the test did not include microphone capture,
-endpointing, room acoustics, independent output ASR, or human listening. The
-measurements do not establish a general performance or quality ranking.
-
-One interruption trial stopped the LFM3 client 16 ms after abort and then
-generated a fresh-session response. That does not measure end-to-end device
-interruption latency or verify conversation context after interruption.
+| Can LFM3 time-to-first-audio fit a 4 GiB laptop GPU? | FlashAttention on, Q8 KV cache, single sequence slot (`-np 1`) | Speaker-check TTFT: 0.596 s → 0.102 s; VRAM: 3,451 / 4,096 MiB | Adopted in server script |
+| Can the intermediary coordinate tools and deep reasoning without high TTS delay? | Built-in local tools, expert UI cards, sentence-pipelined TTS | Tools resolve within 1 s; deep brief in UI; pipelined TTS streams first sentence | Integrated intermediary |
 
 ## Short-turn completion delay
 
@@ -305,14 +294,114 @@ The [two synthetic reply examples](../research/examples/README.md) similarly sho
 one text-rubric pass and one ownership failure. They are selected illustrations,
 not a two-case accuracy estimate or evidence that a particular voice caused failure.
 
-## What remains open
+## Current policy diagnostics
 
-False interruptions, paused-sentence behavior and reply quality remain unresolved.
-Controlled real-device acceptance and a clean-machine native installation have
-not been established.
-See [evaluation boundaries and reproduction](EVALUATION.md).
+These are newer offline diagnostics, separate from the frozen historical
+snapshots above. Methods and limits are in [evaluation](EVALUATION.md).
+
+| Question | Evidence | Result |
+| --- | --- | --- |
+| Does reversible floor control preserve short backchannels? | Seven authored barge-in shapes; plus a real-frontend acoustic stress replay | Authored: hard 3 non-limitation false cancels, 0/3 backchannels preserved; reversible 0 false cancels, 3/3 preserved, 0 missed, median commit 140 ms. Acoustic stress: a 220 ms backchannel produced ~316 ms of VAD evidence and was committed by both modes. |
+| Does Smart Turn improve the public-pause trade-off? | 400 English turns from `livekit/eot-bench-data`; conversation-grouped split, 466 held-out pauses | Fixed 480 ms: 63.92% false cut-offs, 100% recall. Two-threshold 0.9/0.7 re-query + 1 s default: 31.37% false cut-offs, 100% recall, p90 1 s; 2 s: 19.22%, p90 2 s. |
+| Does the English EOT schedule transfer cross-lingually? | 400 German and 400 Spanish turns, English thresholds fixed | German: fixed 62.95% false cut-offs vs 45.40% (1 s) / 39.55% (2 s), 100% recall. Spanish: 67.25% vs 59.22% / 52.93%. Transfer is weak; per-language calibration needed. |
+| Is Smart Turn fast enough on this CPU? | 19 warm 8 s queries | 55.47 ms mean, 47.76 ms median, 81.93 ms p90. |
+| Does the LFM3 realtime transport work? | One public example WAV through `/v1/realtime` | Interleaved text and 24 kHz speech; 0.68 s first audio and 5.04 s reply on one warm local run. |
+| Is LFM3 ASR usable? | 20 LibriSpeech dummy clips, Q4_K_M CPU | 5.74% corpus WER, 65% sentence error; clean read speech, small subset. |
+
+The floor figures are policy/timing diagnostics. The EOT figures are
+per-pause observations on public English conversational audio, not per-turn or
+real-device acceptance. The LFM3 figure is a single smoke test, not a latency
+benchmark. The mid-turn-pause false cancel is reduced but not eliminated; the
+optional sidecar and floor mode remain opt-in.
+
+## Local continuity after a context reset
+
+On November 4, a paired LFM3 Omni Q4 diagnostic used synthesized speech for
+“Give me three ways to relax after work” followed by “What about something
+else?” The same model's ASR recovered both inputs exactly. With the conversation
+socket retained, the follow-up gave additional suggestions; after resetting it,
+the reply was “What else?” Two runs of this single prompt pair showed that same
+pattern. This is a small diagnostic, not a general accuracy score or a live
+interruption test. The app currently resets local context after cancellation
+because the backend cannot truncate its context to what was actually heard.
+Reproduce with the app stopped and an LFM3 server running:
+
+```powershell
+python -m src.synth.continuity_reset_probe --out outputs/continuity-reset.json
+```
+
+An experimental recovery transcribes the interrupted user's prior audio and
+provides it, plus a generated draft labeled as potentially unheard, to a new
+LFM3 session. A three-round follow-up comparison on this same prompt pair gave
+three topical follow-ups with new suggestions under recovery; three resets
+without recovery instead asked what else the user wanted. Median time from the
+follow-up request to first audio was 2.641 s with recovery versus 1.303 s with
+reset alone (and 0.289 s with the original context retained). The automated test
+suite ran concurrently for part of this local GPU diagnostic, so timing is only
+indicative. It used synthesized inputs and no actual interruption; the draft may
+include text the user never heard. Recovery is opt-in pending broader checks.
+In a subsequent three-round simulation that cancelled generation after one
+second of generated audio, all three recovered replies stayed on the relaxation
+topic, though each repeated a music suggestion. First-audio times were 3.995,
+4.676 and 7.134 seconds after the follow-up request. This exposes a substantial
+latency cost after a real cancellation; the experiment does not establish that
+the recovery is ready for everyday use.
+
+An alternative replayed the previous audio directly into a fresh session,
+along with the interrupted draft marked as potentially unheard. In a three-pair,
+fixed-order diagnostic after simulated cancellation, reset-only first-audio
+times were 2.559, 6.844 and 2.812 s; direct-audio replay times were 3.131,
+2.885 and 2.731 s. All three replay replies remained on topic, but two repeated
+some suggestions; the three reset-only replies all asked “What else?” An earlier
+unpaired replay run took 4.152, 10.694 and 9.812 s, showing substantial timing
+variation. Both use one synthesized prompt pair and the same model for fixture
+ASR. This does not establish a reliable speedup, so direct replay is a research
+probe and is not used by the app. With the app stopped and the LFM3 server
+running, reproduce the paired diagnostic with:
+
+```powershell
+python -m src.synth.audio_context_replay_probe --rounds 3 --out outputs/audio-context-replay.json
+```
+
+In a separate synthetic echo sweep using one far-end recording, 12 delay/gain
+combinations produced no starts in either hard or reversible mode. The room and
+headset path were not measured. The acoustic double-talk replay still cancelled
+its short backchannel in both modes, so neither result establishes reliable echo
+or backchannel handling on a real device.
 
 ## Adjustable pause between turns
+
+### Default update (2026-11-06)
+
+Turnwave now starts with the **Balanced** 800 ms pause instead of Quick 480 ms.
+Quick remains selectable; the setting is session-local and no persisted user
+preference is overwritten. This choice aims to reduce premature turn endings,
+not improve the transcription model itself, and adds 320 ms of nominal silence
+after finished speech. The earlier 400-row annotated pause screen below found
+105/850 mid-turn pauses crossing 800 ms versus 286/850 at 480 ms. Its limits
+remain important: those are annotations, not the app or real-device results.
+
+We additionally replayed 20 clean read-speech recordings from the pinned
+`hf-internal-testing/librispeech_asr_dummy` revision
+`5be91486e11a2d616f4ec5db8d3fd248585ac07a` through the actual Silero
+frontend, with echo cancellation and holdoff disabled. For each clip we inserted
+650 ms of silence at a low-energy point near its middle. Quick ended before the
+inserted pause finished in 20/20 clips; Balanced did so in 4/20 (16 Quick-only
+and zero Balanced-only). Multiple speech starts occurred in 20/20 versus
+11/20, so Balanced did not eliminate all splits. Median final-end time relative
+to the end of each source recording was 90 ms versus 397.5 ms, respectively;
+the source may itself contain end silence. This is a synthetic pause inserted
+into a small clean read-speech fixture, not a microphone, app-capture, ASR, or
+human-voice benchmark. It does not show a fix for this user's recognition
+errors or establish performance on other silence lengths, accents or rooms.
+
+The local aggregate and per-clip numerical evidence is kept under ignored
+`outputs/`; no speech or transcripts are saved. With `pandas`, `soundfile`,
+`pyarrow`, and `huggingface_hub` installed, reproduce with a fresh output path:
+
+```powershell
+python scripts/pause_frontend_bench.py --out outputs/pause-650-real-frontend.json
+```
 
 An additional annotation-only screen compared the three fixed pause presets
 on the first 400 English validation rows of [LiveKit's end-of-turn dataset](https://huggingface.co/datasets/livekit/eot-bench-data).
@@ -326,8 +415,8 @@ end-of-turn recall measurement.
 This screen uses per-pause observations from the first 400 rows, not a random
 or independent held-out sample. It does not run Turnwave's VAD, model,
 microphone, playback, or room acoustics. Longer waits can still split a longer
-pause and make completed turns feel slower. The default remains 480 ms; users
-can select the longer options. The source Parquet SHA-256 was
+pause and make completed turns feel slower. The default was 480 ms at the time
+of this screen; see the later default update above. The source Parquet SHA-256 was
 `e475d435c8e693912243e8a810bf7e34a59e01e208551ce5b362c9c778b0fdc4`.
 With `pandas` and a Parquet reader installed, reproduce against a local copy:
 
@@ -347,7 +436,7 @@ two clips came with 640 ms of additional final wait compared with 480 ms.
 The inserted silence is not the entire VAD-measured silence because the clips
 also contain quiet audio. This is one synthetic voice and does not establish
 word retention, false-interruption rates or a generally safe setting. The
-default remains 480 ms and the setting changes only between utterances.
+default was 480 ms at the time; the setting changes only between utterances.
 
 ## Delayed playback echo tail
 
@@ -374,6 +463,324 @@ fallback was used; the fallback is not a reproduction of these exact results):
 ```powershell
 python -m src.synth.echo_tail_probe --out outputs/echo-tail-probe.json
 ```
+
+## Typed local conversation smoke check
+
+On November 4, typed prompts were sent directly to each local conversation
+backend without opening a microphone or playing audio through a device. Both
+LFM3 Omni Q4 and LFM2.5 Audio Q4 generated text and audio for “What is two plus
+two?” and returned a correct text answer. In a separate two-turn name-recall
+check, LFM3's generated text said “Your name is Alex,” while LFM2.5 said “I'm
+Alex,” misattributing the name. This small check verifies the typed request
+path and exposes a model-quality failure; it does not establish that generated
+speech matches text or that conversation memory is reliable.
+
+## Controlled spoken-search pipeline
+
+On November 4, one device-free run generated a synthetic spoken request for
+Python downloads, transcribed it with LFM3 Omni, and passed it through the app.
+A deterministic local stand-in requested live Bing search and returned a fixed
+answer only after receiving an official Python link. Bing supplied three source
+links; the app attached them to the reply and generated 4.0 seconds of audio.
+LFM3's separate ASR session transcribed that audio as the expected sentence.
+The app turn took 4.464 seconds with a non-realtime audio sink. This checks the
+integration path, not cloud-model tool choice or reasoning, microphone capture,
+voice detection and endpointing, real speaker playback, or independent speech
+recognition. Reproduce with the
+app stopped and the LFM3 server running:
+
+```powershell
+python -m src.synth.spoken_search_probe --out outputs/spoken-search-probe.json
+```
+
+The probe contacts Bing with a fixed public query and starts a local-only mock
+model server. It does not use the OpenCode key or record user audio.
+
+## What remains open
+
+On November 4, a live OpenCode Go `kimi-k3` search request returned HTTP 429,
+so it did not exercise the model or spoken search end to end. An independent
+Bing RSS query for Python downloads with a `site:python.org` restriction
+returned three links on that domain. This checks provider reachability and
+filtering for one query; it does not verify that snippets are current, that a
+model uses them correctly, or that spoken search works on a device.
+
+False interruptions, paused-sentence behavior and reply quality remain unresolved.
+Controlled real-device acceptance and a clean-machine native installation have
+not been established. The EOT held-out check is one deterministic English split;
+multi-seed, multilingual and live-microphone validation remain open. Streaming
+microphone append, heard-prefix memory across realtime reconnects, LFM3 tool calling,
+and controlled long-session latency remain unexplored.
+See [evaluation boundaries and reproduction](EVALUATION.md).
+
+## LFM3 local voice feasibility check
+
+On 2 November 2026, a single Windows SAPI voice rendered “Hello, can you hear
+me clearly?” as 16 kHz mono PCM. Each backend processed that same completed
+file three times on an RTX 3050 Laptop GPU (4 GiB), with no microphone,
+endpointing, playback or room acoustics in the timing. The input SHA-256 was
+`14f325bee8c502810701f87e7683645b74031711268b180461843dc5680e1de3`.
+
+| Backend | First decoded audio, seconds | Total generation, seconds | ASR exact phrase |
+| --- | --- | --- | --- |
+| LFM2.5 Q4_0, existing native runner | 0.212, 0.139, 0.168 | 3.795, 3.773, 3.879 | 3/3 |
+| LFM3 Omni Q4_K_M, llama.cpp b12032 | 0.369, 0.420, 0.416 | 1.761, 1.736, 1.880 | 3/3 |
+
+The first-audio measurement starts before the client call and ends at its first
+decoded audio callback. It includes each client's connection setup; LFM3 used a
+fresh realtime session each trial. Both prompts requested brief answers, but the
+outputs differed: LFM2.5 generated 12.54 seconds of audio each time and LFM3
+generated 4.80–5.52 seconds. These observations do not establish a general
+speed or quality ranking. The model output text is not evidence of what the
+generated speech said; neither reply was independently transcribed for this
+check. Exact historical reruns also depend on the local SAPI voice.
+
+The newer runner and weights were separate from the existing model: llama.cpp
+b12032 (`dde879bc4`) and LiquidAI LFM3-Omni-2B-GGUF revision `3d29af2ad166f8299c2d820937e47dc0add20ffc`.
+The Q4_K_M model and projector were SHA-256 verified against the publisher.
+The LFM2.5 files came from revision `7d525f883a077e20afb782f2ff618edcae0e39e4`;
+the local baseline used the selected native-abort runner built from
+`ec9d1fdd9`, not a fresh clean build. `src/synth/voice_backend_probe.py`
+reproduces the measurements given a synthetic 16 kHz mono WAV and each server.
+
+In one separate LFM3 cancellation trial, the client stopped 16 ms after an
+abort issued after first audio, then generated a reply on a fresh session.
+One muted application speaker check wrote 80,640 source samples to the selected
+output device with zero reported underflows and a 12.87 ms maximum recorded
+write gap. These do not establish end-to-end interruption latency, audible
+quality, or reliability across real rooms and devices.
+
+An additional single app-level check fed the same completed synthetic fixture
+to each backend with the microphone muted and wrote the replies to the same
+selected output device. Submission to first device write was 0.186 s for LFM2.5
+and 0.581 s for LFM3; the player reported zero underflows in both runs and
+maximum write gaps of 12.59 ms and 12.34 ms respectively. The two generated
+different-length replies, and device writes do not verify acoustic playback.
+This is one observation per backend, not a real conversation or a statistical
+comparison of perceived smoothness.
+
+In a separate two-turn synthetic check, the input said “My name is Mira. Please
+remember it” followed by “What is my name?” in the same LFM3 realtime session.
+The model's first emitted text used “Myra” and its second answered “Your name
+is Myra.” This demonstrates that the second text reply reflected the prior
+response in this one case; it does not verify spelling, spoken audio, or memory
+after interruption.
+
+## LFM3 inference optimization on 4 GiB GPU
+
+To operate within a strict 4 GiB VRAM envelope on an NVIDIA GeForce RTX 3050
+Laptop GPU, the LFM3 `llama-server` runner script (`src/server_lfm3_wsl.sh`) applies:
+`--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 -np 1 --ctx-size 4096 -ngl 99`.
+
+In an application speaker-check test, this configuration was compared against the
+unoptimized baseline:
+
+| Configuration | FlashAttention | KV Cache Quantization | Slots (`-np`) | VRAM Peak | Speaker Check TTFT (`last_ttft`) |
+| --- | --- | --- | --- | --- | --- |
+| Default runner | Off | f16 | Default | Exceeded / tight | 0.596 s |
+| Optimized runner | On | q8_0 (K & V) | 1 | 3,451 MiB | 0.102 s |
+
+Peak VRAM remained stable at 3,451 MiB (within the 4,096 MiB physical boundary),
+avoiding Windows shared GPU memory paging. Time-to-first-audio (`last_ttft`) on
+the initial speaker check dropped from 0.596 s to 0.102 s (~83% latency reduction).
+These observations represent single controlled speaker-check runs without
+microphone capture, endpointing delays, or room acoustics.
+
+## Adjustable pause between turns
+
+The interface offers 480, 800 and 1,120 ms silence waits. In one CPU replay
+through the Silero frontend with echo processing disabled and no holdoff, the
+SAPI phrase above was trimmed to 100 ms around samples above 0.008 absolute
+amplitude, resulting in a 2.196 s clip. It was repeated with either 650 or
+850 ms of inserted silence, followed by 1.5 s of silence, in 20 ms steps.
+At both inserted gaps, the 480 and 800 ms settings produced
+two detected turns; the 1,120 ms setting produced one. For the 650 ms gap,
+the final endpoints were at 5.46, 5.78 and 6.10 s, respectively: joining the
+two clips came with 640 ms of additional final wait compared with 480 ms.
+The inserted silence is not the entire VAD-measured silence because the clips
+also contain quiet audio. This is one synthetic voice and does not establish
+word retention, false-interruption rates or a generally safe setting. The
+default was 480 ms at the time; the setting changes only between utterances.
+
+## Synthetic interruption with device playback
+
+A separate LFM3 test played generated speech through the selected Windows
+output device while injecting a 16 kHz SAPI-rendered interruption into the
+application's capture queue. The microphone itself was simulated; the test
+did not measure sound from the room. Two runs used the same interruption,
+“Wait, please explain that differently,” but independently generated replies.
+
+| Silence wait | Duck after first nonquiet input | Cancellation after onset | Captured interruption |
+| --- | --- | --- | --- |
+| 480 ms | 0.162 s | 0.874 s | Split into two submitted turns |
+| 1,120 ms | 0.129 s | 3.588 s | One submitted turn |
+
+The last input sample above the test's 0.02 amplitude threshold occurred at
+2.307 s. A separate ASR request to the same LFM3 backend transcribed the
+480 ms captures as “Wait.” and “Please explain that differently.” For the
+1,120 ms run it transcribed the complete phrase in one capture. Those are
+machine transcripts, not independent human verification. An earlier 480 ms
+trial also split the input; another retained it as one turn. This small,
+variable experiment supports offering the longer pause as a choice, not
+claiming it prevents fragmentation in real conversations. The smoke tool
+checks for extra submitted turns and premature cancellation as well as timing.
+
+An additional app-level agent check used a synthetic “Find an update about the
+moon” WAV, LFM3 for local transcription and synthesis, and a real Windows
+output device. The model and search HTTP responses were simulated: the agent
+issued a mock search request and received a mock source, which appeared in app
+state, and the player accepted 46,080 synthesized samples.
+
+A subsequent live spoken-search check ran that same 2.54 s WAV (SHA-256
+`212860194694fbb74374ac3872435f9eee7d479500114b0a6a758dc9565eb879`) through
+local LFM3 ASR, a live OpenCode Go model (`beam-free`, `reasoning_effort=low`)
+with DuckDuckGo HTML search (`LOCALVOICE_SEARCH=ddg`), and local LFM3 speech
+synthesis to the active Windows output device. Local ASR transcribed “Find an
+update about the moon.”; the agent called `web_search`, returned five HTTPS
+sources in application state, and synthesized a 30.64 s spoken answer (735,360
+source samples). Time from submission to first device write was 4.096 s (including
+ASR, search, and cloud generation; TTS first audio was 0.226 s), with zero
+reported playback underflows and a 13.95 ms maximum write gap across 34.81 s
+total turn time. Paid OpenCode Go models on the tested account returned HTTP 429
+(`GoUsageLimitError`), which the interface surfaces as a rate/usage limit error;
+this single live run checks the end-to-end spoken search path, not factual
+freshness or acoustic audibility in a room.
+
+## Jarvis intermediary capabilities and pipelined synthesis
+
+When operating with an external reasoning provider (OpenCode Go, Zen, or a custom local OpenAI-compatible endpoint via `LOCALVOICE_CUSTOM_ENDPOINT`), Turnwave
+acts as a voice intermediary ("Jarvis" persona) coordinating local tool execution,
+deep technical delegation, and speech synthesis:
+
+### Local tool execution and persona management
+
+The intermediary provides direct tool definitions to the chat-completions model:
+- `get_time`: Queries current time in remote IANA timezones (local clock, date, and weekday are pre-injected in the system prompt for zero-round-trip answers).
+- `get_weather`: Performs geocoding and current/forecast lookups via Open-Meteo.
+- `system_status`: Inspects local hardware vitals via `nvidia-smi` (VRAM used/total, GPU utilization, core temperature) and disk capacity, with a 10-second cached snapshot injected into the system prompt so common status questions resolve in a single LLM pass.
+- `remember` / `recall`: Retains facts and user preferences across turns (in memory or persistent JSON), searchable by keyword tokens.
+- `set_persona`: Adjusts system instructions dynamically between `jarvis` (composed intermediary), `direct` (zero-fluff operator), `natural`, `concise`, and `storyteller`.
+
+### Expert delegation (`consult_expert`)
+
+For complex programming, mathematical, or architectural queries, the intermediary
+calls `consult_expert`, delegating the request to a deep reasoning model
+(e.g., `kimi-k3`). The resulting technical analysis (up to 4,000
+characters) is formatted into structured cards within the web interface's
+Expert Notes panel, while the voice client speaks a 2–3 sentence spoken summary.
+This decouples visual technical depth from spoken conciseness.
+
+### Turn-speed, HTTP Keep-Alive, and voice-quality optimizations
+
+- **Single-frame WebSocket ASR upload & `TCP_NODELAY`**: `LFM3Client._append` sends up to 128 KB per WebSocket frame instead of 50× 3,200-byte frames and catches Python 3.12 `TimeoutError` during socket reads, reducing 5.0 s local ASR transcription latency from **568.7 ms to 317.0 ms** (44% faster) while eliminating premature 0.6 s socket-timeout aborts.
+- **Persistent HTTP/1.1 Keep-Alive pooling**: `AgentClient` reuses a persistent `urllib3.PoolManager` connection pool across turns and tool-call iterations, avoiding repeated ~220 ms TLS handshakes.
+- **Natural RVQ acoustic sampling & boundary interpolation**: Replacing greedy argmax (`--temp 0`, which sets `top_k: 1` on LFM3's 8-codebook Mimi RVQ audio tokens) with `--temp 0.7 --top-k 40 --top-p 0.9 --min-p 0.05 --repeat-penalty 1.05` eliminates robotic pitch flattening and limit-cycle buzz, while linear tail extrapolation in `Player.play_chunks` removes the 50 Hz sample-clamping step during 24 kHz → 48 kHz resampling.
+
+### Hybrid text prompt and sentence-pipelined TTS
+
+The interface exposes `/api/prompt` (`POST /api/prompt`), allowing typed prompts
+to enter the turn cycle without microphone capture. Replies are processed through
+the standard conversation context and played through the audio device.
+
+For answers exceeding 110 characters, the draft `Assistant._speak_answer`
+groups sentences into separate TTS requests. The size limits are grouping
+targets, not hard caps on an individual sentence. Synthesis for the first
+group begins before the remaining groups are requested; tests exercise ordering
+but do not establish audio quality or an end-to-end speed improvement.
+
+An isolated LFM3 Omni Q4 CPU comparison on November 4 used one fixed
+three-sentence text, in single/segmented/segmented/single order, with no
+playback. First synthesized audio arrived at 1.287 and 0.616 seconds in the
+single-call runs and 0.643 and 0.502 seconds in the segmented runs. Total
+synthesis took 15.577 and 15.741 seconds versus 14.345 and 15.286 seconds,
+respectively. The first single run was cold, and generated output lengths
+varied. Two runs of one text do not establish a general speedup, naturalness,
+audible gaps, content completeness, interruption behavior, or response time
+including cloud generation and a physical device. The draft is not promoted
+on this result. With a dedicated LFM3 server and the app stopped, reproduce
+the protocol with:
+
+```powershell
+python -m src.synth.tts_segmentation_probe --url http://127.0.0.1:18086 --out outputs/tts-segmentation.json
+```
+
+The probe does not record or assess speech quality.
+
+### Exploratory LFM3 model modification
+
+An isolated CPU compatibility probe used Heretic 2.0.0 with the LiquidAI
+LFM3-Omni-2B checkpoint at revision `5797d07c125503bd4f4c0e7f915ae2d3d703e8de`
+(model SHA-256 `76c0ec2c3e27832fb19f886d5eb0afe37f03c5c32c4a796a7ce08cef119d2763`).
+The research adapter uses Transformers' text generation for the analysis and
+normalizes inactive sampling parameters so the model can be saved. The probe used
+three examples in each direction, two examples per score, rank 1 and one trial;
+the refusal score was 2/2 before and after, with reported KL divergence 0.0004.
+These figures are too small to establish an effect or model quality.
+
+The merged checkpoint had identical tensor names and 24 changed tensors, all in
+the language backbone; all other model tensors matched the original exactly.
+The result converted with llama.cpp b12032, was quantized to Q4_K_M, and was
+served on a separate CPU server using the original projector. Turnwave's client
+produced 53,760 speech samples in one TTS call; a separate synthesized sentence
+was transcribed correctly. This checks basic functionality only: no human
+listening assessment, broad behavior evaluation, or runtime mode switch was tested.
+See [Heretic](https://github.com/p-e-w/heretic) and the
+[original model](https://huggingface.co/LiquidAI/LFM3-Omni-2B) for their terms.
+
+A second exploratory CPU study used 20 training prompts per direction, 10
+evaluation prompts per score, rank 4, five trials, seed 42, and at most 32
+generated tokens. The baseline refusal score was 9/10; the selected candidate
+scored 7/10 with reported KL divergence 0.2227. The other four trials each
+scored 9/10. These are in-sample optimization scores, not an independent test;
+the small sample and short generation limit preclude a broad effectiveness or
+quality claim. The saved model had 44 changed tensors, all in the language
+backbone, and unchanged tensor names and remaining tensor values.
+
+The selected candidate was converted and quantized to Q4_K_M (SHA-256
+`55dd5a234f1343dd8429e64b83ab297ad9540fb0d01a6d877e99a07718990390`). On a separate
+llama.cpp b12032 CPU server, using the original projector, a synthetic voice
+turn produced the transcription “What is two plus two?” and the spoken reply
+“Two plus two equals four.” This does not replace a human listening assessment,
+a broader independent behavior evaluation, or tests of the remote agent.
+
+An additional held-out text-only comparison used the next 10 prompts from the
+same dataset's test split, with a 32-token limit and deterministic sampling on
+the Q4_K_M llama.cpp CPU server. Heretic's keyword heuristic matched 10/10
+responses from the original and 9/10 from the research candidate. This small
+heuristic check is not a manual assessment and does not measure general model
+quality or speech behavior. The two Q4 files were quantized separately.
+
+### Search-provider check
+
+In a local, text-only check, DuckDuckGo returned an automated-request challenge
+instead of usable web results. The previous Wikipedia fallback returned unrelated
+pages for a site-restricted query. The agent now reports the fallback limitation
+and avoids that substitution when a site restriction is present. A separate
+test of the optional Bing RSS provider returned four `python.org` sources for
+“Python latest version site:python.org”; a differently worded query returned no
+matching sources. These spot checks do not establish search reliability or a
+complete live voice-to-search-to-speech flow.
+
+A later isolated synthetic-speech probe used local LFM3 speech, OpenCode Go's
+`iceman-contributor-free` model and Bing RSS. It completed transcription, live
+tool calls, source collection and speech synthesis, but initially gave an
+outdated Python version while citing the [official downloads page](https://www.python.org/downloads/),
+which listed 3.15.2 at the time of the check. The agent now
+blocks a dotted version number in a searched answer when that number does not
+appear in the returned search titles or snippets. In a repeat of the probe it
+spoke an uncertainty message instead. This limited string check can reject
+valid claims and does not establish factual correctness or relevance of other
+claims. The `beam-free` model produced empty final replies during two probes,
+and `kimi-k3` returned a usage-limit error. No human microphone or speaker
+assessment was performed in these checks.
+
+The later review of the local LFM3 agent logs found two applicable failure
+modes: models mistaking a speech transcript for typed input, and tool requests
+arriving as spoken text. Turnwave now marks the current input modality in the
+cloud prompt and rejects textual tool-call markup rather than presenting it as
+an executed tool. Unit tests cover both paths; the live Go check at that point did not
+complete because the provider request failed; later synthetic checks are reported below.
+
 ## Live synthetic spoken search on the merged app
 
 On November 4, 2026, two trials of the same generated question, “Search the
@@ -459,6 +866,64 @@ research variant still requires explicitly selected artifacts and a server
 restart.
 
 
+## Floor speech accounting across capture sizes (draft)
+
+The reversible policy previously estimated speech time by multiplying the
+most recent VAD decision by the capture block length. Capture blocks and the
+32 ms VAD frames are not aligned, and a block can contain no new decision or
+more than one. We replayed deterministic sequences of 6–10 hot VAD frames
+followed by silence through the actual frontend and policy at 10, 20, 30, 40
+and 60 ms capture sizes (`tests/test_floor_policy.py`). No microphone, AEC,
+or speech model was used; the VAD decisions were scripted.
+
+The previous policy disagreed across capture sizes on the 8-, 9- and 10-frame
+cases. The candidate counted 192, 224, 256, 288 and 320 ms respectively at
+every block size and made the same decision per shape. A separate run of
+`python -m src.synth.floor_acoustic` used one public human clip, generated
+playback, and a synthetic echo path. Both versions canceled the 220 ms overlap
+at 1,880 ms; neither canceled the echo-only control, and both canceled the
+longer and mid-pause clips. This change fixes bookkeeping but does not establish
+better natural backchannel recognition, real-device behavior or audible quality.
+
+
+## Follow-up: synthesized acknowledgments and commands (draft)
+
+We compared the frame-accounting change in the actual capture loop using the
+eight Windows-generated fixtures from the short-utterance screen (two voices,
+“mm-hmm,” “yes,” “stop,” and “wait”), each at full and half normalized gain.
+Both versions used the reversible policy, virtual devices, one generated
+far-end voice, an 80 ms synthetic echo and instant gain changes. The baseline
+was commit `28e530b`; the candidate was `332ccef`. Both canceled the same
+3/4 full-gain and 1/4 half-gain acknowledgments and the same 3/4 full-gain and
+0/4 half-gain commands. One detected command canceled 20 ms earlier in the
+candidate. These are scripted intended words, not verified human perception.
+
+On the candidate, increasing floor confirmation / backchannel cutoffs together
+from 300/250 ms to 400/350, 500/450 and 650/600 ms left all 16 decisions
+unchanged and delayed detected commands. A separate in-sample experiment gated
+VAD probability during ongoing speech whenever echo correlation crossed 0.6.
+It reduced acknowledgment cancellations from 4/8 to 2/8 but also reduced
+detected commands from 3/8 to 2/8: a previously detected “stop” was missed.
+At 0.8, it still missed that command without changing the aggregate
+acknowledgment count. Both gates and the baseline had no cancellation in one
+echo-only replay. These are tiny, non-independent screens with one acoustic
+path; no gate or new cutoff is promoted.
+
+To reproduce on Windows with the named SAPI voices, generate fixtures into a
+new folder and run the baseline and separate experimental settings, choosing
+new output paths each time:
+
+```powershell
+./src/synth/generate_interrupt_fixtures.ps1 -OutDir outputs/interrupt-fixtures
+python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --out outputs/sweep-default.json
+python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --out outputs/sweep-400.json --floor-ms 400
+python -m src.synth.interruption_sweep --fixtures outputs/interrupt-fixtures --out outputs/sweep-gate.json --active-echo-gate 0.6
+```
+
+The report includes fixture and normalized-audio hashes. Voice versions can
+differ, and the active gate is confined to the benchmark process.
+
+
 ## Search relevance and release schedules
 
 On November 5, 2026, a live spoken question about the number of VisionQuest
@@ -480,6 +945,28 @@ reply. Disney+ listed episode seven on November 4 and episode eight on November
 11 in the UK. These are in-sample observations on a single question and do not
 prove factual correctness, general search quality, spoken behavior or stable
 provider availability.
+
+
+## App-driven follow-up checks (draft)
+
+After the search fallback and test-environment isolation were integrated, one
+synthetic prompt asking how many VisionQuest episodes had been released passed
+through the LFM3 input synthesizer, local transcription, live Go `beam-free`
+and web search, and local speech synthesis. The recognized prompt matched the
+requested question, the agent returned seven on-topic source links and a
+seven-episode answer, and 8.48 seconds of output were captured. The same LFM3
+model family transcribed the captured output as the same answer. This was one
+generated input, a fake output device and a same-model recognition check; it
+does not establish what a person heard or general factual reliability. The
+answer matched Disney+’s November 5 schedule for episodes released by then.
+
+A separate app-driven development run asked DeepSeek V4.1 Flash Free to add a
+short `DuplexFrontend` docstring in a detached worktree. The candidate added
+the docstring and two tests; the test subprocess passed 666 tests on its first
+attempt in 40.67 seconds. The initial working branch remained unchanged, and
+the run’s request, model event logs, test log, candidate diff and worktree were
+retained locally. This is a single narrowly scoped task, not evidence that
+arbitrary model-written code or tests are correct or safe.
 
 
 ## Search intent screen

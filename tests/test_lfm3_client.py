@@ -11,17 +11,7 @@ from client import Turn, wav16k_bytes
 from lfm3_client import LFM3Client
 
 
-def test_backend_selection_is_explicit():
-    import pytest
-    from app import voice_client_type
-    from client import ServerClient
-    assert voice_client_type('lfm2') is ServerClient
-    assert voice_client_type('lfm3') is LFM3Client
-    with pytest.raises(ValueError, match='LOCALVOICE_BACKEND'):
-        voice_client_type('unknown')
-
-
-def test_assistant_closes_local_voice_clients():
+def test_assistant_closes_both_voice_clients():
     from app import Assistant
     from test_realtime import FakeMic, FakePlayer, FakeFront
     closed = []
@@ -246,3 +236,4 @@ def test_set_voice_params_passes_sampling_and_voice_to_tts(monkeypatch):
     assert captured['payload']['min_p'] == 0.06
     assert captured['payload']['repeat_penalty'] == 1.08
     assert captured['payload']['voice'] == 'jarvis'
+

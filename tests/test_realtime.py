@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'src'))
 from app import Assistant, Handler, Job
-from audio_io import Player
+from audio_io import CaptureQueue, Player
 from client import ServerClient, Turn, extract_audio, sse_events, wav16k_bytes
 from duplex import DuplexFrontend
 
@@ -82,6 +82,22 @@ def test_first_audio_arrives_before_stream_end(streaming_server):
     assert request.is_alive()
     release.set(); request.join(1)
     assert turn.done.is_set() and turn.error is None
+
+
+def test_native_text_prompt_uses_chat_request(monkeypatch):
+    client = ServerClient()
+    captured = []
+    def stream(payload, turn, on_audio):
+        captured.append(payload)
+        turn.text_parts.append('Four.')
+        turn.audio_samples = 2
+        turn.done.set()
+    monkeypatch.setattr(client, '_stream', stream)
+    turn = Turn()
+    client.chat_text('What is two plus two?', turn, first=True)
+    assert captured[0]['messages'][-1]['content'] == 'What is two plus two?'
+    assert captured[0]['modalities'] == ['text', 'audio']
+    assert captured[0]['reset_context'] is True and turn.text == 'Four.'
 
 
 def test_abort_wakes_a_blocked_network_read(streaming_server):
@@ -283,9 +299,49 @@ class FakeClient:
         self.chat_turn(b'', turn, True, on_audio)
 
 
+def test_local_typed_turn_gets_an_answer_and_preserves_context():
+    class TextClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.text_calls = []
+        def chat_text(self, text, turn, first, on_audio=None):
+            self.text_calls.append((text, first))
+            turn.text_parts.append('Four.' if first else 'Still four.')
+            turn.audio_samples = 480
+            on_audio(np.ones(480, np.float32) * .1)
+            turn.done.set()
+        def tts(self, *args, **kwargs):
+            raise AssertionError('Typed questions must not be echoed with TTS')
+    client = TextClient()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=client)
+    try:
+        first = app.submit_text('What is two plus two?')
+        wait_for(lambda: first.playback_closed.is_set() and app._active is None)
+        second = app.submit_text('And now?')
+        wait_for(lambda: second.playback_closed.is_set() and app._active is None)
+        assert client.text_calls == [('What is two plus two?', True), ('And now?', False)]
+        assert 'assistant: Four.' in app.state()['transcript']
+        assert 'assistant: Still four.' in app.state()['transcript']
+    finally:
+        app.close()
+
+
+def test_local_typed_turn_reports_unsupported_backend_without_repeating_prompt():
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=FakeClient())
+    try:
+        job = app.submit_text('What is two plus two?')
+        wait_for(lambda: job.playback_closed.is_set() and app._active is None)
+        assert job.turn.error == 'This voice backend does not support typed conversation.'
+        assert job.played_samples == 0
+        assert 'assistant: What is two plus two?' not in app.state()['transcript']
+    finally:
+        app.close()
+
+
 @pytest.fixture
 def assistant():
-    a = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=FakeClient())
+    a = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(),
+                  client=FakeClient(), floor_mode='deferred')
     yield a
     a.close()
 
@@ -302,7 +358,8 @@ def test_long_echo_profile_is_opt_in_and_rejects_unknown_values(monkeypatch):
     monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'long')
     a = Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
     a.close()
-    assert options == [{}, {'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
+    assert options == [{'end_silence_ms': 800},
+                       {'end_silence_ms': 800, 'echo_tail_ms': 1500, 'echo_history_ms': 1600}]
     monkeypatch.setenv('LOCALVOICE_ECHO_PROFILE', 'invalid')
     with pytest.raises(ValueError, match='LOCALVOICE_ECHO_PROFILE'):
         Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
@@ -372,6 +429,87 @@ def test_startup_audio_warmup_failure_does_not_block_microphone():
         a.close()
 
 
+@pytest.mark.parametrize('end_reply', ['complete', 'button', 'error'])
+def test_manual_mode_discards_overlapping_capture_and_resumes(monkeypatch, end_reply):
+    monkeypatch.delenv('LOCALVOICE_FLOOR_MODE', raising=False)
+    monkeypatch.delenv('LOCALVOICE_EOT_MODEL', raising=False)
+
+    class QueuedMic(FakeMic):
+        def __init__(self):
+            self.q = CaptureQueue()
+        def drain(self):
+            return self.q.invalidate()
+
+    class ControlledClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.allow_audio = threading.Event()
+            self.release = threading.Event()
+        def chat_turn(self, wav, turn, first, on_audio=None):
+            self.calls.append(first)
+            if not self.allow_audio.wait(2):
+                raise RuntimeError('test did not release audio')
+            turn.text_parts.append('hello')
+            turn.audio_samples += 1440
+            on_audio(np.full(1440, .1, np.float32))
+            if len(self.calls) == 1:
+                while not self.release.wait(.01) and not turn.cancel.is_set():
+                    pass
+                if end_reply == 'error':
+                    raise RuntimeError('simulated disconnect')
+
+    mic, client, front = QueuedMic(), ControlledClient(), FakeFront()
+    app = Assistant(mic=mic, player=FakePlayer(), front=front, client=client)
+    try:
+        assert app.state()['floor_mode'] == 'manual'
+        app._spawn(app._loop)
+        speech = np.full(3200, .1, np.float32)
+        silence = np.zeros(3200, np.float32)
+        first = app.submit_audio(speech)
+        wait_for(lambda: len(client.calls) == 1)
+        assert app.status == 'thinking'
+        mic.q.put(speech)
+        mic.q.put(silence)
+        wait_for(mic.q.empty)
+        assert front.calls == 0
+
+        client.allow_audio.set()
+        wait_for(lambda: app.player.playing)
+        overlap_generation = mic.q.generation
+        mic.q.put(speech)
+        mic.q.put(silence)
+        wait_for(mic.q.empty)
+        assert front.calls == 0
+        assert not first.turn.cancel.is_set()
+        assert app.player.playing
+        assert len(client.calls) == 1
+
+        if end_reply == 'button':
+            app.interrupt()
+            assert first.turn.cancel.is_set()
+            assert not app.player.playing
+        else:
+            client.release.set()
+        wait_for(lambda: first.playback_closed.is_set() and app._active is None)
+        assert mic.q.generation != overlap_generation
+        mic.q.offer(speech, overlap_generation)
+        assert mic.q.empty(), 'A delayed overlap callback must remain obsolete'
+        if end_reply == 'error':
+            assert 'simulated disconnect' in app.error
+        else:
+            assert app.error is None
+
+        mic.q.put(speech)
+        mic.q.put(silence)
+        wait_for(lambda: len(client.calls) == 2)
+        assert sum(event['event'] == 'turn_submit'
+                   for event in app.diagnostics.recent()) == 2
+    finally:
+        client.allow_audio.set()
+        client.release.set()
+        app.close()
+
+
 def test_mic_processes_barge_in_during_app_playback(assistant):
     a = assistant
     a._spawn(a._loop)
@@ -390,6 +528,32 @@ def test_mic_processes_barge_in_during_app_playback(assistant):
     assert any(e['event'] == 'barge_confirm' for e in a.diagnostics.recent())
     end = next(e for e in a.diagnostics.recent() if e['event'] == 'speech_end')
     assert end['pre_roll_ms'] == 250 and 'end_silence_ms' in end
+
+
+def test_interrupted_local_question_is_carried_into_next_turn_and_reset_clears_it(monkeypatch):
+    monkeypatch.setenv('LOCALVOICE_CONTEXT_RECOVERY', '1')
+    class RecoveryClient(FakeClient):
+        supports_context_recovery = True
+        def __init__(self):
+            super().__init__()
+            self.recoveries = []
+        def chat_turn(self, wav, turn, first, on_audio=None, max_tokens=512,
+                      require_audio=True, recovery_wav=None, recovery_reply=''):
+            self.recoveries.append(recovery_wav)
+            super().chat_turn(wav, turn, first, on_audio, max_tokens, require_audio)
+    client = RecoveryClient()
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), front=FakeFront(), client=client)
+    try:
+        first = app.submit_audio(np.ones(8000, np.float32) * .1)
+        wait_for(lambda: app.status == 'speaking')
+        second = app.submit_audio(np.ones(8000, np.float32) * .2)
+        wait_for(lambda: len(client.recoveries) >= 2)
+        assert client.recoveries[:2] == [None, first.wav]
+        assert second.first and first.turn.cancel.is_set()
+        app.reset()
+        assert app._local_recovery_wav == b''
+    finally:
+        app.close()
 
 
 def test_short_blip_during_playback_restores_gain_without_cancelling(assistant):

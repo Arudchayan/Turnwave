@@ -4,22 +4,26 @@ import json
 import math
 import os
 import queue
+import re
 import socket
 import threading
 import time
+from urllib.parse import urlsplit
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import numpy as np
 
 from audio_io import Mic, Player, list_input_devices, audio_thread
 from client import ServerClient, Turn, wav16k_bytes
 from duplex import DuplexFrontend
-from diagnostics import Diagnostics, source_fingerprint
+from diagnostics import Diagnostics, HistoryFileHandler, source_fingerprint
+from floor import FloorPolicy
 from ui import PAGE
+from test_ui import TEST_PAGE
 from session_archive import ArchiveSealedError
+import logging
 
 UI_PORT = 8000
 
@@ -34,6 +38,8 @@ class Job:
     user_id: int = 0
     first: bool = True
     wav: bytes = b''
+    recovery_wav: bytes = b''
+    recovery_reply: str = ''
     t0: float = field(default_factory=time.perf_counter)
     played_samples: int = 0
     test: bool = False
@@ -45,15 +51,25 @@ class Job:
     agent_input: str = ''
     agent_input_saved: bool = False
     agent_reply_saved: bool = False
+    asr_s: float = 0.0
+    agent_s: float = 0.0
+    agent_trace: object = None
     sources: list = field(default_factory=list)
 
 
 class Assistant:
     """No import-time devices or threads; dependencies can be simulated in tests."""
-    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None):
+    def __init__(self, mic=None, player=None, front=None, client=None, asr_client=None, diagnostics=None, start_muted=False, pre_roll_ms=250, session_archive=None, agent=None, trace_path=None, floor_mode=None, eot=None, variant_config=None):
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
         self.pre_roll_ms = pre_roll_ms
+        self.floor_mode = floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE') or 'manual'
+        policy_mode = 'hard' if self.floor_mode in ('manual', 'deferred') else self.floor_mode
+        self.floor = FloorPolicy(mode=policy_mode)
+        self._use_floor_policy = bool(
+            self.floor_mode not in ('manual', 'deferred')
+            or eot is not None or os.getenv('LOCALVOICE_EOT_MODEL')
+        )
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
@@ -64,17 +80,73 @@ class Assistant:
             if echo_profile not in ('standard', 'long'):
                 raise ValueError('LOCALVOICE_ECHO_PROFILE must be standard or long')
             options = {'echo_tail_ms': 1500, 'echo_history_ms': 1600} if echo_profile == 'long' else {}
-            self.front = DuplexFrontend(**options)
-        self.client = client if client is not None else ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+            # A slightly longer default keeps more mid-sentence pauses in the
+            # same turn. The user can select Quick again in the pause control.
+            self.front = DuplexFrontend(end_silence_ms=800, **options)
+        self.eot = eot
+        self.eot_error = None
+        if self.eot is None and os.getenv('LOCALVOICE_EOT_MODEL'):
+            from eot import CompletionPolicy, SmartTurnScorer
+            spec = os.getenv('LOCALVOICE_EOT_MODEL')
+            scorer = SmartTurnScorer(None if spec in ('1', 'smart-turn') else spec)
+            timeout = int(os.getenv('LOCALVOICE_EOT_TIMEOUT_MS', '1000'))
+            threshold = float(os.getenv('LOCALVOICE_EOT_THRESHOLD', '0.7'))
+            first_threshold = float(os.getenv('LOCALVOICE_EOT_FIRST_THRESHOLD', '0.9'))
+            self.eot = CompletionPolicy(scorer, threshold=threshold,
+                                        first_threshold=first_threshold,
+                                        timeout_ms=timeout)
+        if self.eot is not None and hasattr(self.front, 'end_chunks'):
+            self.front.end_chunks = max(1, round(getattr(self.eot, 'timeout_ms', 2000) / 32))
+        if client is None:
+            if os.getenv('LOCALVOICE_TRANSPORT', 'http').lower() == 'realtime':
+                from realtime_client import RealtimeClient
+                client = RealtimeClient()
+            else:
+                client = ServerClient(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
+        self.client = client
+        self.variant_config = variant_config
+        self._voice_variant = None
+        self._voice_model_id = None
+        self._voice_variant_error = None
+        if variant_config is not None:
+            if asr_client is not None:
+                raise ValueError('Voice variant switching requires the same local server for transcription')
+            if getattr(client, 'base', '').rstrip('/') != variant_config.endpoints['standard']:
+                raise ValueError('The initial voice client must use the standard variant endpoint')
+            try:
+                self._voice_model_id = variant_config.verify('standard')
+                self._voice_variant = 'standard'
+                from lfm3_variants import GuardedVoiceClient
+                self.client = GuardedVoiceClient(client, variant_config, 'standard', self._voice_model_id,
+                                                 self._invalidate_voice_model)
+            except ValueError as exc:
+                self._voice_variant_error = str(exc)
         self.asr_client = asr_client
         self.agent = agent
+        self._saved_agent = agent
         self._agent_history = []
         self._agent_sources = []
-        self._agent_phase = None
+        self._agent_notes = []
         self._agent_search_warning = None
+        self._agent_phase = None
+        self._voice_params = {
+            'temperature': 0.7,
+            'top_k': 40,
+            'top_p': 0.9,
+            'min_p': 0.05,
+            'repeat_penalty': 1.05,
+            'voice': os.getenv('LOCALVOICE_VOICE', '').strip(),
+        }
         if asr_client is not None and asr_client.base.rstrip('/') == self.client.base.rstrip('/'):
             raise ValueError('Transcription needs a separate server context')
         self.diagnostics = diagnostics if diagnostics is not None else Diagnostics()
+        self._traces = collections.deque(maxlen=50)
+        self.trace_path = Path(trace_path) if trace_path else None
+        self._trace_handler = None
+        if self.trace_path is not None:
+            self.trace_path.parent.mkdir(parents=True, exist_ok=True)
+            self._trace_handler = HistoryFileHandler(self.trace_path, maxBytes=2_000_000, backupCount=0, encoding='utf-8')
+            self._trace_handler.setFormatter(logging.Formatter('%(message)s'))
         self._job_id = 0
         self._lock = threading.RLock()
         self._play_lock = threading.Lock()
@@ -93,6 +165,9 @@ class Assistant:
         self._messages = []
         self.transcript_revision = 0
         self.first = True
+        self._local_context_recovery = os.getenv('LOCALVOICE_CONTEXT_RECOVERY', '0') == '1'
+        self._local_recovery_wav = b''
+        self._local_recovery_reply = ''
         self.mic_on = not start_muted
         self.status = 'starting'
         self.error = None
@@ -164,7 +239,7 @@ class Assistant:
             self.warning = getattr(self.front, 'aec_error', None)
             # Warmup finishes BEFORE listening can submit chat, so it cannot
             # reset an established conversation. No delayed background TTS.
-            if self.client.health() and not self._stop.is_set():
+            if (self.variant_config is None or self._voice_model_id is not None) and self.client.health() and not self._stop.is_set():
                 warm = Turn()
                 with self._lock:
                     self._warmup = warm
@@ -232,6 +307,44 @@ class Assistant:
                         pass
             self.diagnostics.event('shutdown')
             self.diagnostics.close()
+            with self._lock:
+                if self._trace_handler:
+                    self._trace_handler.close()
+                    self._trace_handler = None
+
+    def traces(self, limit=20):
+        with self._lock:
+            return list(self._traces)[-limit:]
+
+    def _record_trace(self, job, checks):
+        record = dict(
+            ts=round(time.time(), 3),
+            turn_id=job.id,
+            epoch=job.epoch,
+            test=job.test,
+            agent_mode=bool(self.agent and not job.test),
+            status=('cancelled' if job.turn.cancel.is_set() else 'error' if job.turn.error else 'ok'),
+            error=job.turn.error,
+            user_text=job.agent_input if self.agent and not job.test else None,
+            reply_text=job.turn.text.strip() or None,
+            asr_s=job.asr_s if self.agent and not job.test else None,
+            agent_s=job.agent_s if self.agent and not job.test else None,
+            agent_trace=job.agent_trace,
+            voice_variant=self._voice_variant if self._voice_model_id else None,
+            reported_voice_model_id=self._voice_model_id,
+            sources=list(job.sources),
+            tts_first_audio_s=round(job.turn.ttft, 3) if job.turn.ttft is not None else None,
+            generated_audio_s=round(job.turn.audio_samples / 24000, 3),
+            played_audio_s=round(job.played_samples / 24000, 3),
+            total_turn_s=round(time.perf_counter() - job.t0, 3),
+            checks=checks,
+        )
+        with self._lock:
+            self._traces.append(record)
+            if self._trace_handler:
+                message = json.dumps(record, ensure_ascii=False, allow_nan=False)
+                self._trace_handler.handle(logging.LogRecord('localvoice.trace', logging.INFO, '', 0, message, (), None))
+        return record
 
     def _health_loop(self):
         while not self._stop.is_set():
@@ -257,8 +370,8 @@ class Assistant:
                     return True
             return False
 
-    def _attach_sources(self, message_id, sources):
-        """Attach only safe, public source links to their own reply."""
+    @staticmethod
+    def _safe_agent_sources(sources):
         safe = []
         for source in sources:
             if not isinstance(source, dict):
@@ -274,18 +387,24 @@ class Assistant:
             except ValueError:
                 continue
             safe.append({'title': str(source.get('title') or '')[:300], 'url': url})
+        return safe
+
+    def _attach_sources(self, message_id, sources):
+        """Attach validated sources to their matching reply."""
+        safe = self._safe_agent_sources(sources)
         with self._lock:
             for message in self._messages:
                 if message['id'] == message_id:
                     message['sources'] = safe
                     self.transcript_revision += 1
-                    return [dict(source) for source in safe]
-            return []
+                    return True
+            return False
 
     def _remember_agent_input(self, job):
         """Keep a recognized request once, even if its reply is interrupted.
 
-        Caller holds _lock.
+        Caller holds _lock. An unfinished reply is intentionally not recorded
+        as though it had been heard.
         """
         if self.agent and job.epoch == self._epoch and job.agent_input and not job.agent_input_saved:
             self._agent_history.append({'role': 'user', 'content': job.agent_input})
@@ -294,22 +413,21 @@ class Assistant:
             while self._agent_history and self._agent_history[0]['role'] != 'user':
                 self._agent_history.pop(0)
 
-    def _remember_interrupted_agent_reply(self, job):
-        """Keep a generated draft only after some audio was accepted for playback.
-
-        The marker explicitly prevents treating any part as definitely heard;
-        playback sample counts cannot tell us which words reached the listener.
-        Caller holds _lock.
-        """
-        text = job.turn.text.strip()
-        if (self.agent and not job.test and job.epoch == self._epoch and
-                job.agent_input and job.played_samples and text and not job.agent_reply_saved):
-            self._remember_agent_input(job)
-            self._agent_history.append({'role': 'assistant', 'content': text + ' [interrupted]'})
-            job.agent_reply_saved = True
-            self._agent_history = self._agent_history[-20:]
-            while self._agent_history and self._agent_history[0]['role'] != 'user':
-                self._agent_history.pop(0)
+    def _remember_agent_reply(self, job, interrupted=False):
+        """Keep generated text, marking playback interrupted when applicable."""
+        if (self.agent and not job.test and job.epoch == self._epoch
+                and job.played_samples > 0 and not job.agent_reply_saved):
+            text = job.turn.text.strip()
+            if text:
+                self._remember_agent_input(job)
+                suffix = ' [interrupted]' if interrupted and not text.endswith('[interrupted]') else ''
+                self._agent_history.append({'role': 'assistant', 'content': text + suffix})
+                job.agent_reply_saved = True
+                self._agent_history = self._agent_history[-20:]
+                while self._agent_history and self._agent_history[0]['role'] != 'user':
+                    self._agent_history.pop(0)
+                if job.sources and self._active is job:
+                    self._agent_sources = list(job.sources)
 
     def _asr_worker(self):
         while not self._stop.is_set():
@@ -324,7 +442,47 @@ class Assistant:
             except Exception as exc:
                 self.warning = 'Transcription unavailable: ' + str(exc)
 
+    def _apply_floor(self, action):
+        """Apply a floor decision. Injected players may not expose gain."""
+        if action.duck:
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(self.floor.duck_gain, 30)
+            self.diagnostics.event('floor_duck', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1))
+        if action.resume:
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(1.0, 100)
+            self.diagnostics.event('floor_resume', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1))
+        if action.cancel:
+            self.diagnostics.event('floor_commit', state=action.state,
+                                   reason=action.reason,
+                                   speech_ms=round(action.speech_ms, 1),
+                                   wall_ms=round(action.wall_ms, 1))
+            self.interrupt('barge-in')
+        if action.promote:
+            self.diagnostics.event('floor_promote', state=action.state,
+                                   reason=action.reason)
+
+    def _capture_allowed(self):
+        return (self.mic_on and not self._capture_reset.is_set()
+                and (self.floor_mode != 'manual' or self._active is None))
+
+    def _discard_reply_capture(self):
+        if self.floor_mode == 'manual':
+            # Invalidate queued blocks and callbacks that started before the
+            # reply ended. The capture loop resets its VAD on the next block.
+            self._capture_reset.set()
+            self.mic.drain()
+
     def _loop(self):
+        if self._use_floor_policy:
+            return self._loop_floor()
+        return self._loop_legacy()
+
+    def _loop_legacy(self):
         pre = collections.deque()
         rec = []
         rec_samples = 0
@@ -363,7 +521,7 @@ class Assistant:
                             'barge_restore', turn_id=job.id if job is not None else None,
                             duck_level=1.0, reason='capture reset',
                             barge_played_s=round(candidate.get('played_s', 0), 3))
-                if not self.mic_on:
+                if not self._capture_allowed():
                     continue
             try:
                 speaking, started, ended, clean = self.front.update(block)
@@ -372,7 +530,7 @@ class Assistant:
                 with self._lock:
                     # Reset/mute can invalidate this block while detection is
                     # running, just as they can invalidate a detected onset.
-                    if not self.mic_on or self._capture_reset.is_set():
+                    if not self._capture_allowed():
                         continue
                     self.error = 'Speech detection failed: ' + str(exc)
                     self.status = 'error'
@@ -387,31 +545,26 @@ class Assistant:
                     pre.popleft()
                 if started:
                     with self._lock:
-                        if not self.mic_on or self._capture_reset.is_set():
+                        if not self._capture_allowed():
                             continue
                         self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(float(np.sqrt(np.mean(clean ** 2))), 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
                         job = self._active
                         if job is not None:
                             playing = bool(getattr(self.player, 'playing', False))
-                            if playing or job.played_samples > 0:
-                                # Duck and wait for the normal submit gate. A
-                                # cough or an echo false positive must not
-                                # destroy a reply that is already speaking.
-                                self._barge = dict(job=job, at=time.time(),
-                                                   played_s=job.played_samples / 24000)
-                                if hasattr(self.front, 'use_barge_endpoint'):
-                                    # Research capture rigs extend the endpoint
-                                    # for a turn that interrupted playback.
-                                    self.front.use_barge_endpoint()
-                                self.player.set_gain(.2)
-                                self.diagnostics.event(
-                                    'barge_candidate', turn_id=job.id,
-                                    duck_level=.2,
-                                    barge_played_s=round(job.played_samples / 24000, 3))
-                            else:
-                                # No audio has reached the device yet: there is
-                                # nothing to duck, so cancel immediately.
-                                self.interrupt('barge-in')
+                            # Wait for the submit gate before cancelling an in-flight turn.
+                            # A cough, breath, or echo false positive must not destroy a reply
+                            # whether it is already speaking or still thinking.
+                            self._barge = dict(job=job, at=time.time(),
+                                               played_s=job.played_samples / 24000)
+                            if hasattr(self.front, 'use_barge_endpoint'):
+                                self.front.use_barge_endpoint()
+                            duck = .2 if (playing or job.played_samples > 0) else 1.0
+                            if duck < 1.0:
+                                self.player.set_gain(duck)
+                            self.diagnostics.event(
+                                'barge_candidate', turn_id=job.id,
+                                duck_level=duck,
+                                barge_played_s=round(job.played_samples / 24000, 3))
                         recording = True
                         rec = list(pre)
                         rec_samples = sum(map(len, rec))
@@ -431,7 +584,7 @@ class Assistant:
                     # Mute/reset may arrive while the frontend processes this
                     # block. Do not submit a stale automatic turn after mute.
                     with self._lock:
-                        if self.mic_on and not self._capture_reset.is_set():
+                        if self._capture_allowed():
                             self._confirm_barge()
                             self.submit_audio(audio)
                         else:
@@ -447,10 +600,173 @@ class Assistant:
                                 'barge_restore', turn_id=job.id if job is not None else None,
                                 duck_level=1.0, reason='short utterance',
                                 barge_played_s=round(candidate.get('played_s', 0), 3))
-                            self.status = ('speaking' if job is self._active
-                                           and getattr(self.player, 'playing', False)
-                                           else 'listening')
+                            self.status = (('speaking' if getattr(self.player, 'playing', False) or self.first_audio_at else 'thinking')
+                                           if job is self._active else 'listening')
+                        elif self._capture_allowed():
+                            self.status = 'listening'
+
+    def _loop_floor(self):
+        pre = collections.deque()
+        rec = []
+        rec_samples = 0
+        recording = False
+        candidate = False
+        while not self._stop.is_set():
+            self._apply_device_requests()
+            capture_queue = self.mic.q
+            read = getattr(capture_queue, 'get_with_generation', None)
+            try:
+                if read is None:
+                    generation, block = None, capture_queue.get(timeout=.05)
+                else:
+                    generation, block = read(timeout=.05)
+            except queue.Empty:
+                continue
+            with self._lock:
+                # Reset/mute may happen after dequeue, or while a callback is
+                # still preparing this block. Keep the first genuinely fresh
+                # block even when reset happened during a blocking read.
+                if (capture_queue is not self.mic.q
+                        or generation is not None and generation != capture_queue.generation):
+                    continue
+                if self._capture_reset.is_set():
+                    self._capture_reset.clear()
+                    pre.clear()
+                    rec = []
+                    rec_samples = 0
+                    recording = False
+                    candidate = False
+                    self.front.reset()
+                    self.floor.reset()
+                    if self.eot is not None:
+                        self.eot.reset()
+                    if self.status == 'recording':
+                        self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
+                if not self._capture_allowed():
+                    continue
+            try:
+                speaking, started, ended, clean = self.front.update(block)
+                self.warning = getattr(self.front, 'aec_error', None)
+            except Exception as exc:
+                with self._lock:
+                    # Reset/mute can invalidate this block while detection is
+                    # running, just as they can invalidate a detected onset.
+                    if not self._capture_allowed():
+                        continue
+                    self.error = 'Speech detection failed: ' + str(exc)
+                    self.status = 'error'
+                self._stop.wait(.1)
+                continue
+            if not len(clean):
+                continue
+            with self._lock:
+                # Mute/reset may arrive while the frontend is processing this
+                # block. Do not let a stale onset duck, cancel or submit.
+                if not self._capture_allowed():
+                    continue
+            rms = float(np.sqrt(np.mean(clean ** 2)))
+            eot_commit = False
+            if self.eot is not None and recording:
+                if getattr(self.front, 'hot', False):
+                    self.eot.reset()
+                elif not ended:
+                    quiet_ms = getattr(self.front, 'quiet_ms', 0)
+                    decision = None
+                    try:
+                        due = getattr(self.eot, 'due', None)
+                        if due is None or due(quiet_ms):
+                            decision = self.eot.update(
+                                np.concatenate(rec) if rec else clean, quiet_ms)
+                    except Exception as exc:
+                        self.eot_error = 'End-of-turn detection failed: ' + str(exc)
+                        self.eot = None
+                        if hasattr(self.front, 'end_chunks'):
+                            self.front.end_chunks = max(1, round(.48 * 1000 / 32))
+                        decision = None
+                    if decision == 'commit':
+                        eot_commit = True
+            # `speaking` is the frontend's segment state and stays true through
+            # the silence endpoint. The policy needs this block's speech
+            # evidence, not the segment state, or trailing silence would count
+            # as speech and turn every backchannel into a floor take.
+            policy_speaking = bool(getattr(self.front, 'hot', speaking))
+            action = self.floor.update(
+                now=time.perf_counter(), speaking=policy_speaking, started=started,
+                ended=ended, rms=rms, assistant_active=self._active is not None,
+                audible=bool(getattr(self.player, 'playing', False)),
+                block_s=len(clean) / 16000,
+                onset_ms=getattr(self.front, 'onset_speech_ms', None),
+                evidence_ms=getattr(self.front, 'speech_evidence_ms', None))
+            if not recording:
+                pre.append(clean)
+                # Retain speech before confirmation without delaying onset.
+                while len(pre) > 1 and sum(map(len, pre)) > self.pre_roll_samples:
+                    pre.popleft()
+                if started:
+                    with self._lock:
+                        if not self._capture_allowed():
+                            continue
+                        self._apply_floor(action)
+                        self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(rms, 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
+                        recording = True
+                        rec = list(pre)
+                        rec_samples = sum(map(len, rec))
+                        candidate = bool(self._active is not None and (action.duck or action.cancel))
+                        if action.cancel:
+                            self.status = 'recording'
+                        elif candidate:
+                            # The reply is still audible but ducked. Keep the
+                            # candidate private until the policy commits or
+                            # classifies it as a backchannel.
+                            self.status = 'speaking'
                         else:
+                            self.status = 'recording'
+            else:
+                rec.append(clean)
+                rec_samples += len(clean)
+                with self._lock:
+                    if not self._capture_allowed():
+                        continue
+                self._apply_floor(action)
+                if candidate and action.resume:
+                    # Short vocalisation: discard the candidate and let the
+                    # existing reply continue. No context reset, no submit.
+                    recording = False
+                    candidate = False
+                    rec = []
+                    rec_samples = 0
+                    pre.clear()
+                    with self._lock:
+                        self.status = ('speaking' if self._active is not None
+                                       else 'listening')
+                    continue
+                if candidate and action.cancel:
+                    candidate = False
+                    self.status = 'recording'
+                elif candidate and action.promote:
+                    candidate = False
+                    self.status = 'recording'
+            if recording and (ended or eot_commit or rec_samples >= 20 * 16000):
+                audio = np.concatenate(rec)
+                self.diagnostics.event('speech_end', seconds=round(len(audio) / 16000, 3), rms=round(float(np.sqrt(np.mean(audio ** 2))), 5), capped=not ended, eot_commit=eot_commit, eot_score=getattr(self.eot, 'last_score', None) if self.eot is not None else None)
+                recording = False
+                candidate = False
+                rec = []
+                rec_samples = 0
+                pre.clear()
+                self.front.reset()
+                self.floor.reset()
+                if self.eot is not None:
+                    self.eot.reset()
+                if len(audio) >= 3200 and float(np.sqrt(np.mean(audio ** 2))) >= .006:
+                    # Mute/reset may arrive while the frontend processes this
+                    # block. Do not submit a stale automatic turn after mute.
+                    with self._lock:
+                        if self._capture_allowed():
+                            self.submit_audio(audio)
+                else:
+                    with self._lock:
+                        if self._capture_allowed():
                             self.status = 'listening'
 
     def submit_audio(self, audio):
@@ -460,9 +776,16 @@ class Assistant:
             self.interrupt('new turn', announce=False)
             self.error = None
             self._job_id += 1
-            job = Job(epoch=self._epoch, first=self.first, wav=wav, id=self._job_id)
+            recovery = self._local_recovery_wav if not self.agent and self.first else b''
+            recovery_reply = self._local_recovery_reply if recovery else ''
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
+            job = Job(epoch=self._epoch, first=self.first, wav=wav, recovery_wav=recovery,
+                      recovery_reply=recovery_reply, id=self._job_id)
             if self.agent:
                 self._agent_sources = []
+                self._agent_notes = []
+                self._agent_search_warning = None
             self._pending_jobs[job.id] = job
             if self.session_archive is not None:
                 self._archive_pending.add(job.id)
@@ -476,6 +799,80 @@ class Assistant:
             self.interrupt_candidate = False
             self._spawn(self._run_job, job)
             return job
+
+    def submit_text(self, text):
+        if not isinstance(text, str) or not text.strip() or len(text) > 2000:
+            raise ValueError('Prompt text must be 1 to 2000 characters')
+        clean_text = text.strip()
+        with self._lock:
+            self._require_recording_open()
+            self.interrupt('text prompt', announce=False)
+            self.error = None
+            self._job_id += 1
+            recovery = self._local_recovery_wav if not self.agent and self.first else b''
+            recovery_reply = self._local_recovery_reply if recovery else ''
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
+            job = Job(epoch=self._epoch, first=self.first, wav=b'', id=self._job_id,
+                      agent_input=clean_text, recovery_wav=recovery, recovery_reply=recovery_reply)
+            if self.agent:
+                self._agent_sources = []
+                self._agent_notes = []
+                self._agent_search_warning = None
+            self._pending_jobs[job.id] = job
+            if self.session_archive is not None:
+                self._archive_pending.add(job.id)
+            self.diagnostics.event('turn_submit', turn_id=job.id, first=job.first, input_s=0.0, text_prompt=True)
+            job.user_id = self._say('user: ' + clean_text)
+            job.reply_id = self._say('')
+            self._active = job
+            self.status = 'thinking'
+            self.heard_at = time.time()
+            self.gen_start = self.first_audio_at = None
+            self.interrupt_candidate = False
+            self._spawn(self._run_job, job)
+            return job
+
+    def _speak_answer(self, answer, turn, receive):
+        """Synthesize short answers in one call; pipeline multi-sentence answers for fast first audio."""
+        text = answer.strip()
+        if len(text) <= 110:
+            self.client.tts(text, turn, max_tokens=512, on_audio=receive)
+            return
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])(?<!\b[A-Za-z]\.)\s+', text) if s.strip()]
+        if len(sentences) <= 1:
+            self.client.tts(text, turn, max_tokens=512, on_audio=receive)
+            return
+        segments = []
+        current = ''
+        for sent in sentences:
+            limit = 120 if not segments else 220
+            min_len = 25 if not segments else 80
+            if not current:
+                current = sent
+            elif len(current) < min_len or len(current) + 1 + len(sent) <= limit:
+                current += ' ' + sent
+            else:
+                segments.append(current)
+                current = sent
+        if current:
+            segments.append(current)
+        if len(segments) <= 1:
+            self.client.tts(text, turn, max_tokens=512, on_audio=receive)
+            return
+        first_ttft = None
+        for idx, segment in enumerate(segments):
+            if turn.cancel.is_set() or turn.error:
+                break
+            if idx > 0:
+                turn.done.clear()
+                turn.finish_reason = None
+                turn.request_observer = None
+            self.client.tts(segment, turn, max_tokens=512, on_audio=receive)
+            if first_ttft is None and turn.ttft is not None:
+                first_ttft = turn.ttft
+        if first_ttft is not None:
+            turn.ttft = first_ttft
 
     def _drop_barge(self):
         """Restore full playback gain and forget the candidate. Caller holds lock."""
@@ -527,6 +924,22 @@ class Assistant:
         turn.request_observer = None if self.agent and not job.test else lambda payload: self._archive_call(job, 'record_request', payload)
         def produce():
             try:
+                if self.variant_config is not None:
+                    with self._lock:
+                        variant, expected_id = self._voice_variant, self._voice_model_id
+                    if variant is None or expected_id is None:
+                        raise RuntimeError('Select and verify a local voice model before starting a turn.')
+                    try:
+                        actual_id = self.variant_config.verify(variant)
+                        if actual_id != expected_id:
+                            raise ValueError('The voice server reported a different model identifier')
+                    except ValueError as exc:
+                        with self._lock:
+                            self._voice_model_id = None
+                            self._voice_variant_error = str(exc)
+                        raise RuntimeError('Voice model verification failed: ' + str(exc)) from exc
+                    if turn.cancel.is_set():
+                        return
                 with self._lock:
                     if self._active is job:
                         self.gen_start = time.time()
@@ -544,19 +957,23 @@ class Assistant:
                 if job.test:
                     self.client.tts('Speaker check. One, two, three.', turn, on_audio=receive)
                 elif self.agent:
-                    with self._lock:
-                        if self._active is job:
-                            self._agent_phase = 'transcribing'
-                            self._agent_search_warning = None
-                        history = list(self._agent_history)
-                    # ASR and TTS are serialized on the same local context.
-                    # Both reset it, while cloud history is maintained separately.
-                    try:
-                        text = self.client.asr_text(job.wav, turn=turn)
-                    finally:
-                        # ASR uses the turn for cancellation, but its partial
-                        # text must never appear as an assistant reply.
-                        turn.text_parts.clear()
+                    if job.agent_input:
+                        text = job.agent_input
+                        job.asr_s = 0.0
+                    else:
+                        with self._lock:
+                            if self._active is job:
+                                self._agent_phase = 'transcribing'
+                        # ASR and TTS are serialized on the same local context.
+                        # Both reset it, while cloud history is maintained separately.
+                        asr_t0 = time.perf_counter()
+                        try:
+                            text = self.client.asr_text(job.wav, turn=turn)
+                        finally:
+                            job.asr_s = round(time.perf_counter() - asr_t0, 3)
+                            # ASR uses the turn for cancellation, but its partial
+                            # text must never appear as an assistant reply.
+                            turn.text_parts.clear()
                     with self._lock:
                         if turn.cancel.is_set() or self._active is not job:
                             return
@@ -564,8 +981,11 @@ class Assistant:
                             raise RuntimeError('No speech was transcribed. Please try again.')
                         text = text.strip()
                         job.agent_input = text
+                        history = list(self._agent_history)
                         self._replace(job.user_id, 'user: ' + text)
                         self._agent_phase = 'thinking'
+                    self.diagnostics.event('agent_asr', turn_id=job.id, duration_s=job.asr_s,
+                                           text_chars=len(text.strip()), empty=not bool(text.strip()))
                     turn.done.clear()
                     turn.first_event = turn.first_text = turn.ttft = None
                     turn.finish_reason = None
@@ -573,33 +993,64 @@ class Assistant:
                         with self._lock:
                             if self._active is job:
                                 self._agent_phase = 'searching' if active else 'thinking'
-                    if getattr(self.agent, 'supports_input_modality', False):
-                        result = self.agent.respond(text, history, turn, on_search=searching,
-                                                    input_modality='voice')
-                    else:
-                        result = self.agent.respond(text, history, turn, on_search=searching)
-                    with self._lock:
-                        if self._active is job:
-                            trace = getattr(self.agent, 'last_trace', None) or {}
-                            self._agent_search_warning = '; '.join(
-                                warning for warning in (trace.get('search_warning'), trace.get('response_warning'))
-                                if warning) or None
+                    agent_t0 = time.perf_counter()
+                    try:
+                        if getattr(self.agent, 'supports_input_modality', False):
+                            result = self.agent.respond(text, history, turn, on_search=searching,
+                                                        input_modality='voice' if job.wav else 'text')
+                        else:
+                            result = self.agent.respond(text, history, turn, on_search=searching)
+                    finally:
+                        job.agent_s = round(time.perf_counter() - agent_t0, 3)
+                        job.agent_trace = getattr(self.agent, 'last_trace', None)
+                        with self._lock:
+                            if self._active is job:
+                                trace = job.agent_trace or {}
+                                self._agent_search_warning = '; '.join(
+                                    warning for warning in (trace.get('search_warning'), trace.get('response_warning'))
+                                    if warning) or None
                     if result is None or turn.cancel.is_set():
                         return
                     answer, job.sources = result
+                    job.sources = self._safe_agent_sources(job.sources)
+                    notes = list((job.agent_trace or {}).get('expert_notes') or [])
+                    tools_called = [tc.get('tool') for tc in (job.agent_trace or {}).get('tool_calls', [])]
+                    self.diagnostics.event('agent_turn', turn_id=job.id, duration_s=job.agent_s,
+                                           provider=getattr(self.agent, 'label', None),
+                                           model=getattr(self.agent, 'model', None),
+                                           tools_called=tools_called,
+                                           sources_count=len(job.sources),
+                                           reply_chars=len(answer))
                     with self._lock:
                         if self._active is job:
-                            job.sources = self._attach_sources(job.reply_id, job.sources)
                             self._agent_phase = 'voicing'
+                            if job.sources:
+                                self._agent_sources = list(job.sources)
+                            if notes:
+                                self._agent_notes = notes
                     turn.text_parts.append(answer)
                     turn.request_observer = lambda payload: self._archive_call(job, 'record_request', payload)
-                    self.client.tts(answer, turn, max_tokens=512, on_audio=receive)
+                    self._speak_answer(answer, turn, receive)
                     if not turn.error and not turn.cancel.is_set() and not turn.audio_samples:
                         turn.error = 'Speech synthesis returned no audio.'
                     elif not turn.error and not turn.cancel.is_set() and turn.truncated:
                         turn.error = 'Speech synthesis reached its length limit; the spoken reply may be incomplete.'
+                elif job.agent_input and not job.wav:
+                    chat_text = getattr(self.client, 'chat_text', None)
+                    if not callable(chat_text):
+                        raise RuntimeError('This voice backend does not support typed conversation.')
+                    if job.recovery_wav and getattr(self.client, 'supports_context_recovery', False):
+                        chat_text(job.agent_input, turn, job.first, on_audio=receive,
+                                  recovery_wav=job.recovery_wav, recovery_reply=job.recovery_reply)
+                    else:
+                        chat_text(job.agent_input, turn, job.first, on_audio=receive)
                 else:
-                    self.client.chat_turn(job.wav, turn, job.first, on_audio=receive)
+                    if job.recovery_wav and getattr(self.client, 'supports_context_recovery', False):
+                        self.client.chat_turn(job.wav, turn, job.first, on_audio=receive,
+                                              recovery_wav=job.recovery_wav,
+                                              recovery_reply=job.recovery_reply)
+                    else:
+                        self.client.chat_turn(job.wav, turn, job.first, on_audio=receive)
             except Exception as exc:
                 if not turn.cancel.is_set():
                     turn.error = str(exc)
@@ -652,7 +1103,7 @@ class Assistant:
                     # observed zero samples. The playback lock still keeps
                     # the next turn behind this callback. Preserve the draft
                     # as possibly unheard, provided the epoch is still valid.
-                    self._remember_interrupted_agent_reply(job)
+                    self._remember_agent_reply(job, interrupted=True)
         with self._play_lock:
             if turn.cancel.is_set():
                 self._archive_call(job, 'finish_generation', turn)
@@ -682,15 +1133,9 @@ class Assistant:
                 with self._lock:
                     if self.agent and not job.test and self._active is job and turn.error:
                         self._remember_agent_input(job)
-                        self._remember_interrupted_agent_reply(job)
-                    if (self.agent and not job.test and self._active is job and job.epoch == self._epoch
-                            and not turn.cancel.is_set() and not turn.error and job.played_samples):
-                        self._remember_agent_input(job)
-                        self._agent_history.append({'role': 'assistant', 'content': turn.text.strip()})
-                        self._agent_history = self._agent_history[-20:]
-                        while self._agent_history and self._agent_history[0]['role'] != 'user':
-                            self._agent_history.pop(0)
-                        self._agent_sources = job.sources
+                    if (self.agent and not job.test and job.epoch == self._epoch
+                            and job.played_samples > 0 and not turn.error):
+                        self._remember_agent_reply(job, interrupted=turn.cancel.is_set())
                     if job.epoch == self._epoch:
                         text = (turn.text.strip() if not self.agent or job.test or job.agent_input else '')
                         # A playback failure also aborts generation. That
@@ -700,6 +1145,8 @@ class Assistant:
                                   ' [reply reached length limit]' if turn.truncated else
                                   '')
                         self._replace(job.reply_id, 'assistant: ' + (text or turn.error or ('[speaker check complete]' if job.test and job.played_samples else '[voice reply]' if job.played_samples else '[no reply]')) + suffix)
+                        if text and job.sources:
+                            self._attach_sources(job.reply_id, job.sources)
                     if self._active is job:
                         self._agent_phase = None
                         if self._barge is not None and self._barge.get('job') is job:
@@ -708,6 +1155,7 @@ class Assistant:
                                 'barge_restore', turn_id=job.id, duck_level=1.0,
                                 reason='playback ended',
                                 barge_played_s=round(candidate.get('played_s', 0), 3))
+                        self._discard_reply_capture()
                         self._active = None
                         self.first = bool(turn.error or turn.cancel.is_set() or job.test)
                         self.error = turn.error
@@ -720,6 +1168,19 @@ class Assistant:
                         if self.status != 'recording':
                             self.status = 'listening'
                         self.front.clear_playback()
+                pb_stats = getattr(self.player, 'stats', {}) or {}
+                agent_checks = (job.agent_trace or {}).get('checks') or {}
+                checks = dict(
+                    asr_ok=bool(not self.agent or job.test or job.agent_input.strip() or turn.cancel.is_set()),
+                    tools_ok=bool(agent_checks.get('tool_calls_succeeded', True)),
+                    reply_non_empty=bool(turn.text.strip() or job.test or turn.cancel.is_set()),
+                    tts_audio_ok=bool(turn.audio_samples > 0 or turn.cancel.is_set()),
+                    playback_clean=int(pb_stats.get('underflows', 0) or 0) == 0,
+                    error_free=turn.error is None,
+                )
+                checks['all_passed'] = all(checks.values())
+                self.diagnostics.event('turn_checks', turn_id=job.id, all_passed=checks['all_passed'], checks=checks)
+                self._record_trace(job, checks)
                 if self.asr_client is not None and job.wav and not self.agent:
                     try:
                         self._asr_q.put_nowait((job.user_id, job.wav))
@@ -731,8 +1192,12 @@ class Assistant:
             job = self._active
             if job is not None:
                 self.diagnostics.event('interrupt', turn_id=job.id, reason=why, played_s=round(job.played_samples/24000, 3))
+                if (self._local_context_recovery and not self.agent and not job.test and job.wav
+                        and getattr(self.client, 'supports_context_recovery', False)):
+                    self._local_recovery_wav = job.wav
+                    self._local_recovery_reply = job.turn.text.strip()[:600]
                 self._remember_agent_input(job)
-                self._remember_interrupted_agent_reply(job)
+                self._remember_agent_reply(job, interrupted=True)
                 job.turn.abort()
                 self._active = None
                 # Backend cannot truncate its KV to the played prefix.
@@ -740,7 +1205,14 @@ class Assistant:
             self._agent_phase = None
             self._drop_barge()
             self.player.stop()
+            if job is not None:
+                self._discard_reply_capture()
+            if hasattr(self.player, 'set_gain'):
+                self.player.set_gain(1.0)
             self.front.clear_playback()
+            self.floor.reset()
+            if self.eot is not None:
+                self.eot.reset()
             self.interrupt_candidate = False
             if announce:
                 self.interrupted_at = time.time()
@@ -755,8 +1227,11 @@ class Assistant:
             self._epoch += 1
             self.first = True
             self._messages.clear()
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
             self._agent_history.clear()
             self._agent_sources.clear()
+            self._agent_notes.clear()
             self._agent_search_warning = None
             if self.agent and hasattr(self.agent, 'reset'):
                 self.agent.reset()
@@ -781,37 +1256,122 @@ class Assistant:
         if self.status == 'recording' or self._active is not None or self._pending_jobs:
             raise RuntimeError('Wait until the current conversation turn finishes before changing settings.')
 
+    def _invalidate_voice_model(self, message):
+        with self._lock:
+            self._voice_model_id = None
+            self._voice_variant_error = message
+
+    def set_voice_variant(self, variant):
+        if self.variant_config is None:
+            raise ValueError('Configure a research voice server to enable model switching')
+        if variant not in ('standard', 'research'):
+            raise ValueError('Choose standard or research')
+        with self._lock:
+            self._require_idle_settings()
+            if self.session_archive is not None:
+                raise RuntimeError('Model switching is unavailable during a recorded session.')
+            if self.status in ('starting', 'error') or self._audio_warmup is not None:
+                raise RuntimeError('Wait for audio startup to finish before switching models.')
+            # Verify and prepare the new client before disturbing conversation.
+            try:
+                model_id = self.variant_config.verify(variant)
+            except ValueError as exc:
+                if self._voice_variant == variant:
+                    self._voice_model_id = None
+                    self._voice_variant_error = str(exc)
+                raise
+            if self._voice_variant == variant and self._voice_model_id == model_id:
+                return {'ok': True, 'voice_variant': variant, 'reported_model_id': model_id}
+            from lfm3_client import LFM3Client
+            from lfm3_variants import GuardedVoiceClient
+            candidate = LFM3Client(self.variant_config.endpoints[variant], timeout=self.client.timeout)
+            if getattr(self.client, '_custom_voice_params', False):
+                candidate.set_voice_params(**self._voice_params)
+            candidate = GuardedVoiceClient(candidate, self.variant_config, variant, model_id,
+                                           self._invalidate_voice_model)
+            previous = self.client
+            try:
+                self.reset()
+            except Exception:
+                candidate.close()
+                raise
+            self.client = candidate
+            self._voice_variant, self._voice_model_id = variant, model_id
+            self._voice_variant_error = None
+            self._server_ok = True
+            try:
+                previous.close()
+            except Exception:
+                pass
+            self.diagnostics.event('voice_variant_changed', variant=variant, reported_model_id=model_id)
+            return {'ok': True, 'voice_variant': variant, 'reported_model_id': model_id}
+
     def set_agent_mode(self, mode, model=None):
-        if mode not in ('local', 'opencode-go', 'opencode-zen'):
-            raise ValueError('Unsupported conversation mode')
+        if not isinstance(mode, str):
+            raise ValueError('Invalid agent mode')
+        mode = mode.strip().lower()
+        if mode not in ('local', 'opencode-go', 'opencode-zen', 'go', 'zen', 'custom'):
+            raise ValueError('Unsupported agent mode')
         if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 100):
             raise ValueError('Invalid model name')
         if mode != 'local' and not callable(getattr(self.client, 'asr_text', None)):
-            raise ValueError('The current voice backend does not support transcription.')
+            raise ValueError('This voice transport supports local conversation only; restart with HTTP transport to use a cloud agent')
         with self._lock:
             self._require_idle_settings()
-            provider = 'zen' if mode == 'opencode-zen' else 'go'
-            current_mode = ('opencode-' + getattr(self.agent, 'provider', 'go')) if self.agent else 'local'
-            desired_model = (model.strip() if model else os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or 'kimi-k3')
-            if mode == current_mode and (mode == 'local' or desired_model == getattr(self.agent, 'model', None)):
-                return {'ok': True}
-            replacement = None
-            if mode != 'local':
+            target_provider = ('custom' if mode == 'custom' else 'zen' if mode in ('opencode-zen', 'zen') else 'go')
+            target_model = (model.strip() if model else
+                            getattr(self._saved_agent, 'model', None) if self._saved_agent is not None and
+                            getattr(self._saved_agent, 'provider', 'go') == target_provider else None)
+            target_model = target_model or os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or ('local-model' if target_provider == 'custom' else 'kimi-k3')
+            if mode == 'local' and self.agent is None:
+                return {'ok': True, 'agent_mode': False}
+            if (mode != 'local' and self.agent is not None and
+                    getattr(self.agent, 'provider', 'go') == target_provider and
+                    getattr(self.agent, 'model', None) == target_model):
+                return {'ok': True, 'agent_mode': True, 'provider': getattr(self.agent, 'label', None), 'model': target_model}
+            self.reset()
+            self._local_recovery_wav = b''
+            self._local_recovery_reply = ''
+            if mode == 'local':
+                self.agent = None
+                self._agent_sources = []
+                self._agent_search_warning = None
+                self.diagnostics.event('agent_mode_changed', agent_mode=False, provider=None, model=None)
+                return {'ok': True, 'agent_mode': False}
+            provider = ('custom' if mode == 'custom'
+                        else 'zen' if mode in ('opencode-zen', 'zen') else 'go')
+            same_provider = (self._saved_agent is not None and
+                             getattr(self._saved_agent, 'provider', 'go') == provider)
+            saved_model = getattr(self._saved_agent, 'model', None) if same_provider else None
+            default_model = 'local-model' if provider == 'custom' else 'kimi-k3'
+            desired_model = ((model.strip() if model else None) or saved_model or
+                             os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or default_model)
+            if same_provider:
+                if saved_model and getattr(self._saved_agent, 'expert_model', None) == saved_model:
+                    self._saved_agent.expert_model = desired_model
+                self._saved_agent.model = desired_model
+                self.agent = self._saved_agent
+            else:
                 from agent import AgentClient
-                key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
+                key_name = ('LOCALVOICE_CUSTOM_API_KEY' if provider == 'custom'
+                            else 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY')
                 search_key = os.getenv('BRAVE_SEARCH_API_KEY')
-                search_provider = (getattr(self.agent, 'search_provider', None) or
+                previous = self.agent or self._saved_agent
+                search_provider = (getattr(previous, 'search_provider', None) or
                                    os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or
                                    ('brave' if search_key else 'ddg'))
-                replacement = AgentClient(os.getenv(key_name), provider=provider,
-                                          model=desired_model, search_key=search_key,
-                                          search_provider=search_provider, local_tools=False)
-            self.reset()
-            self.agent = replacement
-            self.diagnostics.event('agent_mode_changed', agent_mode=bool(replacement),
-                                   provider=provider if replacement else None,
-                                   model=desired_model if replacement else None)
-            return {'ok': True}
+                mem_path = self.trace_path.parent / 'agent_memory.json' if self.trace_path is not None else None
+                prev_persona = getattr(self.agent or self._saved_agent, 'persona', 'jarvis') or 'jarvis'
+                self._saved_agent = AgentClient(
+                    os.getenv(key_name), provider=provider, model=desired_model,
+                    search_key=search_key, search_provider=search_provider,
+                    local_tools=True, persona=prev_persona, memory_path=mem_path)
+                self.agent = self._saved_agent
+            self.diagnostics.event('agent_mode_changed', agent_mode=True,
+                                   provider=getattr(self.agent, 'label', None),
+                                   model=getattr(self.agent, 'model', None))
+            return {'ok': True, 'agent_mode': True, 'provider': getattr(self.agent, 'label', None),
+                    'model': getattr(self.agent, 'model', None)}
 
     def set_search_provider(self, provider):
         if provider not in ('none', 'ddg', 'bing', 'brave'):
@@ -819,15 +1379,72 @@ class Assistant:
         with self._lock:
             self._require_idle_settings()
             if self.agent is None:
-                raise ValueError('Select a cloud conversation mode first.')
+                raise ValueError('Select a cloud agent before configuring web search')
             if provider == 'brave' and not getattr(self.agent, '_search_key', None):
-                raise ValueError('Brave search requires BRAVE_SEARCH_API_KEY in the app environment.')
-            self.agent.search_provider = provider
-            self.agent.search_enabled = provider != 'none'
-            self._agent_sources.clear()
-            self._agent_search_warning = None
-            self.diagnostics.event('search_provider_changed', provider=provider)
-            return {'ok': True}
+                raise ValueError('Brave search requires BRAVE_SEARCH_API_KEY in the app environment')
+            if getattr(self.agent, 'search_provider', None) != provider:
+                self.interrupt('search provider change', announce=False)
+                self.agent.search_provider = provider
+                self.agent.search_enabled = provider != 'none'
+                self._agent_sources = []
+                self._agent_search_warning = None
+                self.diagnostics.event('search_provider_changed', provider=provider)
+            return {'ok': True, 'search_provider': provider, 'search_enabled': provider != 'none'}
+
+    def set_persona(self, persona):
+        if not isinstance(persona, str) or not persona.strip():
+            raise ValueError('Invalid persona')
+        with self._lock:
+            target = self.agent or self._saved_agent
+            if target is None or not hasattr(target, 'set_persona'):
+                raise ValueError('Voice persona requires an active cloud agent')
+            selected = target.set_persona(persona)
+            self.diagnostics.event('persona_changed', persona=selected)
+            return {'ok': True, 'persona': selected}
+
+    def set_voice_params(self, params):
+        if not isinstance(params, dict) or not params:
+            raise ValueError('Expected voice parameters')
+        allowed = {'temperature', 'top_k', 'top_p', 'min_p', 'repeat_penalty', 'voice'}
+        if not set(params) <= allowed:
+            raise ValueError('Unsupported voice parameter')
+        updated = dict(self._voice_params)
+        if 'temperature' in params:
+            val = float(params['temperature'])
+            if isinstance(params['temperature'], bool) or not math.isfinite(val) or not 0.0 <= val <= 2.0:
+                raise ValueError('Temperature must be between 0.0 and 2.0')
+            updated['temperature'] = round(val, 3)
+        if 'top_k' in params:
+            val = params['top_k']
+            if isinstance(val, bool) or not isinstance(val, int) or not 1 <= val <= 200:
+                raise ValueError('top_k must be an integer between 1 and 200')
+            updated['top_k'] = val
+        if 'top_p' in params:
+            val = float(params['top_p'])
+            if isinstance(params['top_p'], bool) or not math.isfinite(val) or not 0.05 <= val <= 1.0:
+                raise ValueError('top_p must be between 0.05 and 1.0')
+            updated['top_p'] = round(val, 3)
+        if 'min_p' in params:
+            val = float(params['min_p'])
+            if isinstance(params['min_p'], bool) or not math.isfinite(val) or not 0.0 <= val <= 1.0:
+                raise ValueError('min_p must be between 0.0 and 1.0')
+            updated['min_p'] = round(val, 3)
+        if 'repeat_penalty' in params:
+            val = float(params['repeat_penalty'])
+            if isinstance(params['repeat_penalty'], bool) or not math.isfinite(val) or not 0.8 <= val <= 2.0:
+                raise ValueError('repeat_penalty must be between 0.8 and 2.0')
+            updated['repeat_penalty'] = round(val, 3)
+        if 'voice' in params:
+            val = params['voice']
+            if not isinstance(val, str) or len(val.strip()) > 64 or any(ord(c) < 32 for c in val):
+                raise ValueError('Invalid voice identifier')
+            updated['voice'] = val.strip()
+        with self._lock:
+            self._voice_params = updated
+            if hasattr(self.client, 'set_voice_params'):
+                self.client.set_voice_params(**updated)
+            self.diagnostics.event('voice_params_changed', **updated)
+            return {'ok': True, 'voice_params': dict(self._voice_params)}
 
     def _archive_sealed(self):
         return self._recording_sealed or bool(getattr(self.session_archive, 'sealed', False))
@@ -980,6 +1597,8 @@ class Assistant:
                     replacement.stop()
                     continue
                 old.stop()
+                if hasattr(self.player, 'refresh_device'):
+                    self.player.refresh_device()
                 result.append(True)
                 self.diagnostics.event('mic_changed', device=index, latency_s=self.mic.latency_s)
             except Exception as exc:
@@ -1032,15 +1651,41 @@ class Assistant:
             playing = bool(getattr(self.player, 'playing', False))
             if self.interrupted_at and now - self.interrupted_at < .6:
                 phase = 'interrupted'
+            tools = ([t['function']['name'] for t in self.agent.available_tools()]
+                     if self.agent and hasattr(self.agent, 'available_tools') else [])
+            latest_trace = None
+            if self._traces:
+                last = self._traces[-1]
+                at = last.get('agent_trace') or {}
+                latest_trace = dict(
+                    turn_id=last.get('turn_id'),
+                    status=last.get('status'),
+                    asr_s=last.get('asr_s'),
+                    agent_s=last.get('agent_s'),
+                    tts_first_audio_s=last.get('tts_first_audio_s'),
+                    played_audio_s=last.get('played_audio_s'),
+                    tools_used=[tc.get('tool') for tc in at.get('tool_calls', [])],
+                    checks=last.get('checks'),
+                )
             return dict(status=self.status, phase=phase, mic_on=self.mic_on,
                         end_silence_ms=getattr(self.front, 'end_chunks', 0) * 32 or None,
                         agent_mode=bool(self.agent), agent_phase=self._agent_phase,
                         agent_provider=getattr(self.agent, 'label', None),
-                        agent_mode_id=('opencode-' + getattr(self.agent, 'provider', 'go')) if self.agent else 'local',
                         agent_model=getattr(self.agent, 'model', None),
+                        agent_persona=getattr(self.agent, 'persona', None),
+                        agent_tools=tools,
+                        voice_params=dict(self._voice_params),
+                        voice_variant_enabled=self.variant_config is not None,
+                        voice_variant=self._voice_variant if self._voice_model_id else None,
+                        voice_model_id=self._voice_model_id,
+                        voice_variant_error=self._voice_variant_error,
                         search_enabled=bool(self.agent and self.agent.search_enabled),
                         search_provider=getattr(self.agent, 'search_provider', None),
                         agent_sources=[dict(source) for source in self._agent_sources],
+                        agent_notes=list(self._agent_notes),
+                        trace_count=len(self._traces),
+                        trace_file=self.trace_path.name if self.trace_path is not None else None,
+                        last_trace=latest_trace,
                         active_turn=self._active is not None,
                         pending_turns=len(self._pending_jobs),
                         playback_active=playing,
@@ -1062,11 +1707,14 @@ class Assistant:
                         gen_start=self.gen_start, first_audio_at=self.first_audio_at,
                         eta_first_audio_ms=eta, eta_budget_ms=round(budget * 1000),
                         interrupt_candidate=self.interrupt_candidate, interrupted_at=self.interrupted_at,
+                        floor_state=self.floor.state, floor_mode=self.floor_mode,
                         echo_tail_ms=getattr(self.front, 'echo_tail_samples', 0) / 16 or None,
                         echo_history_ms=getattr(self.front, 'echo_history_samples', 0) / 16 or None,
+                        eot_enabled=self.eot is not None, eot_error=self.eot_error,
+                        eot=self.eot.snapshot() if self.eot is not None else None,
                         last_ttft=self.last_ttft, last_audio_s=self.last_audio_s,
                         last_turn_s=self.last_turn_s, turns=self.turns,
-                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self._agent_search_warning, getattr(self.agent, 'configuration_error', None)] if w) or None,
+                        error=self.error, warning='; '.join(w for w in [self.warning, self.archive_error, self.eot_error, self._agent_search_warning, getattr(self.agent, 'configuration_error', None)] if w) or None,
                         audio_diagnostics=dict(residual_rejections=getattr(self.front, 'residual_rejections', 0), input_gain=getattr(self.mic, 'effective_gain', None), echo_score=getattr(self.front, 'echo_score', None), input_latency_s=getattr(self.mic, 'latency_s', None), input_drops=getattr(self.mic, 'dropped_blocks', 0), clipped_fraction=getattr(self.mic, 'clipped_fraction', 0), playback=getattr(self.player, 'stats', {})))
 
 
@@ -1114,10 +1762,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send('{"error":"Forbidden origin"}', 403)
         if self.path == '/api/state':
             self._send(json.dumps(self.server.assistant.state()))
+        elif self.path == '/api/improve':
+            self._send(json.dumps(self.server.improver.state()))
         elif self.path == '/api/diagnostics':
             self._send(json.dumps(self.server.assistant.diagnostics.recent(100)))
+        elif self.path == '/api/traces':
+            self._send(json.dumps(self.server.assistant.traces(20)))
         elif self.path == '/':
             self._send(PAGE, ctype='text/html')
+        elif self.path == '/testing':
+            self._send(TEST_PAGE, ctype='text/html')
         else:
             self._send('{"error":"Not found"}', 404)
 
@@ -1138,6 +1792,18 @@ class Handler(BaseHTTPRequestHandler):
                     result = assistant.seal_archive(desired['expected_session'])
                 except (RuntimeError, OSError) as exc:
                     self._send(json.dumps({'error': str(exc)}), 409)
+                    return
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/improve':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'task', 'model'}:
+                    raise ValueError('Expected development task and model')
+                trace = assistant.state().get('last_trace')
+                try:
+                    result = self.server.improver.start(desired['task'], desired['model'], trace)
+                except ValueError as exc:
+                    self._send(json.dumps({'error': str(exc)}), 400)
                     return
                 self._send(json.dumps(result))
                 return
@@ -1162,23 +1828,49 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._send(json.dumps({'ok': True, 'milliseconds': actual}))
                 return
-            elif self.path in ('/api/agent', '/api/search-provider'):
+            elif self.path == '/api/voice-variant':
                 desired = json.loads(raw or b'{}')
-                if not isinstance(desired, dict):
-                    raise ValueError('Expected settings object')
+                if not isinstance(desired, dict) or set(desired) != {'variant'}:
+                    raise ValueError('Expected voice variant')
                 try:
-                    if self.path == '/api/agent':
-                        if 'mode' not in desired or not set(desired) <= {'mode', 'model'}:
-                            raise ValueError('Expected conversation mode settings')
-                        result = assistant.set_agent_mode(desired['mode'], desired.get('model'))
-                    else:
-                        if set(desired) != {'provider'}:
-                            raise ValueError('Expected search provider')
-                        result = assistant.set_search_provider(desired['provider'])
-                except (ValueError, RuntimeError) as exc:
-                    self._send(json.dumps({'error': str(exc)}), 409)
+                    result = assistant.set_voice_variant(desired['variant'])
+                except ValueError as exc:
+                    self._send(json.dumps({'error': str(exc)}), 400)
                     return
                 self._send(json.dumps(result))
+                return
+            elif self.path == '/api/agent':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or 'mode' not in desired or not set(desired) <= {'mode', 'model'}:
+                    raise ValueError('Expected agent mode settings')
+                result = assistant.set_agent_mode(desired['mode'], desired.get('model'))
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/search-provider':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'provider'}:
+                    raise ValueError('Expected a search provider')
+                result = assistant.set_search_provider(desired['provider'])
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/persona':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'persona'}:
+                    raise ValueError('Expected persona setting')
+                result = assistant.set_persona(desired['persona'])
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/voice':
+                desired = json.loads(raw or b'{}')
+                result = assistant.set_voice_params(desired)
+                self._send(json.dumps(result))
+                return
+            elif self.path == '/api/prompt':
+                desired = json.loads(raw or b'{}')
+                if not isinstance(desired, dict) or set(desired) != {'text'}:
+                    raise ValueError('Expected prompt text')
+                job = assistant.submit_text(desired['text'])
+                self._send(json.dumps(dict(ok=True, turn_id=job.id)))
                 return
             elif self.path == '/api/reset':
                 assistant.reset()
@@ -1195,7 +1887,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self._send('{"error":"Not found"}', 404)
             self._send('{"ok":true}')
-        except ArchiveSealedError as exc:
+        except (ArchiveSealedError, RuntimeError) as exc:
             self._send(json.dumps({'error': str(exc)}), 409)
         except (ValueError, KeyError):
             self._send('{"error":"Invalid request"}', 400)
@@ -1204,20 +1896,42 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def voice_client_type(backend):
-    """Resolve the configured local voice backend before opening devices."""
+def create_voice_clients(backend, transport, asr_url=None, agent_enabled=False, variant_config=None):
+    """Select the explicitly requested voice transport without opening devices."""
+    if backend not in ('lfm2', 'lfm3'):
+        raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
+    if transport == 'realtime':
+        if agent_enabled or asr_url:
+            raise ValueError('The experimental realtime transport supports local conversation only; '
+                             'use LOCALVOICE_BACKEND=lfm3 for agent or separate ASR mode')
+        from realtime_client import RealtimeClient
+        return RealtimeClient(), None
+    if transport != 'http':
+        raise ValueError('LOCALVOICE_TRANSPORT must be http or realtime')
     if backend == 'lfm3':
         from lfm3_client import LFM3Client
-        return LFM3Client
-    if backend == 'lfm2':
-        return ServerClient
-    raise ValueError('LOCALVOICE_BACKEND must be lfm2 or lfm3')
+        client_type = LFM3Client
+    else:
+        client_type = ServerClient
+    base = variant_config.endpoints['standard'] if variant_config else os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080')
+    return client_type(base), client_type(asr_url) if asr_url else None
 
 
-def main():
+def voice_context_endpoint():
+    """Identify the HTTP server whose context the chosen transport owns."""
+    if os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower() != 'realtime':
+        return os.getenv('LOCALVOICE_SERVER', 'http://127.0.0.1:8080')
+    parsed = urlsplit(os.getenv('LOCALVOICE_REALTIME', 'ws://127.0.0.1:8080/v1/realtime'))
+    if parsed.scheme not in ('ws', 'wss') or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError('LOCALVOICE_REALTIME must be a WebSocket URL without credentials')
+    return ('https://' if parsed.scheme == 'wss' else 'http://') + parsed.netloc
+
+
+def main(variant_config=None):
     asr_url = os.getenv('LOCALVOICE_ASR_SERVER')
     from pathlib import Path
     log_path = Path(__file__).resolve().parents[1] / 'outputs' / 'logs' / 'app.jsonl'
+    trace_path = Path(__file__).resolve().parents[1] / 'outputs' / 'logs' / 'traces.jsonl'
     archive_path = os.getenv('LOCALVOICE_RECORD_SESSION')
     archive = None
     if archive_path:
@@ -1233,20 +1947,24 @@ def main():
         from agent import AgentClient
         provider = 'zen' if agent_mode == 'opencode-zen' else 'go'
         key_name = 'OPENCODE_ZEN_API_KEY' if provider == 'zen' else 'OPENCODE_GO_API_KEY'
+        search_key = os.getenv('BRAVE_SEARCH_API_KEY')
+        search_provider = os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or ('brave' if search_key else 'ddg')
         agent = AgentClient(os.getenv(key_name), provider=provider,
-                            model=os.getenv('LOCALVOICE_AGENT_MODEL', 'kimi-k3'),
-                            search_key=os.getenv('BRAVE_SEARCH_API_KEY'),
-                            search_provider=(os.getenv('LOCALVOICE_SEARCH', '').strip().lower() or
-                                             ('brave' if os.getenv('BRAVE_SEARCH_API_KEY') else 'ddg')),
-                            local_tools=False)
+                            model=os.getenv('LOCALVOICE_AGENT_MODEL', '').strip() or 'kimi-k3',
+                            search_key=search_key,
+                            search_provider=search_provider,
+                            local_tools=True,
+                            memory_path=trace_path.parent / 'agent_memory.json')
     elif agent_mode:
         raise ValueError('LOCALVOICE_AGENT must be opencode-go or opencode-zen')
     backend = os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower()
-    client_type = voice_client_type(backend)
-    client = client_type(os.getenv('LOCALVOICE_SERVER', 'http://localhost:8080'))
-    assistant = Assistant(client=client, asr_client=client_type(asr_url) if asr_url else None, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent)
+    transport = os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower()
+    client, asr_client = create_voice_clients(backend, transport, asr_url, agent is not None, variant_config)
+    assistant = Assistant(client=client, asr_client=asr_client, diagnostics=Diagnostics(log_path), start_muted=os.getenv("LOCALVOICE_START_MUTED") == "1", session_archive=archive, agent=agent, trace_path=trace_path, variant_config=variant_config)
     server = ThreadingHTTPServer(('127.0.0.1', UI_PORT), Handler)
     server.assistant = assistant
+    from self_improve import SelfImprover
+    server.improver = SelfImprover(Path(__file__).resolve().parents[1])
     assistant.start()
     print(f'Turnwave on http://localhost:{UI_PORT}', flush=True)
     try:
@@ -1258,13 +1976,36 @@ def main():
         server.server_close()
 
 
-if __name__ == '__main__':
-    from contextlib import ExitStack
-    from backend_session import backend_session, canonical_base
-    endpoints = {canonical_base(os.getenv('LOCALVOICE_SERVER', 'http://127.0.0.1:8080'))}
+def configured_voice_variants():
+    research_url = os.getenv('LOCALVOICE_LFM3_RESEARCH_SERVER', '').strip()
+    if not research_url:
+        return None
+    if (os.getenv('LOCALVOICE_BACKEND', 'lfm2').strip().lower() != 'lfm3'
+            or os.getenv('LOCALVOICE_TRANSPORT', 'http').strip().lower() != 'http'
+            or os.getenv('LOCALVOICE_ASR_SERVER')):
+        raise ValueError('Voice variant switching requires LFM3 HTTP mode without a separate ASR server')
+    from lfm3_variants import VoiceVariants
+    return VoiceVariants(
+        voice_context_endpoint(), research_url,
+        os.getenv('LOCALVOICE_LFM3_STANDARD_MODEL_ID', 'LFM3-Omni-2B-Q4_K_M.gguf'),
+        os.getenv('LOCALVOICE_LFM3_RESEARCH_MODEL_ID', 'research-q4.gguf'))
+
+
+def voice_context_endpoints(variant_config=None):
+    from backend_session import canonical_base
+    endpoints = {canonical_base(voice_context_endpoint())}
+    if variant_config is not None:
+        endpoints = set(variant_config.endpoints.values())
     if os.getenv('LOCALVOICE_ASR_SERVER'):
         endpoints.add(canonical_base(os.environ['LOCALVOICE_ASR_SERVER']))
+    return endpoints
+
+
+if __name__ == '__main__':
+    from contextlib import ExitStack
+    from backend_session import backend_session
+    variant_config = configured_voice_variants()
     with ExitStack() as sessions:
-        for endpoint in sorted(endpoints):
+        for endpoint in sorted(voice_context_endpoints(variant_config)):
             sessions.enter_context(backend_session(endpoint))
-        main()
+        main(variant_config=variant_config)

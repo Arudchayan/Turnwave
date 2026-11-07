@@ -93,22 +93,32 @@ def test_cancelled_late_producer_prevents_premature_recording_stop(tmp_path):
 
 @pytest.mark.parametrize('stage', ['begin', 'write'])
 def test_storage_failure_stays_visible_without_breaking_voice(tmp_path, stage):
+    attempted_write = threading.Event()
     class BrokenArchive:
         folder=tmp_path/'unavailable'
         def begin_turn(self,*args,**kwargs):
             if stage=='begin':raise OSError('simulated storage failure')
             turn=real.begin_turn(*args,**kwargs)
-            def fail(samples):raise OSError('simulated storage failure')
+            def fail(samples):
+                attempted_write.set()
+                raise OSError('simulated storage failure')
             turn.write_audio=fail
             return turn
+    class ShortClient(FakeClient):
+        def chat_turn(self, wav, turn, first, on_audio=None, **kwargs):
+            turn.text_parts.append('A complete reply.')
+            turn.audio_samples = 1440
+            on_audio(np.ones(1440, np.float32) * .1)
+            turn.done.set()
     real=SessionArchive(tmp_path/'real')
-    a=make_app(tmp_path,archive=BrokenArchive())
+    a=make_app(tmp_path,client=ShortClient(),archive=BrokenArchive())
     try:
         job=a.submit_audio(np.ones(8000,np.float32)*.1)
         wait_for(lambda:a._active is None)
         a.warning='simulated frontend warning'
         state=a.state()
         assert not job.turn.error and job.played_samples>0
+        assert attempted_write.is_set() == (stage == 'write')
         assert 'storage failure' in state['archive_error'] and 'storage failure' in state['warning']
         assert 'frontend warning' in state['warning']
         assert state['archive_pending']==1 and not state['recording_safe']
@@ -195,7 +205,8 @@ def test_muting_a_processing_onset_does_not_interrupt_current_reply(tmp_path):
             assert release.wait(3)
             processed.set()
             return True,True,False,audio
-    a=Assistant(mic=FakeMic(),player=FakePlayer(),front=OnsetFront(),client=FakeClient())
+    a = Assistant(mic=FakeMic(), player=FakePlayer(), front=OnsetFront(),
+                  client=FakeClient(), floor_mode='deferred')
     try:
         job=a.submit_audio(np.full(8000,.1,np.float32))
         wait_for(lambda:a.status=='speaking')

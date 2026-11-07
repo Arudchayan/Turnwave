@@ -46,6 +46,17 @@ def test_longer_pause_preserves_a_650ms_gap_but_delays_endpoint():
     assert patient[-1][1] > quick[-1][1] + .25
 
 
+def test_app_starts_balanced_and_still_accepts_explicit_quick(monkeypatch):
+    monkeypatch.delenv('LOCALVOICE_EOT_MODEL', raising=False)
+    app = Assistant(mic=FakeMic(), player=FakePlayer(), client=FakeClient())
+    try:
+        assert app.state()['end_silence_ms'] == 800
+        assert app.set_end_silence(480) == 480
+        assert app.state()['end_silence_ms'] == 480
+    finally:
+        app.close()
+
+
 @pytest.mark.parametrize('value', [True, None, 0, 319, 1601, 800.0, '800'])
 def test_invalid_pause_is_rejected(value):
     with pytest.raises(ValueError):

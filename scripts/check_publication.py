@@ -23,7 +23,7 @@ from xml.etree import ElementTree
 PUBLIC_DOCS = {
     'ARCHITECTURE.md', 'KNOWN_LIMITATIONS.md', 'PRIVACY.md',
     'PUBLICATION.md', 'RECORDED_SESSIONS.md', 'RESULTS.md',
-    'EVALUATION.md', 'THIRD_PARTY.md',
+    'EVALUATION.md', 'THIRD_PARTY.md', 'TESTING.md',
 }
 PUBLIC_RESEARCH_DOCS = {
     'research/README.md', 'research/examples/README.md',
@@ -37,6 +37,10 @@ PUBLIC_RESEARCH_ASSETS = {
     'research/results.json',
     'research/short-turn-cases.json',
     'research/candidate-screen-cases.json',
+    'research/floor_replay_summary.json',
+    'research/floor_acoustic_summary.json',
+    'research/eot_bench_summary.json',
+    'research/lfm3_asr_summary.json',
     'research/examples/examples.json',
     'research/examples/pass-reply.wav',
     'research/examples/failure-reply.wav',
@@ -47,11 +51,13 @@ ASSET_MANIFEST_FIELDS = {
 }
 PRIVATE_ROOTS = {
     'outputs', 'data', 'models', '.slim', '.desloppify',
-    '.venv', '.venv-eval', 'public-release',
+    '.venv', '.venv-eval', 'public-release', 'checkpoints',
 }
+PRIVATE_DIRS = {'logs', 'transcripts', 'recordings', 'traces'}
+TRANSCRIPT_SUFFIXES = {'.json', '.txt', '.md', '.csv', '.srt', '.vtt'}
 PRIVATE_SUFFIXES = {
     '.wav', '.mp3', '.flac', '.ogg', '.m4a', '.f32', '.gguf',
-    '.pem', '.key', '.p12', '.pfx', '.token', '.bundle', '.log',
+    '.pem', '.key', '.p12', '.pfx', '.token', '.bundle', '.log', '.jsonl',
 }
 PATTERNS = {
     'private key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
@@ -301,8 +307,11 @@ def inspect_file(name, data, approved_asset=None):
         canonical in PUBLIC_RESEARCH_ASSETS and isinstance(approved_asset, dict)
         and approved_asset.get('path') == canonical
     )
-    is_private_root = bool(path.parts and path.parts[0] in PRIVATE_ROOTS)
-    if (is_private_root or '__pycache__' in path.parts
+    is_private_root = bool(path.parts and path.parts[0].casefold() in PRIVATE_ROOTS)
+    private_directory = any(part.casefold() in PRIVATE_DIRS for part in path.parts[:-1])
+    is_transcript_file = (path.name.casefold().startswith('transcript')
+                          and path.suffix.casefold() in TRANSCRIPT_SUFFIXES)
+    if (is_private_root or private_directory or is_transcript_file or '__pycache__' in path.parts
             or path.name in {'AGENTS.md', '.ignore', 'scorecard.png'}
             or path.name == '.env' or path.name.startswith('.env.') and path.name != '.env.example'
             or path.suffix.lower() in PRIVATE_SUFFIXES and not is_approved_asset):
