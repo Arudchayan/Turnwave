@@ -392,8 +392,7 @@ and zero Balanced-only). Multiple speech starts occurred in 20/20 versus
 to the end of each source recording was 90 ms versus 397.5 ms, respectively;
 the source may itself contain end silence. This is a synthetic pause inserted
 into a small clean read-speech fixture, not a microphone, app-capture, ASR, or
-human-voice benchmark. It does not show a fix for this user's recognition
-errors or establish performance on other silence lengths, accents or rooms.
+human-voice benchmark. Other silence lengths, accents, and rooms remain outside this replay's scope.
 
 The local aggregate and per-clip numerical evidence is kept under ignored
 `outputs/`; no speech or transcripts are saved. With `pandas`, `soundfile`,
@@ -585,22 +584,6 @@ avoiding Windows shared GPU memory paging. Time-to-first-audio (`last_ttft`) on
 the initial speaker check dropped from 0.596 s to 0.102 s (~83% latency reduction).
 These observations represent single controlled speaker-check runs without
 microphone capture, endpointing delays, or room acoustics.
-
-## Adjustable pause between turns
-
-The interface offers 480, 800 and 1,120 ms silence waits. In one CPU replay
-through the Silero frontend with echo processing disabled and no holdoff, the
-SAPI phrase above was trimmed to 100 ms around samples above 0.008 absolute
-amplitude, resulting in a 2.196 s clip. It was repeated with either 650 or
-850 ms of inserted silence, followed by 1.5 s of silence, in 20 ms steps.
-At both inserted gaps, the 480 and 800 ms settings produced
-two detected turns; the 1,120 ms setting produced one. For the 650 ms gap,
-the final endpoints were at 5.46, 5.78 and 6.10 s, respectively: joining the
-two clips came with 640 ms of additional final wait compared with 480 ms.
-The inserted silence is not the entire VAD-measured silence because the clips
-also contain quiet audio. This is one synthetic voice and does not establish
-word retention, false-interruption rates or a generally safe setting. The
-default was 480 ms at the time; the setting changes only between utterances.
 
 ## Synthetic interruption with device playback
 

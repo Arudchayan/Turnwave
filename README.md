@@ -2,104 +2,77 @@
 
 [![Tests](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml/badge.svg)](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml)
 
-An experimental local speech-to-speech assistant for Windows and WSL2, built
-around **LiquidAI LFM2.5-Audio-1.5B** and its native Liquid audio runner. An
-optional **LFM3-Audio-2B** path uses llama.cpp's `/v1/realtime` WebSocket for
-interleaved text and 24 kHz speech; the LFM2.5 path remains the default.
+Turnwave is a local speech-to-speech assistant for Windows and WSL2. The
+public preview recommends **Standard LFM3-Omni-2B**, the **Balanced** pause,
+and the **Interrupt** button.
 
-The app listens while the model replies and can cancel playback when you speak.
-It adds interruption handling around a turn-based audio model. This is a research
-prototype: natural pauses, speaker echo and response quality remain limitations.
+[Quick start](#quick-start-standard-lfm3) · [Evaluation](docs/EVALUATION.md) ·
+[Change log](CHANGELOG.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
 
-[Architecture](docs/ARCHITECTURE.md) · [Results and lessons](docs/RESULTS.md) ·
-[Real-device testing](docs/TESTING.md) · [Example audio](research/examples/README.md) ·
-[Reproduce checks and figures](docs/EVALUATION.md) · [Known limits](docs/KNOWN_LIMITATIONS.md)
+## Quick start: Standard LFM3
 
-[Change log](CHANGELOG.md) · [Experiment ledger](EXPERIMENTS.md)
+1. Install Python 3.12 on Windows and WSL2 Ubuntu. In the repository, create a
+   Python environment and install the app requirements.
 
-```mermaid
-flowchart LR
-    Mic[Microphone] --> Capture[Echo processing / VAD / capture]
-    Capture --> Model[Local audio model in WSL]
-    Model --> Player[Streaming playback]
-    Player --> Speaker[Speaker]
-    Player -->|render reference| Capture
-```
+   ```powershell
+   python -m venv .venv
+   .venv/Scripts/Activate.ps1
+   python -m pip install -r requirements.txt
+   ```
 
-## What we tested
+2. Install the [Standard LFM3 model and runner](#lfm3-backend-setup).
+   Start the backend from the repository root.
 
-| Work | Finding | Status |
+   ```powershell
+   wsl -d Ubuntu bash src/server_lfm3_wsl.sh
+   ```
+
+3. In a second PowerShell terminal with no cloud provider configured, activate
+   the environment and start the app muted.
+
+   ```powershell
+   .venv/Scripts/Activate.ps1
+   $env:LOCALVOICE_AGENT = ''
+   $env:LOCALVOICE_SERVER = 'http://127.0.0.1:8080'
+   $env:LOCALVOICE_BACKEND = 'lfm3'
+   $env:LOCALVOICE_TRANSPORT = 'http'
+   $env:LOCALVOICE_FLOOR_MODE = 'manual'
+   $env:LOCALVOICE_START_MUTED = '1'
+   python src/app.py
+   ```
+
+4. Open [Turnwave](http://127.0.0.1:8000/), select your headset, confirm
+   **Local Direct** and **Balanced · 0.8 s**, then unmute. If Balanced
+   splits your sentences, try **Patient · 1.12 s**. The soundcore R50i
+   was used in the initial headset check.
+
+Speak after a reply finishes, or press **Interrupt** and then speak.
+Hands-free interruption and the Heretic research model are experimental.
+Local Direct sends speech to the configured local backend. Optional cloud
+conversation sends recognized text and recent context to the configured
+provider. Search sends queries to the selected search provider. See
+[data handling](docs/PRIVACY.md) for what is saved and sent.
+
+## What we measured
+
+| Check | Result | Scope |
 | --- | --- | --- |
-| Final-block playback race | Forced regression: 0/2,003 → 2,003/2,003 samples played | Fixed and regression-tested |
-| Semantic completion screen | Faster completion gains also released four unfinished prefixes | Rejected |
-| Selective opening capture | Six paired cases produced identical captured bytes | Not adopted |
-| Native content baseline | 24 actual generated answers, including six length-limited failures | Small diagnostic slice |
-| Example model replies | One text-rubric pass and one ownership failure, with separate ASR | Saved WAVs and transcripts |
-| LFM3 inference optimization | `--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 -np 1`: speaker TTFT 0.596 s → 0.102 s at 3,451 MiB VRAM | Configured in `src/server_lfm3_wsl.sh` |
-| Jarvis intermediary & tools | `get_time`, `get_weather`, `system_status`, `remember`/`recall`, `consult_expert`, `/api/prompt`, pipelined TTS | Integrated and tested |
-| Reversible floor replay | Authored: 3 non-limitation false cancels with hard vs 0 with duck/backchannel; 3/3 backchannels preserved. Acoustic stress: 220 ms backchannel produced ~316 ms VAD evidence and was committed | Opt-in; real-device A/B pending |
-| Public-pause EOT diagnostic | Conversation-grouped held-out: fixed 480 ms 63.92% per-pause false cut-off; 0.9/0.7 re-query + 1 s default 31.37% with 100% recall (2 s: 19.22%) | Opt-in Smart Turn sidecar; one deterministic English split |
-| Cross-lingual EOT | English 0.9/0.7 schedule: German 45.40% false cut-offs (fixed 62.95%); Spanish 59.22% (fixed 67.25%), 100% recall | Weak transfer; per-language calibration needed |
-| Smart Turn CPU latency | 55.47 ms mean, 47.76 ms median, 81.93 ms p90 per 8 s query | 300 ms schedule feasible on this CPU |
-| LFM3 realtime smoke | Interleaved text/24 kHz speech, 0.68 s first audio, 5.04 s reply on one local run | Transport validated; controlled benchmark pending |
-| LFM3 ASR check | 20 LibriSpeech dummy clips, Q4_K_M CPU: 5.74% corpus WER, 65% sentence error | Clean read-speech diagnostic |
+| Pause preset replay | A 650 ms inserted pause ended the turn early in 20/20 clips at 480 ms and 4/20 at 800 ms. The median final endpoint was 307.5 ms later. | Public read-speech fixture with inserted pauses. |
+| Initial headset check | A paused utterance failed with Balanced and passed with Patient. Hands-free mode stopped for an acknowledgment and misunderstood a spoken correction. | One headset session. |
+| Paired XSTest screen | Standard refused 24/32 unsafe prompts and Research refused 22/32. One blinded coding agent graded all 144 completions across 72 paired prompts. | The result did not establish reliable refusal reduction. |
 
+[Methods and reproduction](docs/EVALUATION.md) · [Detailed results](docs/RESULTS.md) ·
+[Real-device testing](docs/TESTING.md) · [Experiment ledger](EXPERIMENTS.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [Example audio](research/examples/README.md)
 
-See [results](docs/RESULTS.md) for methods, per-case data and limitations.
+## LFM3 backend setup
 
-## Prerequisites
-
-- Windows with working input/output devices and WSL2 Ubuntu.
-- Python 3.12 for the application. Node.js for browser-script tests.
-- A compatible Liquid audio native runner and separately obtained model files.
-- Suitable hardware for the selected runner; performance depends on hardware.
-
-The native integration pins llama.cpp PR #18641 commit
-`ec9d1fdd9cc18643c5e161b65b8053f6f6f34a4b`. Obtain the source checkout,
-model assets and toolchains separately; review [their terms](docs/THIRD_PARTY.md).
-For an optional CUDA build, activate CMake, compatible CUDA 13 `nvcc` and a host
-C++ compiler in WSL, then run from the repository root:
-
-```bash
-bash src/build_cuda_server.sh
-```
-
-The helper expects an existing checkout at `~/liquid-build`, verifies the exact
-revision and accepts clean source or the complete reviewed patch set. It does
-not clone, fetch, reset or install prerequisites. WSL environment overrides are
-`LOCALVOICE_RUNNER_SOURCE`, `LOCALVOICE_RUNNER_BUILD_DIR`,
-`LOCALVOICE_BUILD_JOBS` and `CUDACXX`. The build contract has fake-command tests;
-a clean-machine native build has not been validated for this release.
-
-## Setup and run
-
-```powershell
-python -m venv .venv
-.venv/Scripts/Activate.ps1
-python -m pip install -r requirements.txt
-```
-
-Place model files in `models/LFM2.5-Audio-1.5B-GGUF/`:
-
-- `LFM2.5-Audio-1.5B-Q8_0.gguf` or `LFM2.5-Audio-1.5B-Q4_0.gguf`
-- `mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf`
-- `vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf`
-- `tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf`
-
-The launcher prefers a local runner under `~/liquid-build/build/bin` inside
-WSL. `LOCALVOICE_GPU_RUNNER` can select another runner directory; a prebuilt
-runner may instead be placed under `models/runner/llama-liquid-audio-ubuntu-x64`.
-Keep the required shared libraries with the runner. Stop the server before
-applying the complete five-patch set using `src/apply_runner_fixes.sh`; that
-helper patches the same existing checkout and rebuilds the server.
-
-### Optional LFM3 voice backend
-
-LFM3-Omni-2B can also be used with a recent llama.cpp server. It uses a different
+Standard LFM3-Omni-2B uses a recent llama.cpp server. It uses a different
 protocol, so it does not use the pinned LFM2.5 runner or its patches. Obtain the
 Q4_K_M model and projector from [LiquidAI's GGUF release](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF)
-into `models/LFM3-Omni-2B-GGUF/`, and a compatible llama.cpp build (b11960 or
-newer) separately. The default launcher looks for the b12032 CUDA build in
+and place `LFM3-Omni-2B-Q4_K_M.gguf` and
+`mmproj-LFM3-Omni-2B-Q4_K_M.gguf` in `models/LFM3-Omni-2B-GGUF/`.
+Install a compatible llama.cpp build (b11960 or newer) separately. The default launcher looks for the b12032 CUDA build in
 `models/runner/llama-b12032-cuda/files/llama-b12032/`; set
 `LOCALVOICE_LFM3_RUNNER` inside WSL to choose another build. CUDA builds also
 need compatible runtime libraries. The launcher checks the matching b12032
@@ -110,61 +83,13 @@ set `LOCALVOICE_CUDA_LIB` inside WSL to their directory. With those assets insta
 wsl -d Ubuntu bash src/server_lfm3_wsl.sh
 ```
 
-In a second terminal, set `$env:LOCALVOICE_BACKEND = 'lfm3'` before launching
-`python src/app.py`. The default remains `lfm2`. LFM3 uses a realtime WebSocket
-for speech conversation and transcription, and streaming PCM for synthesis.
+Use the [quick start](#quick-start-standard-lfm3) to launch the app against
+this server. The LFM3 client uses a realtime WebSocket for speech conversation
+and transcription, and streaming PCM for synthesis.
 The tested configuration and its limits are recorded in [results](docs/RESULTS.md).
 
-To try an independently prepared LFM3 Omni research variant, stop the backend and
-start it again in WSL with all three variables set:
-
-```bash
-LOCALVOICE_LFM3_VARIANT=research \
-LOCALVOICE_LFM3_RESEARCH_MODEL=/path/to/research-model.gguf \
-LOCALVOICE_LFM3_RESEARCH_PROJECTOR=/path/to/matching-projector.gguf \
-bash src/server_lfm3_wsl.sh
-```
-
-On Windows, the optional CPU build of llama.cpp b12032 can be placed in
-`models/runner/llama-b12032-win-cpu/`. The local research study stores its
-candidate under `models/LFM3-Omni-2B-research-study/research-q4.gguf`. With
-those files installed, select either variant when starting the backend:
-
-```powershell
-./src/server_lfm3_windows.ps1 -Variant standard
-# Or, after stopping the standard backend:
-./src/server_lfm3_windows.ps1 -Variant research -Model path/to/research.gguf -Projector path/to/projector.gguf
-```
-
-The CPU build does not use GPU acceleration. A separately installed compatible
-runner can be selected with `-Runner`; custom research weights require both
-`-Model` and `-Projector` so their compatibility is explicit.
-
-Use a projector validated against that specific model. Restart the backend without
-these variables to return to the standard model. This selects weights at server
-startup; it is not a live toggle. The research files must be prepared separately:
-one small CPU compatibility probe was exported to GGUF and produced audio and a
-correct synthetic transcription, but did not improve the two refusal examples
-used in that probe. Speech quality and broader behavior have not been validated.
-This selection affects the local voice model, not the remote agent model.
-
-For experiments, obtain the original full-precision LFM3 Omni checkpoint and
-install `heretic-llm==2.0.0` in a separate Python environment. Inspect the
-checkpoint's custom Python code before allowing it to execute. The experimental
-adapter gives Heretic access to text logits and hidden states while preserving
-the speech model's saved architecture:
-
-```powershell
-.venv-heretic\Scripts\python scripts/heretic_lfm3.py --model-dir models/LFM3-Omni-2B-HF --trust-model-code -- --device-map cpu --batch-size 1 --study-checkpoint-dir outputs/maintenance/heretic-checkpoints
-```
-
-Pass additional Heretic 2.0 options after `--`. Its default optimization can be
-slow on a CPU. Save to a separate directory, convert the saved checkpoint and
-its projector with a compatible llama.cpp converter, quantize the main model,
-and test both files before using the research launcher. The adapter normalizes
-inactive text sampling values to satisfy Transformers' save validation; verify
-generation and speech after conversion. The model's license and Heretic's
-license apply separately. Model modifications can change behavior and quality.
+See [model-modification research](#optional-model-modification-research) for
+separately prepared variants and in-app switching.
 
 The launch script `src/server_lfm3_wsl.sh` configures llama.cpp inference and acoustic sampling optimizations
 tuned for 4 GiB GPU memory limits:
@@ -173,10 +98,12 @@ tuned for 4 GiB GPU memory limits:
 - Single parallel sequence slot (`-np 1`)
 - Natural RVQ acoustic sampling (`--temp 0.7 --top-k 40 --top-p 0.9 --min-p 0.05 --repeat-penalty 1.05`)
 
-On an NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB), this configuration keeps peak VRAM
-at 3,451 MiB, reduces speaker-check time-to-first-audio (`last_ttft`) from 0.596 s
-to 0.102 s, and avoids the flat pitch and metallic buzz caused by greedy (`--temp 0`) RVQ audio codec sampling. Environment overrides are
-`LOCALVOICE_FLASH_ATTN`, `LOCALVOICE_KV_TYPE`, `LOCALVOICE_PARALLEL`, `LOCALVOICE_TEMP`, `LOCALVOICE_TOP_K`, `LOCALVOICE_TOP_P`, `LOCALVOICE_MIN_P`, and `LOCALVOICE_REPEAT_PENALTY`. Optional voice conditioning overrides on the client side are `LOCALVOICE_VOICE` and `LOCALVOICE_SPEAKER_REF`.
+A historical speaker check on an NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB)
+measured 3,451 MiB peak VRAM and reduced first audio from 0.596 s to 0.102 s.
+That timing excludes microphone capture and turn detection. Launcher overrides
+include `LOCALVOICE_FLASH_ATTN`, `LOCALVOICE_KV_TYPE`,
+`LOCALVOICE_PARALLEL`, and `LOCALVOICE_TEMP`. Optional voice conditioning
+uses `LOCALVOICE_VOICE` and `LOCALVOICE_SPEAKER_REF`.
 
 #### Optional model-modification research
 
@@ -248,7 +175,47 @@ while the selected cloud reasoning model stays the same. This option requires
 the LFM3 HTTP transport and does not support a separate ASR server. Both server
 contexts are reserved by the app while it runs.
 
-From the repository root, start the backend:
+## Legacy LFM2.5 backend
+
+- Windows with working input/output devices and WSL2 Ubuntu.
+- Python 3.12 for the application. Node.js for browser-script tests.
+- A compatible Liquid audio native runner and separately obtained model files.
+- Suitable hardware for the selected runner; performance depends on hardware.
+
+The native integration pins llama.cpp PR #18641 commit
+`ec9d1fdd9cc18643c5e161b65b8053f6f6f34a4b`. Obtain the source checkout,
+model assets and toolchains separately; review [their terms](docs/THIRD_PARTY.md).
+For an optional CUDA build, activate CMake, compatible CUDA 13 `nvcc` and a host
+C++ compiler in WSL, then run from the repository root:
+
+```bash
+bash src/build_cuda_server.sh
+```
+
+The helper expects an existing checkout at `~/liquid-build`, verifies the exact
+revision and accepts clean source or the complete reviewed patch set. It does
+not clone, fetch, reset or install prerequisites. WSL environment overrides are
+`LOCALVOICE_RUNNER_SOURCE`, `LOCALVOICE_RUNNER_BUILD_DIR`,
+`LOCALVOICE_BUILD_JOBS` and `CUDACXX`. The build contract has fake-command tests;
+a clean-machine native build has not been validated for this release.
+
+### Model files and runner
+
+Place model files in `models/LFM2.5-Audio-1.5B-GGUF/`:
+
+- `LFM2.5-Audio-1.5B-Q8_0.gguf` or `LFM2.5-Audio-1.5B-Q4_0.gguf`
+- `mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf`
+- `vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf`
+- `tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf`
+
+The launcher prefers a local runner under `~/liquid-build/build/bin` inside
+WSL. `LOCALVOICE_GPU_RUNNER` can select another runner directory; a prebuilt
+runner may instead be placed under `models/runner/llama-liquid-audio-ubuntu-x64`.
+Keep the required shared libraries with the runner. Stop the server before
+applying the complete five-patch set using `src/apply_runner_fixes.sh`; that
+helper patches the same existing checkout and rebuilds the server.
+
+From the repository root, start the LFM2.5 backend:
 
 ```powershell
 wsl -d Ubuntu bash src/server_wsl.sh
@@ -257,6 +224,8 @@ wsl -d Ubuntu bash src/server_wsl.sh
 After it prints `Server ready`, use a second terminal:
 
 ```powershell
+.venv/Scripts/Activate.ps1
+$env:LOCALVOICE_BACKEND = 'lfm2'
 $env:LOCALVOICE_START_MUTED = "1"
 python src/app.py
 ```
@@ -269,6 +238,8 @@ while speaking. Changes apply between utterances; longer waits cannot guarantee
 that an unfinished sentence will remain together. The setting returns to the
 default when the app restarts.
 
+## Voice settings
+
 `LOCALVOICE_SERVER` changes the backend URL (default local port 8080).
 `LOCALVOICE_CHAT_SYSTEM` changes the chat instruction. Optional transcription
 uses `LOCALVOICE_ASR_SERVER` and requires a genuinely separate model context.
@@ -277,10 +248,10 @@ For devices with long playback delays, the experimental
 reduce self-interruptions but can delay quiet speech while echo is present; see
 [the measured tradeoff](docs/RESULTS.md). Set `$env:LOCALVOICE_ECHO_PROFILE = 'long'`
 in PowerShell and restart the app to change profiles.
-`LOCALVOICE_FLOOR_MODE=reversible` enables the experimental duck/backchannel
-path: a short vocalisation during a reply no longer has to cancel it. The
-existing deferred interruption behavior remains the default; set `hard` explicitly
-to compare immediate cancellation.
+`LOCALVOICE_FLOOR_MODE=manual` is the default. Use the **Interrupt** button
+to stop a reply before speaking. Set `LOCALVOICE_FLOOR_MODE=reversible` to
+test the experimental duck-and-resume policy or `LOCALVOICE_FLOOR_MODE=hard`
+to compare immediate spoken cancellation. Restart the app after changing modes.
 For LFM3 Omni, `LOCALVOICE_CONTEXT_RECOVERY=1` enables an experimental recovery
 after an interrupted local reply. It keeps the preceding user audio in memory,
 transcribes it locally on the next turn, and supplies it with an explicitly
@@ -501,8 +472,3 @@ Models and dependencies have their own [licenses](docs/THIRD_PARTY.md).
 
 See [contributing](CONTRIBUTING.md), [security](SECURITY.md) and
 [publication guidance](docs/PUBLICATION.md).
-
-When Bing results do not match the query’s topic and, where present, an
-additional query term, the app retries with DuckDuckGo (and potentially its
-Wikipedia fallback). This simple
-lexical screen can miss relevant sources and does not verify factual accuracy.

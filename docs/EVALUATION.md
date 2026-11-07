@@ -5,6 +5,40 @@ individually rather than combined into an overall quality score. Included data
 reproduce the counts and figures; rerunning historical model experiments also
 requires the original stimuli, model assets, runtimes and settings.
 
+## Public preview evidence
+
+The initial headset pass used Standard LFM3 in Local Direct mode with a
+soundcore R50i. A spoken name and number came through correctly. One paused
+sentence failed with Balanced and succeeded without the pause and with Patient.
+During hands-free testing, the reversible policy treated an acknowledgment as
+a new turn. A deliberate spoken interruption stopped playback promptly, but
+the subsequent reply misunderstood the request.
+
+In two post-interruption turns, first audio took about 10 seconds from
+submission. About 9.2–9.3 seconds elapsed before the existing LFM3 request
+timer started, followed by 0.8–0.9 seconds from that point to first audio. A
+quiet follow-up spent about 0.04 seconds before the request timer and 0.76
+seconds from request timing to first audio. These three observations come
+from one session. The historical timing origin does not distinguish app
+scheduling, backend ownership, cancellation cleanup, and connection setup.
+
+The [pause preset replay](RESULTS.md#adjustable-pause-between-turns) gives a
+controlled comparison. With a 650 ms inserted pause, Quick released early on
+20 of 20 clips and Balanced on 4 of 20. Balanced moved the median final
+endpoint 307.5 ms later. Reproduce with
+`python scripts/pause_frontend_bench.py --out outputs/preview-pause.json`.
+This check exercises the Silero frontend on public read speech.
+
+The [expanded paired XSTest screen](#expanded-paired-xstest-screen) reports
+24/32 unsafe refusals for Standard and 22/32 for Research. One coding agent
+graded the outputs while blinded to model identity. The measured difference
+is insufficient to establish reliable refusal reduction.
+
+Only aggregate findings are published. Keep raw headset logs, generated
+audio, model outputs and reviewer material in ignored local output directories.
+The initial headset observations do not verify the preview's manual mode.
+See [real-device testing](TESTING.md) for the device protocol.
+
 ## Evidence map
 
 ```mermaid
@@ -469,7 +503,7 @@ tools; it does not compile the native runner. Current results are visible in
 [GitHub Actions](https://github.com/Arudchayan/Turnwave/actions/workflows/tests.yml).
 A fresh-machine native build and real-device acceptance remain unvalidated.
 
-# Voice recognition investigation
+## Voice recognition investigation
 
 On 2026-11-06, the active app used the research local voice model for both
 speech recognition and speech output while its cloud agent formulated answers.
@@ -477,10 +511,10 @@ The available diagnostics recorded speech starts, nonempty transcriptions,
 no reported input drops or clipping, and native 16 kHz microphone capture.
 They did not retain microphone audio or reference words, so they cannot judge
 whether those transcriptions were correct or why the user found them poor.
-The default quick end-of-turn setting waits 480 ms of silence; a longer setting
-may help if a sentence is split, but the logs do not establish this as the cause.
+The Quick end-of-turn preset waits 480 ms of silence. A longer setting may
+help if a sentence is split. Those logs cannot establish the cause.
 
-## Controlled screen
+### Controlled screen
 
 We compared the first 20 clips of the pinned
 `hf-internal-testing/librispeech_asr_dummy` clean validation fixture at revision
@@ -519,7 +553,7 @@ run per arm further limit attribution. Do not infer that the research model,
 standard model, or Whisper will work better for a particular user. We did not
 change ASR routing based on this screen.
 
-## Reproduction
+### Reproduction
 
 Install the evaluation dependencies and use a dedicated local model server, not
 one holding an app conversation. The realtime script uses the cooperating
@@ -546,5 +580,5 @@ files are written locally and never intentionally overwritten. Dataset/model
 download terms are separate from the project license. Next, use a wider,
 diverse evaluation including spontaneous speech and a properly consented
 paired comparison with the affected microphone; the current evidence does not
-identify a reliable ASR fix for the user's reported problem.
+identify a reliable ASR fix for the reported recognition problem.
 
