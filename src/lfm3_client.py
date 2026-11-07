@@ -149,6 +149,7 @@ class LFM3Client:
     def chat_turn(self, wav_bytes, turn, first, max_tokens=512, on_audio=None, require_audio=True,
                   recovery_wav=None, recovery_reply='', _text_input=None):
         context = ''
+        setup_started = time.perf_counter()
         if first and recovery_wav and not turn.cancel.is_set():
             try:
                 context = self.asr_text(recovery_wav, turn=turn).strip()[:1000]
@@ -158,18 +159,28 @@ class LFM3Client:
             finally:
                 turn.text_parts.clear()
                 turn.done.clear()
+                turn.voice_setup_s['context_recovery'] = time.perf_counter() - setup_started
         if turn.cancel.is_set():
             turn.done.set()
             return
         acquired = False
+        response_pending = False
         try:
+            lock_started = time.perf_counter()
             acquired = self._acquire(turn)
+            turn.voice_setup_s['lock_wait'] = time.perf_counter() - lock_started
             if not acquired or turn.cancel.is_set():
                 return
             if first:
+                close_started = time.perf_counter()
                 self._close_chat()
+                turn.voice_setup_s['close_previous'] = time.perf_counter() - close_started
             if self._chat is None:
-                self._chat, self._out_rate = self._connect(turn)
+                connect_started = time.perf_counter()
+                try:
+                    self._chat, self._out_rate = self._connect(turn)
+                finally:
+                    turn.voice_setup_s['session_handshake'] = time.perf_counter() - connect_started
             if self._chat is None or turn.cancel.is_set():
                 return
             if context:
@@ -200,6 +211,7 @@ class LFM3Client:
             if turn.cancel.is_set():
                 return
             self._chat.send(json.dumps({'type': 'response.create', 'response': {'max_output_tokens': max_tokens}}))
+            response_pending = True
             while not turn.cancel.is_set():
                 event = self._receive(self._chat, turn)
                 if event is None:
@@ -226,6 +238,7 @@ class LFM3Client:
                         if on_audio:
                             on_audio(samples)
                 elif kind == 'response.done':
+                    response_pending = False
                     response = event.get('response') or {}
                     status = response.get('status')
                     if status in ('failed', 'cancelled', 'incomplete'):
@@ -237,13 +250,23 @@ class LFM3Client:
         except Exception as exc:
             if not turn.cancel.is_set():
                 turn.error = str(exc)
-            if acquired:
-                self._close_chat()
         finally:
             if acquired:
-                if turn.cancel.is_set():
-                    self._close_chat()
-                self.request_lock.release()
+                try:
+                    if turn.cancel.is_set():
+                        close_started = time.perf_counter()
+                        if response_pending and self._chat is not None:
+                            # Release the server slot explicitly before closing.
+                            try:
+                                self._chat.send(json.dumps({'type': 'response.cancel'}))
+                            except (OSError, websocket.WebSocketException):
+                                pass  # A disconnected socket still gets closed below.
+                        self._close_chat()
+                        turn.voice_setup_s['cancel_cleanup'] = time.perf_counter() - close_started
+                    elif turn.error:
+                        self._close_chat()
+                finally:
+                    self.request_lock.release()
             turn.done.set()
 
     def chat_text(self, text, turn, first, max_tokens=512, on_audio=None, require_audio=True,

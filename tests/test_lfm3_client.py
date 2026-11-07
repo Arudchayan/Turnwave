@@ -57,6 +57,9 @@ def test_realtime_chat_streams_and_reuses_context(monkeypatch):
         client.chat_turn(wav, turn, first, on_audio=chunks.append)
         assert turn.done.is_set() and turn.error is None and turn.text == 'Hello'
         assert turn.audio_samples == 2
+        assert 'lock_wait' in turn.voice_setup_s
+        assert ('session_handshake' in turn.voice_setup_s) is first
+        assert ('close_previous' in turn.voice_setup_s) is first
     assert len(connections) == 1
     assert sum(message['type'] == 'response.create' for message in sock.sent) == 2
     assert np.concatenate(chunks).shape == (4,)
@@ -186,6 +189,23 @@ def test_cancelled_turn_does_not_connect(monkeypatch):
     turn = Turn(); turn.abort()
     LFM3Client().chat_turn(wav16k_bytes(np.ones(8)), turn, True)
     assert turn.done.is_set() and turn.error is None
+
+
+def test_cancelling_an_active_reply_signals_server_before_closing(monkeypatch):
+    pcm = np.array([500, -500], dtype='<i2').tobytes()
+    sock = Socket(initial_events() + [
+        {'type': 'response.output_audio.delta', 'delta': base64.b64encode(pcm).decode()},
+    ])
+    original_close = sock.close
+    def close():
+        assert sock.sent[-1] == {'type': 'response.cancel'}
+        original_close()
+    sock.close = close
+    monkeypatch.setattr('lfm3_client.websocket.create_connection', lambda *a, **k: sock)
+    client, turn = LFM3Client(), Turn()
+    client.chat_text('hello', turn, True, on_audio=lambda _: turn.abort())
+    assert turn.done.is_set() and turn.cancel.is_set() and turn.error is None
+    assert sock.closed and not client.request_lock.locked()
 
 
 def test_tts_rejects_wrong_format_and_releases_lock(monkeypatch):

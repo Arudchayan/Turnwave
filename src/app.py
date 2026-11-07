@@ -906,6 +906,7 @@ class Assistant:
                 self.diagnostics.event('archive_error', turn_id=job.id, error=str(exc))
         turn.request_observer = None if self.agent and not job.test else lambda payload: self._archive_call(job, 'record_request', payload)
         def produce():
+            dispatch_s = time.perf_counter() - job.t0
             try:
                 if self.variant_config is not None:
                     with self._lock:
@@ -1038,7 +1039,16 @@ class Assistant:
                 if not turn.cancel.is_set():
                     turn.error = str(exc)
             finally:
-                self.diagnostics.event('generation_end', turn_id=job.id, cancelled=turn.cancel.is_set(), error=turn.error, finish_reason=turn.finish_reason, text_chars=len(turn.text), audio_s=round(turn.audio_samples/24000, 3), first_audio_s=turn.ttft, first_text_s=turn.first_text, first_event_s=turn.first_event, request_queue_s=turn.queue_s, headers_s=turn.headers_s)
+                self.diagnostics.event(
+                    'generation_end', turn_id=job.id, cancelled=turn.cancel.is_set(),
+                    error=turn.error, finish_reason=turn.finish_reason,
+                    text_chars=len(turn.text), audio_s=round(turn.audio_samples / 24000, 3),
+                    first_audio_s=turn.ttft, first_text_s=turn.first_text,
+                    first_event_s=turn.first_event, request_queue_s=turn.queue_s,
+                    headers_s=turn.headers_s, dispatch_s=round(dispatch_s, 3),
+                    request_after_submit_s=round(turn.t_req - job.t0, 3) if turn.t_req else None,
+                    voice_setup_s={phase: round(seconds, 3)
+                                   for phase, seconds in turn.voice_setup_s.items()})
                 self._archive_call(job, 'finish_generation', turn)
                 self._close_job_half(job, generation=True)
                 job.produced.set()

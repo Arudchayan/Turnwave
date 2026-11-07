@@ -98,6 +98,7 @@ class Turn:
         self.first_text = None
         self.queue_s = 0.0
         self.headers_s = None
+        self.voice_setup_s = {}
         self.text_parts = []
         self.audio_frames = 0
         self.audio_samples = 0
