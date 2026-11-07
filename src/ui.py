@@ -278,7 +278,7 @@ border-top:1px solid var(--line);padding-top:16px;margin-top:26px;font-size:.76r
 </div>
 <div class=field-row>
 <label id=pause-control for=pausesel>Pause before reply
-<select id=pausesel aria-describedby=pause-help><option value=480>Quick · 0.48 s</option><option value=800>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
+<select id=pausesel aria-describedby=pause-help><option value=480>Quick · 0.48 s</option><option value=800 selected>Balanced · 0.8 s</option><option value=1120>Patient · 1.12 s</option></select></label>
 <span id=pause-help>Longer waits allow more time to pause, but delay the reply.</span>
 </div>
 </div>
