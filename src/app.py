@@ -63,9 +63,13 @@ class Assistant:
         if not 20 <= pre_roll_ms <= 2000:
             raise ValueError('Pre-roll must be between 20 and 2000 ms')
         self.pre_roll_ms = pre_roll_ms
-        self._use_floor_policy = bool(floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE') or eot is not None or os.getenv('LOCALVOICE_EOT_MODEL'))
-        self.floor = FloorPolicy(mode=floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE', 'hard'))
-        self.floor_mode = self.floor.mode if self._use_floor_policy else 'deferred'
+        self.floor_mode = floor_mode or os.getenv('LOCALVOICE_FLOOR_MODE') or 'manual'
+        policy_mode = 'hard' if self.floor_mode in ('manual', 'deferred') else self.floor_mode
+        self.floor = FloorPolicy(mode=policy_mode)
+        self._use_floor_policy = bool(
+            self.floor_mode not in ('manual', 'deferred')
+            or eot is not None or os.getenv('LOCALVOICE_EOT_MODEL')
+        )
         self.pre_roll_samples = round(pre_roll_ms * 16)
         self.mic = mic if mic is not None else Mic()
         self.player = player if player is not None else Player()
@@ -462,6 +466,17 @@ class Assistant:
             self.diagnostics.event('floor_promote', state=action.state,
                                    reason=action.reason)
 
+    def _capture_allowed(self):
+        return (self.mic_on and not self._capture_reset.is_set()
+                and (self.floor_mode != 'manual' or self._active is None))
+
+    def _discard_reply_capture(self):
+        if self.floor_mode == 'manual':
+            # Invalidate queued blocks and callbacks that started before the
+            # reply ended. The capture loop resets its VAD on the next block.
+            self._capture_reset.set()
+            self.mic.drain()
+
     def _loop(self):
         if self._use_floor_policy:
             return self._loop_floor()
@@ -506,7 +521,7 @@ class Assistant:
                             'barge_restore', turn_id=job.id if job is not None else None,
                             duck_level=1.0, reason='capture reset',
                             barge_played_s=round(candidate.get('played_s', 0), 3))
-                if not self.mic_on:
+                if not self._capture_allowed():
                     continue
             try:
                 speaking, started, ended, clean = self.front.update(block)
@@ -515,7 +530,7 @@ class Assistant:
                 with self._lock:
                     # Reset/mute can invalidate this block while detection is
                     # running, just as they can invalidate a detected onset.
-                    if not self.mic_on or self._capture_reset.is_set():
+                    if not self._capture_allowed():
                         continue
                     self.error = 'Speech detection failed: ' + str(exc)
                     self.status = 'error'
@@ -530,7 +545,7 @@ class Assistant:
                     pre.popleft()
                 if started:
                     with self._lock:
-                        if not self.mic_on or self._capture_reset.is_set():
+                        if not self._capture_allowed():
                             continue
                         self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(float(np.sqrt(np.mean(clean ** 2))), 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
                         job = self._active
@@ -569,7 +584,7 @@ class Assistant:
                     # Mute/reset may arrive while the frontend processes this
                     # block. Do not submit a stale automatic turn after mute.
                     with self._lock:
-                        if self.mic_on and not self._capture_reset.is_set():
+                        if self._capture_allowed():
                             self._confirm_barge()
                             self.submit_audio(audio)
                         else:
@@ -587,7 +602,7 @@ class Assistant:
                                 barge_played_s=round(candidate.get('played_s', 0), 3))
                             self.status = (('speaking' if getattr(self.player, 'playing', False) or self.first_audio_at else 'thinking')
                                            if job is self._active else 'listening')
-                        else:
+                        elif self._capture_allowed():
                             self.status = 'listening'
 
     def _loop_floor(self):
@@ -627,7 +642,7 @@ class Assistant:
                         self.eot.reset()
                     if self.status == 'recording':
                         self.status = ('speaking' if self.first_audio_at else 'thinking') if self._active else 'listening'
-                if not self.mic_on:
+                if not self._capture_allowed():
                     continue
             try:
                 speaking, started, ended, clean = self.front.update(block)
@@ -636,7 +651,7 @@ class Assistant:
                 with self._lock:
                     # Reset/mute can invalidate this block while detection is
                     # running, just as they can invalidate a detected onset.
-                    if not self.mic_on or self._capture_reset.is_set():
+                    if not self._capture_allowed():
                         continue
                     self.error = 'Speech detection failed: ' + str(exc)
                     self.status = 'error'
@@ -647,7 +662,7 @@ class Assistant:
             with self._lock:
                 # Mute/reset may arrive while the frontend is processing this
                 # block. Do not let a stale onset duck, cancel or submit.
-                if not self.mic_on or self._capture_reset.is_set():
+                if not self._capture_allowed():
                     continue
             rms = float(np.sqrt(np.mean(clean ** 2)))
             eot_commit = False
@@ -689,7 +704,7 @@ class Assistant:
                     pre.popleft()
                 if started:
                     with self._lock:
-                        if not self.mic_on or self._capture_reset.is_set():
+                        if not self._capture_allowed():
                             continue
                         self._apply_floor(action)
                         self.diagnostics.event('speech_start', state=self.status, raw_rms=round(float(np.sqrt(np.mean(block ** 2))), 5), clean_rms=round(rms, 5), vad_probability=getattr(self.front, 'probability', None), echo_score=getattr(self.front, 'echo_score', None))
@@ -710,7 +725,7 @@ class Assistant:
                 rec.append(clean)
                 rec_samples += len(clean)
                 with self._lock:
-                    if not self.mic_on or self._capture_reset.is_set():
+                    if not self._capture_allowed():
                         continue
                 self._apply_floor(action)
                 if candidate and action.resume:
@@ -747,10 +762,12 @@ class Assistant:
                     # Mute/reset may arrive while the frontend processes this
                     # block. Do not submit a stale automatic turn after mute.
                     with self._lock:
-                        if self.mic_on and not self._capture_reset.is_set():
+                        if self._capture_allowed():
                             self.submit_audio(audio)
                 else:
-                    self.status = 'listening'
+                    with self._lock:
+                        if self._capture_allowed():
+                            self.status = 'listening'
 
     def submit_audio(self, audio):
         wav = wav16k_bytes(audio)
@@ -1138,6 +1155,7 @@ class Assistant:
                                 'barge_restore', turn_id=job.id, duck_level=1.0,
                                 reason='playback ended',
                                 barge_played_s=round(candidate.get('played_s', 0), 3))
+                        self._discard_reply_capture()
                         self._active = None
                         self.first = bool(turn.error or turn.cancel.is_set() or job.test)
                         self.error = turn.error
@@ -1187,6 +1205,8 @@ class Assistant:
             self._agent_phase = None
             self._drop_barge()
             self.player.stop()
+            if job is not None:
+                self._discard_reply_capture()
             if hasattr(self.player, 'set_gain'):
                 self.player.set_gain(1.0)
             self.front.clear_playback()
