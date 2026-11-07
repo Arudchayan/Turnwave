@@ -57,6 +57,9 @@ def test_realtime_chat_streams_and_reuses_context(monkeypatch):
         client.chat_turn(wav, turn, first, on_audio=chunks.append)
         assert turn.done.is_set() and turn.error is None and turn.text == 'Hello'
         assert turn.audio_samples == 2
+        assert 'lock_wait' in turn.voice_setup_s
+        assert ('session_handshake' in turn.voice_setup_s) is first
+        assert ('close_previous' in turn.voice_setup_s) is first
     assert len(connections) == 1
     assert sum(message['type'] == 'response.create' for message in sock.sent) == 2
     assert np.concatenate(chunks).shape == (4,)

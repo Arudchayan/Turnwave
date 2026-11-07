@@ -149,6 +149,7 @@ class LFM3Client:
     def chat_turn(self, wav_bytes, turn, first, max_tokens=512, on_audio=None, require_audio=True,
                   recovery_wav=None, recovery_reply='', _text_input=None):
         context = ''
+        setup_started = time.perf_counter()
         if first and recovery_wav and not turn.cancel.is_set():
             try:
                 context = self.asr_text(recovery_wav, turn=turn).strip()[:1000]
@@ -158,18 +159,27 @@ class LFM3Client:
             finally:
                 turn.text_parts.clear()
                 turn.done.clear()
+                turn.voice_setup_s['context_recovery'] = time.perf_counter() - setup_started
         if turn.cancel.is_set():
             turn.done.set()
             return
         acquired = False
         try:
+            lock_started = time.perf_counter()
             acquired = self._acquire(turn)
+            turn.voice_setup_s['lock_wait'] = time.perf_counter() - lock_started
             if not acquired or turn.cancel.is_set():
                 return
             if first:
+                close_started = time.perf_counter()
                 self._close_chat()
+                turn.voice_setup_s['close_previous'] = time.perf_counter() - close_started
             if self._chat is None:
-                self._chat, self._out_rate = self._connect(turn)
+                connect_started = time.perf_counter()
+                try:
+                    self._chat, self._out_rate = self._connect(turn)
+                finally:
+                    turn.voice_setup_s['session_handshake'] = time.perf_counter() - connect_started
             if self._chat is None or turn.cancel.is_set():
                 return
             if context:
@@ -242,7 +252,9 @@ class LFM3Client:
         finally:
             if acquired:
                 if turn.cancel.is_set():
+                    close_started = time.perf_counter()
                     self._close_chat()
+                    turn.voice_setup_s['cancel_cleanup'] = time.perf_counter() - close_started
                 self.request_lock.release()
             turn.done.set()
 
