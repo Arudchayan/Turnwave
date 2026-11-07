@@ -164,6 +164,7 @@ class LFM3Client:
             turn.done.set()
             return
         acquired = False
+        response_pending = False
         try:
             lock_started = time.perf_counter()
             acquired = self._acquire(turn)
@@ -210,6 +211,7 @@ class LFM3Client:
             if turn.cancel.is_set():
                 return
             self._chat.send(json.dumps({'type': 'response.create', 'response': {'max_output_tokens': max_tokens}}))
+            response_pending = True
             while not turn.cancel.is_set():
                 event = self._receive(self._chat, turn)
                 if event is None:
@@ -236,6 +238,7 @@ class LFM3Client:
                         if on_audio:
                             on_audio(samples)
                 elif kind == 'response.done':
+                    response_pending = False
                     response = event.get('response') or {}
                     status = response.get('status')
                     if status in ('failed', 'cancelled', 'incomplete'):
@@ -247,15 +250,23 @@ class LFM3Client:
         except Exception as exc:
             if not turn.cancel.is_set():
                 turn.error = str(exc)
-            if acquired:
-                self._close_chat()
         finally:
             if acquired:
-                if turn.cancel.is_set():
-                    close_started = time.perf_counter()
-                    self._close_chat()
-                    turn.voice_setup_s['cancel_cleanup'] = time.perf_counter() - close_started
-                self.request_lock.release()
+                try:
+                    if turn.cancel.is_set():
+                        close_started = time.perf_counter()
+                        if response_pending and self._chat is not None:
+                            # Release the server slot explicitly before closing.
+                            try:
+                                self._chat.send(json.dumps({'type': 'response.cancel'}))
+                            except (OSError, websocket.WebSocketException):
+                                pass  # A disconnected socket still gets closed below.
+                        self._close_chat()
+                        turn.voice_setup_s['cancel_cleanup'] = time.perf_counter() - close_started
+                    elif turn.error:
+                        self._close_chat()
+                finally:
+                    self.request_lock.release()
             turn.done.set()
 
     def chat_text(self, text, turn, first, max_tokens=512, on_audio=None, require_audio=True,

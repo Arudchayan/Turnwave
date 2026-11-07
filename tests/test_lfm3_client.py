@@ -191,6 +191,23 @@ def test_cancelled_turn_does_not_connect(monkeypatch):
     assert turn.done.is_set() and turn.error is None
 
 
+def test_cancelling_an_active_reply_signals_server_before_closing(monkeypatch):
+    pcm = np.array([500, -500], dtype='<i2').tobytes()
+    sock = Socket(initial_events() + [
+        {'type': 'response.output_audio.delta', 'delta': base64.b64encode(pcm).decode()},
+    ])
+    original_close = sock.close
+    def close():
+        assert sock.sent[-1] == {'type': 'response.cancel'}
+        original_close()
+    sock.close = close
+    monkeypatch.setattr('lfm3_client.websocket.create_connection', lambda *a, **k: sock)
+    client, turn = LFM3Client(), Turn()
+    client.chat_text('hello', turn, True, on_audio=lambda _: turn.abort())
+    assert turn.done.is_set() and turn.cancel.is_set() and turn.error is None
+    assert sock.closed and not client.request_lock.locked()
+
+
 def test_tts_rejects_wrong_format_and_releases_lock(monkeypatch):
     class Response:
         headers = {'Content-Type': 'audio/wav'}
