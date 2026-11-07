@@ -1,6 +1,8 @@
 """Publication guard contracts without using real credentials or recordings."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -13,8 +15,31 @@ spec.loader.exec_module(publication)
 
 def test_private_files_are_rejected_even_when_tracked():
     for name in ['outputs/result.json', 'data/example.json', 'AGENTS.md',
-                 '.env', '.env.local', 'recording.wav', 'docs/AGENT_HANDOFF.md']:
+                 '.env', '.env.local', 'recording.wav', 'docs/AGENT_HANDOFF.md',
+                 'checkpoints/model.bin', 'somewhere/Logs/diagnostic.json',
+                 'transcripts/session.txt', 'saved/transcript.json', 'saved/transcript-1.csv', 'traces/run.txt',
+                 'saved/recordings/session.json', 'diagnostics.jsonl']:
         assert publication.inspect_file(name, b'private fixture')
+
+
+def test_forced_private_files_are_rejected_from_the_index(tmp_path):
+    # Use disposable fake data only; forced adds must not bypass the index guard.
+    subprocess.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    ignore = Path(__file__).resolve().parents[1] / '.gitignore'
+    (tmp_path / '.gitignore').write_bytes(ignore.read_bytes())
+    names = ['checkpoints/model.bin', 'elsewhere/session.jsonl',
+             'transcripts/session.txt', 'saved/transcript.json']
+    for name in names:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('fake private fixture', encoding='utf-8')
+        subprocess.run(['git', 'check-ignore', '-q', name], cwd=tmp_path, check=True)
+    subprocess.run(['git', 'add', '-f', '--', *names], cwd=tmp_path, check=True)
+    result = subprocess.run([sys.executable, str(Path(publication.__file__).resolve())],
+                            cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 1
+    assert all(name in result.stdout for name in names)
+    assert 'fake private fixture' not in result.stdout
 
 
 def test_provider_pattern_flags_without_echoing_value():
